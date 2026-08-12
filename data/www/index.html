@@ -1,0 +1,369 @@
+<!DOCTYPE html><html lang='en'><head>
+<meta charset='UTF-8'>
+<meta name='viewport' content='width=device-width,initial-scale=1,viewport-fit=cover'>
+<meta name='theme-color' content='#f5f5f7'>
+<meta name='apple-mobile-web-app-capable' content='yes'>
+<title>arply</title>
+<style>
+:root{
+  --bg:#f5f5f7;
+  --card:#fff;
+  --ink:#1d1d1f;
+  --ink-2:#6e6e73;
+  --ink-3:#86868b;
+  --line:#e5e5ea;
+  --field:#fff;
+  --field-line:#d2d2d7;
+  --accent:#0071e3;
+  --accent-hi:#0077ed;
+  --ok:#1d8a4e;
+  --ok-bg:#e7f5ec;
+  --err:#d70015;
+  --err-bg:#ffeceb;
+  --info-bg:#eef4fd;
+  --fill:#e8e8ed;
+  --fill-hi:#dedee3;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{-webkit-text-size-adjust:100%}
+body{
+  font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','SF Pro Display','Helvetica Neue',Helvetica,Arial,sans-serif;
+  background:var(--bg);color:var(--ink);
+  min-height:100vh;padding:0 20px calc(48px + env(safe-area-inset-bottom));
+  font-size:15px;line-height:1.47;letter-spacing:-0.01em;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:520px;margin:0 auto}
+
+/* ---- header ---- */
+.header{text-align:center;padding:56px 0 28px}
+.logo{width:132px;height:auto;color:var(--ink);display:block;margin:0 auto 14px}
+.header p{color:var(--ink-3);font-size:15px;letter-spacing:0}
+
+/* ---- status ---- */
+.status-bar{
+  background:var(--fill);color:var(--ink-2);
+  border-radius:14px;padding:13px 18px;margin-bottom:30px;
+  text-align:center;font-size:14px;font-weight:500;
+  display:flex;align-items:center;justify-content:center;gap:9px;
+}
+.status-bar::before{
+  content:'';width:8px;height:8px;border-radius:50%;
+  background:var(--ink-3);flex:none;
+}
+.status-bar.ok{background:var(--ok-bg);color:var(--ok)}
+.status-bar.ok::before{background:var(--ok)}
+.status-bar.err{background:var(--err-bg);color:var(--err)}
+.status-bar.err::before{background:var(--err)}
+
+/* ---- cards ---- */
+.card{
+  background:var(--card);border-radius:18px;
+  padding:22px;margin-bottom:16px;
+  box-shadow:0 1px 2px rgba(0,0,0,.04),0 4px 16px rgba(0,0,0,.04);
+}
+.card h2{
+  font-size:19px;font-weight:600;letter-spacing:-0.02em;
+  margin-bottom:18px;color:var(--ink);
+}
+.card .sub{color:var(--ink-2);font-size:14px;margin:-10px 0 16px}
+
+/* ---- form ---- */
+.form-group{margin-bottom:16px}
+.form-group label{
+  display:block;font-size:13px;font-weight:500;
+  color:var(--ink-2);margin-bottom:7px;letter-spacing:0;
+}
+input[type=text],input[type=password],select{
+  width:100%;padding:12px 14px;
+  background:var(--field);border:1px solid var(--field-line);
+  border-radius:12px;color:var(--ink);
+  font-size:16px;font-family:inherit;
+  transition:border-color .15s,box-shadow .15s;
+}
+input::placeholder{color:var(--ink-3)}
+input:focus,select:focus{
+  outline:none;border-color:var(--accent);
+  box-shadow:0 0 0 3.5px rgba(0,113,227,.15);
+}
+select{
+  appearance:none;-webkit-appearance:none;cursor:pointer;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8' fill='none' stroke='%236e6e73' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M1 1.5 6 6.5 11 1.5'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:right 14px center;background-size:12px;
+  padding-right:38px;
+}
+
+/* ---- buttons ---- */
+.btn{
+  display:inline-block;padding:11px 22px;border:none;
+  border-radius:980px;font-size:15px;font-weight:500;
+  font-family:inherit;cursor:pointer;text-decoration:none;
+  text-align:center;line-height:1.3;
+  transition:background .18s,opacity .18s,transform .06s;
+}
+.btn:active{transform:scale(.975)}
+.btn-primary{background:var(--accent);color:#fff}
+.btn-primary:hover{background:var(--accent-hi)}
+.btn-secondary{background:var(--fill);color:var(--ink)}
+.btn-secondary:hover{background:var(--fill-hi)}
+.btn-danger{background:transparent;color:var(--err);box-shadow:inset 0 0 0 1px var(--field-line)}
+.btn-danger:hover{background:var(--err-bg)}
+.btn-block{width:100%;margin-top:6px}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.btn:disabled:active{transform:none}
+
+/* ---- wifi list ---- */
+.wifi-list{max-height:216px;overflow-y:auto;margin:14px 0;-webkit-overflow-scrolling:touch}
+.wifi-list:empty{margin:0}
+.wifi-item{
+  padding:13px 15px;background:var(--bg);
+  margin-bottom:6px;border-radius:12px;cursor:pointer;
+  display:flex;justify-content:space-between;align-items:center;gap:12px;
+  box-shadow:inset 0 0 0 1px transparent;
+  transition:background .15s,box-shadow .15s;
+}
+.wifi-item:hover{background:var(--fill)}
+.wifi-item.sel{background:var(--info-bg);box-shadow:inset 0 0 0 1.5px var(--accent)}
+.wifi-item .ssid{font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.wifi-item .rssi{font-size:13px;color:var(--ink-3);flex:none;font-variant-numeric:tabular-nums}
+
+/* ---- info list ---- */
+.info-grid{
+  border:1px solid var(--line);border-radius:12px;overflow:hidden;
+}
+.info-item{
+  display:flex;justify-content:space-between;align-items:baseline;gap:16px;
+  padding:12px 15px;border-bottom:1px solid var(--line);
+}
+.info-item:last-child{border-bottom:none}
+.info-item label{font-size:14px;color:var(--ink-2);flex:none}
+.info-item span{
+  font-size:14px;font-weight:500;text-align:right;
+  overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums;
+}
+
+/* ---- messages ---- */
+.msg{padding:11px 14px;border-radius:11px;margin-top:12px;font-size:14px;font-weight:500}
+.msg.ok{background:var(--ok-bg);color:var(--ok)}
+.msg.err{background:var(--err-bg);color:var(--err)}
+.msg.info{background:var(--info-bg);color:var(--accent)}
+
+/* ---- misc ---- */
+.file-row{display:flex;gap:14px;align-items:center;margin-bottom:12px}
+.file-name{flex:1;font-size:14px;color:var(--ink-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.actions{display:flex;gap:10px;margin-top:16px}
+.slider-row{display:flex;align-items:center;gap:14px}
+.slider-row input[type=range]{
+  flex:1;accent-color:var(--accent);height:22px;cursor:pointer;
+}
+.slider-row span{
+  font-size:14px;color:var(--ink-2);min-width:42px;
+  text-align:right;font-variant-numeric:tabular-nums;font-weight:500;
+}
+.footer{text-align:center;color:var(--ink-3);font-size:12px;padding:12px 0 0}
+</style></head><body>
+<div class='wrap'>
+
+<div class='header'>
+<svg class='logo' viewBox='0 6 186 86' fill='none' stroke='currentColor' stroke-width='7.5' stroke-linecap='butt' role='img' aria-label='arply'>
+<circle cx='23.75' cy='44' r='16.25'/>
+<path d='M40 24V64'/>
+<path d='M56 24V64'/>
+<path d='M56 34a10 10 0 0 1 10-10'/>
+<path d='M82 24v60'/>
+<circle cx='98.25' cy='44' r='16.25'/>
+<path d='M130 12v52'/>
+<path d='M145 24l16 34'/>
+<path d='M177 24l-28 60'/>
+</svg>
+<p>the unofficial AirPlay Receiver</p>
+</div>
+
+<div id='status-bar' class='status-bar'>Loading...</div>
+
+<div class='card'><h2>Wi-Fi Network</h2>
+<button class='btn btn-secondary' onclick='scanWiFi()'>Scan Networks</button>
+<div id='wifi-list' class='wifi-list'></div>
+<div class='form-group'><label>Network Name (SSID)</label><input type='text' id='wifi-ssid' placeholder='Enter or select network' autocapitalize='none' autocorrect='off' spellcheck='false'></div>
+<div class='form-group'><label>Password</label><input type='password' id='wifi-pass' placeholder='Enter password'></div>
+<button class='btn btn-primary btn-block' onclick='saveWiFi()'>Connect to Wi-Fi</button>
+<div id='wifi-msg'></div></div>
+
+<div class='card'><h2>Device</h2>
+<div class='form-group'><label>AirPlay Device Name</label><input type='text' id='dev-name' placeholder='My Speaker'></div>
+<button class='btn btn-primary' onclick='saveName()'>Save Name</button>
+<div id='name-msg'></div>
+<div class='form-group' style='margin-top:22px'><label for='led-brightness'>LED Brightness</label>
+<div class='slider-row'><input type='range' id='led-brightness' min='0' max='255' value='128' oninput='document.getElementById("led-pct").textContent=Math.round(this.value/255*100)+"%"'>
+<span id='led-pct'>50%</span></div></div>
+<button class='btn btn-secondary' onclick='saveBrightness()'>Save Brightness</button>
+<div id='brightness-msg'></div>
+<div id='chan-group'>
+<div class='form-group' style='margin-top:22px'><label for='chan-mode'>Output Channel</label>
+<select id='chan-mode' onchange='saveChannel()'>
+<option value='0'>Stereo</option>
+<option value='1'>Left only</option>
+<option value='2'>Right only</option>
+<option value='3'>Mono (L+R)</option>
+</select></div>
+<div id='chan-msg'></div></div>
+<div id='dual-group' style='display:none;margin-top:22px'>
+<div class='form-group'><label for='dual-mode'>DAC Configuration</label>
+<select id='dual-mode' onchange='saveDual()'>
+<option value='0'>2.1 (Satellites / Sub)</option>
+<option value='1'>Bi-Amp</option>
+</select></div>
+<div id='dual-msg'></div></div>
+<div id='eq-link' style='display:none;margin-top:22px'>
+<a href='/eq' class='btn btn-secondary'>EQ Settings</a></div>
+</div>
+
+<div class='card'><h2>Firmware Update</h2>
+<div class='file-row'><input type='file' id='fw-file' accept='.bin' style='display:none'>
+<button class='btn btn-secondary' onclick='document.getElementById("fw-file").click()'>Choose File</button>
+<span class='file-name' id='fw-name'>No file selected</span></div>
+<button class='btn btn-primary btn-block' id='ota-btn' onclick='startOTA()' disabled>Upload Firmware</button>
+<div id='ota-msg'></div></div>
+
+<div class='card'><h2>System</h2>
+<div class='info-grid'>
+<div class='info-item'><label>IP Address</label><span id='info-ip'>-</span></div>
+<div class='info-item'><label>MAC Address</label><span id='info-mac'>-</span></div>
+<div class='info-item'><label>Device Name</label><span id='info-name'>-</span></div>
+<div class='info-item'><label>Free Memory</label><span id='info-heap'>-</span></div>
+<div class='info-item'><label>Firmware</label><span id='info-fw'>-</span></div>
+<div class='info-item'><label>Wi-Fi SSID</label><span id='info-ssid'>-</span></div>
+<div class='info-item'><label>Wi-Fi RSSI</label><span id='info-rssi'>-</span></div>
+<div class='info-item'><label>Wi-Fi Channel</label><span id='info-chan'>-</span></div>
+<div class='info-item'><label>Wi-Fi PHY</label><span id='info-phy'>-</span></div>
+<div class='info-item'><label>Wi-Fi BSSID</label><span id='info-bssid'>-</span></div>
+</div>
+<div class='actions'><button class='btn btn-danger' onclick='restart()'>Restart Device</button></div>
+</div>
+
+<div class='card'><h2>System Logs</h2>
+<p class='sub'>Live ESP log output via WebSocket</p>
+<a href='/logs' class='btn btn-secondary'>Open Log Viewer</a></div>
+
+<div class='card'><h2>Wi-Fi Speedtest</h2>
+<p class='sub'>Measure latency and throughput to this device</p>
+<a href='/speedtest' class='btn btn-secondary'>Open Speedtest</a></div>
+
+<div class='footer'>arply.de</div>
+</div>
+<script>
+function msg(id,txt,type){var e=document.getElementById(id);if(e){e.innerHTML='<div class="msg '+type+'">'+txt+'</div>';setTimeout(function(){e.innerHTML='';},4000);}}
+async function scanWiFi(){
+  var l=document.getElementById('wifi-list');l.innerHTML='<div class="msg info">Scanning...</div>';
+  try{var r=await fetch('/api/wifi/scan');var d=await r.json();
+    if(d.success&&d.networks.length>0){l.innerHTML='';d.networks.forEach(function(n){
+      var i=document.createElement('div');i.className='wifi-item';
+      i.innerHTML='<span class="ssid">'+n.ssid+'</span><span class="rssi">'+n.rssi+' dBm</span>';
+      i.onclick=function(){document.querySelectorAll('.wifi-item').forEach(function(x){x.classList.remove('sel');});i.classList.add('sel');document.getElementById('wifi-ssid').value=n.ssid;};
+      l.appendChild(i);});}
+    else{l.innerHTML='<div class="msg info">No networks found</div>';}}
+  catch(e){l.innerHTML='<div class="msg err">Scan failed</div>';}}
+async function saveWiFi(){
+  var s=document.getElementById('wifi-ssid').value.trim();var p=document.getElementById('wifi-pass').value;
+  if(!s){msg('wifi-msg','Enter network name','err');return;}
+  try{var r=await fetch('/api/wifi/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ssid:s,password:p})});
+    var d=await r.json();if(d.success){msg('wifi-msg','Saved! Restarting...','ok');}else{msg('wifi-msg',d.error,'err');}}
+  catch(e){msg('wifi-msg','Error','err');}}
+async function loadBrightness(){
+  try{var r=await fetch('/api/led/brightness');var d=await r.json();
+    if(d.success){var s=document.getElementById('led-brightness');s.value=d.brightness;
+      document.getElementById('led-pct').textContent=Math.round(d.brightness/255*100)+'%';}}
+  catch(e){console.warn('Could not load LED brightness',e);}}
+async function saveBrightness(){
+  var v=Number.parseInt(document.getElementById('led-brightness').value,10);
+  try{var r=await fetch('/api/led/brightness',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({brightness:v})});
+    var d=await r.json();if(d.success){msg('brightness-msg','Saved!','ok');}else{msg('brightness-msg',d.error,'err');}}
+  catch(e){msg('brightness-msg','Error','err');console.error('saveBrightness failed',e);}}
+async function loadChannel(){
+  try{var r=await fetch('/api/audio/channel');var d=await r.json();
+    if(d.success){document.getElementById('chan-mode').value=String(d.mode);
+      chanLocked=!!d.locked;}}
+  catch(e){console.warn('Could not load channel mode',e);}
+  applyAmpLayout();}
+var dualDevices=1;
+var dualMode=0;
+var chanLocked=false;
+var DUAL_WARN={
+  0:'Switch to 2.1 (Satellites / Sub)?\n\nThe second amplifier is reconfigured as PBTL mono: its OUT_A and OUT_B terminals must be bridged together and wired to a single subwoofer.\n\nRewire before restarting.',
+  1:'Switch to Bi-Amp?\n\nBoth amplifiers run as stereo BTL, with OUT_A driving the woofer and OUT_B the tweeter of one speaker.\n\nIf OUT_A and OUT_B are still bridged for a PBTL subwoofer you MUST unbridge them first — leaving them shorted drives the two outputs against each other and can damage the amplifier and its output filters.'
+};
+/* With two amps the DAC configuration already fixes the routing, so per-output
+   channel selection has no meaning. */
+function applyAmpLayout(){
+  document.getElementById('chan-group').style.display=
+    (chanLocked||dualDevices>1)?'none':'';
+}
+async function saveChannel(){
+  var v=Number.parseInt(document.getElementById('chan-mode').value,10);
+  try{var r=await fetch('/api/audio/channel',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:v})});
+    var d=await r.json();if(d.success){msg('chan-msg','Saved!','ok');
+      /* The firmware may keep stereo regardless of what was asked for. */
+      if(typeof d.mode==='number'){document.getElementById('chan-mode').value=String(d.mode);}
+      chanLocked=!!d.locked;applyAmpLayout();}
+    else{msg('chan-msg',d.error,'err');}}
+  catch(e){msg('chan-msg','Error','err');console.error('saveChannel failed',e);}}
+async function loadDual(){
+  try{var r=await fetch('/api/audio/dual');if(!r.ok)return;var d=await r.json();
+    if(d.success&&d.devices>1){dualDevices=d.devices;dualMode=d.mode;
+      var sel=document.getElementById('dual-mode');
+      sel.value=String(d.mode);
+      if(!d.biamp){
+        sel.querySelector('option[value="1"]').disabled=true;
+        sel.querySelector('option[value="1"]').textContent='Bi-Amp (unavailable)';
+      }
+      document.getElementById('dual-group').style.display='';
+      if(d.restart_required){msg('dual-msg','Restart to apply the new wiring.','err');}}}
+  catch(e){console.warn('Could not load dual DAC mode',e);}
+  applyAmpLayout();}
+async function saveDual(){
+  var sel=document.getElementById('dual-mode');
+  var v=Number.parseInt(sel.value,10);
+  if(v!==dualMode&&!confirm(DUAL_WARN[v])){sel.value=String(dualMode);return;}
+  try{var r=await fetch('/api/audio/dual',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:v})});
+    var d=await r.json();
+    if(d.success){dualMode=v;msg('dual-msg','Saved! Rewire the speakers, then restart to apply.','ok');}
+    else{sel.value=String(dualMode);msg('dual-msg',d.error,'err');}}
+  catch(e){sel.value=String(dualMode);msg('dual-msg','Error','err');console.error('saveDual failed',e);}}
+async function saveName(){
+  var n=document.getElementById('dev-name').value.trim();if(!n){msg('name-msg','Enter a name','err');return;}
+  try{var r=await fetch('/api/device/name',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:n})});
+    var d=await r.json();if(d.success){msg('name-msg','Saved! Restart to apply.','ok');loadInfo();}else{msg('name-msg',d.error,'err');}}
+  catch(e){msg('name-msg','Error','err');}}
+async function startOTA(){
+  var f=document.getElementById('fw-file').files[0];if(!f){msg('ota-msg','Select a file','err');return;}
+  document.getElementById('ota-btn').disabled=true;msg('ota-msg','Uploading...','info');
+  try{await fetch('/api/ota/update',{method:'POST',headers:{'Content-Type':'application/octet-stream'},body:f});msg('ota-msg','Done! Rebooting...','ok');}
+  catch(e){msg('ota-msg','Rebooting...','ok');}}
+async function restart(){
+  if(!confirm('Restart the device?'))return;
+  try{await fetch('/api/system/restart',{method:'POST'});msg('','Restarting...','info');}catch(e){}}
+async function loadInfo(){
+  try{var r=await fetch('/api/system/info');var d=await r.json();
+    if(d.success){var i=d.info;var b=document.getElementById('status-bar');
+      if(i.eth_connected){b.className='status-bar ok';b.innerHTML='Ethernet: '+i.ip;}
+      else if(i.wifi_connected){b.className='status-bar ok';b.innerHTML='Wi-Fi: '+i.ip;}
+      else{b.className='status-bar err';b.innerHTML='Not connected - Configure Wi-Fi below';}
+      document.getElementById('info-ip').textContent=i.ip||'-';
+      document.getElementById('info-mac').textContent=i.mac||'-';
+      document.getElementById('info-name').textContent=i.device_name||'-';
+      document.getElementById('info-heap').textContent=Math.round(i.free_heap/1024)+' KB';
+      document.getElementById('info-fw').textContent=i.firmware_version||'-';
+      function rssiLabel(r){if(r==null)return '-';var q='';if(r>=-55)q=' (excellent)';else if(r>=-65)q=' (good)';else if(r>=-75)q=' (fair)';else q=' (poor)';return r+' dBm'+q;}
+      document.getElementById('info-ssid').textContent=i.wifi_ssid||'-';
+      document.getElementById('info-rssi').textContent=rssiLabel(i.wifi_rssi);
+      document.getElementById('info-chan').textContent=i.wifi_channel||'-';
+      document.getElementById('info-phy').textContent=i.wifi_phy||'-';
+      document.getElementById('info-bssid').textContent=i.wifi_bssid||'-';
+      if(i.eq_supported||i.sub_supported){document.getElementById('eq-link').style.display='';}
+      document.getElementById('dev-name').placeholder=i.device_name||'';}}catch(e){}}
+window.onload=function(){
+  document.getElementById('fw-file').onchange=function(e){var f=e.target.files[0];
+    document.getElementById('fw-name').textContent=f?f.name:'No file selected';
+    document.getElementById('ota-btn').disabled=!f;};
+  loadInfo();loadBrightness();loadChannel();loadDual();setInterval(loadInfo,30000);};
+</script></body></html>

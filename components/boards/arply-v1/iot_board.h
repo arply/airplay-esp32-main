@@ -1,0 +1,38 @@
+#pragma once
+
+#include "board_common.h"
+#include "sdkconfig.h"
+
+#define BOARD_NAME        "ARPLY v1"
+#define BOARD_DESCRIPTION "Seeed XIAO ESP32-S3 with PCM5102A I2S DAC"
+
+// I2S configuration
+#define BOARD_I2S_SCK_GPIO CONFIG_I2S_SCK_IO
+#define BOARD_I2S_BCK_GPIO CONFIG_I2S_BCK_IO
+#define BOARD_I2S_WS_GPIO  CONFIG_I2S_WS_IO
+#define BOARD_I2S_DO_GPIO  CONFIG_I2S_DO_IO
+#define BOARD_I2S_GND_GPIO CONFIG_I2S_GND_IO
+#define BOARD_I2S_VCC_GPIO CONFIG_I2S_VCC_IO
+
+// SPDIF configuration
+#define BOARD_SPDIF_DO_GPIO CONFIG_SPDIF_DO_IO
+
+// LED configuration
+#define BOARD_LED_STATUS_GPIO CONFIG_LED_STATUS_GPIO
+#define BOARD_LED_ERROR_GPIO  CONFIG_LED_ERROR_GPIO
+#define BOARD_LED_RGB_GPIO    CONFIG_LED_RGB_GPIO
+
+// PCM5102A XSMT: driven low to mute, high to pass audio
+#define BOARD_MUTE_GPIO       CONFIG_MUTE_GPIO
+#define BOARD_MUTE_GPIO_LEVEL CONFIG_MUTE_GPIO_LEVEL
+
+// Control GPIOs (optional)
+#define BOARD_JACK_GPIO     CONFIG_JACK_GPIO
+#define BOARD_SPKFAULT_GPIO CONFIG_SPKFAULT_GPIO
+
+// DAC I2C (unused: the PCM5102A has no control bus)
+#define BOARD_I2C_SDA_GPIO CONFIG_DAC_I2C_SDA
+#define BOARD_I2C_SCL_GPIO CONFIG_DAC_I2C_SCL
+
+// Battery monitoring
+#define BOARD_BAT_CHANNEL CONFIG_BAT_CHANNEL

@@ -1,0 +1,127 @@
+<!DOCTYPE html><html lang='en'><head>
+<meta charset='UTF-8'>
+<meta name='viewport' content='width=device-width,initial-scale=1,viewport-fit=cover'>
+<meta name='theme-color' content='#ffffff'>
+<title>Logs — arply</title>
+<style>
+:root{
+  --bg:#fff;--bar:rgba(255,255,255,.82);--ink:#1d1d1f;--ink-2:#6e6e73;--ink-3:#86868b;
+  --line:#e5e5ea;--accent:#0071e3;--fill:#f5f5f7;--fill-hi:#e8e8ed;
+  --ok:#30a46c;--err:#e5484d;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{-webkit-text-size-adjust:100%}
+body{
+  font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','Helvetica Neue',Helvetica,Arial,sans-serif;
+  background:var(--bg);color:var(--ink);
+  height:100vh;display:flex;flex-direction:column;overflow:hidden;
+  letter-spacing:-0.01em;-webkit-font-smoothing:antialiased;
+}
+.toolbar{
+  background:var(--bar);backdrop-filter:saturate(180%) blur(20px);
+  -webkit-backdrop-filter:saturate(180%) blur(20px);
+  padding:12px 18px;padding-top:calc(12px + env(safe-area-inset-top));
+  display:flex;align-items:center;gap:12px;
+  border-bottom:1px solid var(--line);flex:none;
+}
+.toolbar h1{font-size:16px;font-weight:600;flex:1;letter-spacing:-0.02em}
+.toolbar a{color:var(--accent);text-decoration:none;font-size:15px;flex:none}
+.toolbar a:hover{text-decoration:underline}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--err);flex:none;transition:background .2s}
+.dot.ok{background:var(--ok)}
+.btn-sm{
+  padding:6px 14px;border:none;border-radius:980px;
+  background:var(--fill);color:var(--ink);
+  font-size:13px;font-weight:500;font-family:inherit;cursor:pointer;
+  flex:none;transition:background .18s;
+}
+.btn-sm:hover{background:var(--fill-hi)}
+#log{
+  flex:1;min-height:0;overflow-y:auto;
+  padding:14px 18px calc(18px + env(safe-area-inset-bottom));
+  font-family:ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,monospace;
+  font-size:12px;line-height:1.65;white-space:pre-wrap;word-break:break-all;
+  color:var(--ink);
+}
+/* ANSI palette retuned for a white ground — the original GitHub-dark
+   colors (#3fb950, #58a6ff …) fail contrast on white. */
+.a30{color:#8e8e93}.a31{color:#d70015}.a32{color:#1d8a4e}.a33{color:#946200}
+.a34{color:#0071e3}.a35{color:#8250df}.a36{color:#0e7490}.a37{color:#1d1d1f}
+.a90{color:#a1a1a6}.a91{color:#e5484d}.a92{color:#30a46c}.a93{color:#b07d00}
+.a94{color:#3b82f6}.a95{color:#a855f7}.a96{color:#0891b2}.a97{color:#000}
+</style></head><body>
+<div class='toolbar'>
+<a href='/'>&lsaquo;&nbsp;arply</a>
+<h1>System Logs</h1>
+<span id='dot' class='dot'></span>
+<button class='btn-sm' onclick='clear_log()'>Clear</button>
+<button class='btn-sm' id='scroll-btn' onclick='toggle_scroll()'>Auto-scroll: ON</button>
+</div>
+<div id='log'><div id='anchor'></div></div>
+<script>
+var log=document.getElementById('log'),dot=document.getElementById('dot'),anchor=document.getElementById('anchor'),autoScroll=true,maxLines=2000;
+function set_auto(v){autoScroll=v;document.getElementById('scroll-btn').textContent='Auto-scroll: '+(v?'ON':'OFF');}
+function toggle_scroll(){set_auto(!autoScroll);if(autoScroll)log.scrollTop=log.scrollHeight;}
+function at_bottom(){return log.scrollHeight-log.scrollTop-log.clientHeight<40;}
+// Auto-scroll must yield to the reader: scrolling up pauses it so new lines
+// never yank the view back down; scrolling to the bottom resumes it.
+log.addEventListener('scroll',function(){
+  if(autoScroll&&!at_bottom())set_auto(false);
+  else if(!autoScroll&&at_bottom())set_auto(true);
+});
+function clear_log(){log.innerHTML='';anchor=document.createElement('div');anchor.id='anchor';log.appendChild(anchor);}
+var ansiRe=/\x1b\[([0-9;]*)m/g;
+var ansiCls={'30':1,'31':1,'32':1,'33':1,'34':1,'35':1,'36':1,'37':1,'90':1,'91':1,'92':1,'93':1,'94':1,'95':1,'96':1,'97':1};
+var letterCls={'E':'a31','W':'a33','I':'a32','D':'a30','V':'a30'};
+function colorize(text){
+  var frag=document.createDocumentFragment();
+  text.split('\n').forEach(function(line){
+    if(!line)return;
+    var wrap=document.createElement('span');
+    var hasAnsi=ansiRe.test(line);
+    ansiRe.lastIndex=0;
+    if(hasAnsi){
+      var last=0,cls=null,m;
+      while((m=ansiRe.exec(line))!==null){
+        if(m.index>last){
+          var s=document.createElement('span');
+          if(cls)s.className=cls;
+          s.textContent=line.substring(last,m.index);
+          wrap.appendChild(s);
+        }
+        var p=m[1].split(';');cls=null;
+        for(var i=0;i<p.length;i++){if(ansiCls[p[i]])cls='a'+p[i];}
+        last=ansiRe.lastIndex;
+      }
+      if(last<line.length){
+        var s=document.createElement('span');
+        if(cls)s.className=cls;
+        s.textContent=line.substring(last);
+        wrap.appendChild(s);
+      }
+    }else{
+      var ch=line.charAt(0);
+      if(letterCls[ch])wrap.className=letterCls[ch];
+      wrap.textContent=line;
+    }
+    wrap.appendChild(document.createTextNode('\n'));
+    frag.appendChild(wrap);
+  });
+  var follow=autoScroll&&at_bottom();
+  log.insertBefore(frag,anchor);
+  var trimmed=0;
+  while(log.childNodes.length>maxLines+1){
+    trimmed+=log.firstChild.offsetHeight||0;
+    log.removeChild(log.firstChild);
+  }
+  if(follow)log.scrollTop=log.scrollHeight;
+  else if(trimmed)log.scrollTop=Math.max(0,log.scrollTop-trimmed);
+}
+function connect(){
+  var ws=new WebSocket('ws://'+location.host+'/ws/logs');
+  ws.onopen=function(){dot.classList.add('ok');};
+  ws.onclose=function(){dot.classList.remove('ok');setTimeout(connect,2000);};
+  ws.onmessage=function(e){colorize(e.data);};
+}
+connect();
+</script></body></html>

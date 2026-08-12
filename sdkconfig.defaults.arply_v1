@@ -1,0 +1,59 @@
+# =============================================================================
+# ARPLY v1 — Seeed XIAO ESP32-S3 + PCM5102A
+# =============================================================================
+# Dual-core Xtensa @ 240 MHz, 8 MB flash, 8 MB octal PSRAM (ESP32-S3R8),
+# native USB-C (no USB-UART bridge), external PCM5102A I2S DAC with an
+# XSMT mute pin driven from playback state.
+CONFIG_BOARD_ARPLY_V1=y
+
+# Flash layout (8 MB) — components/boards/partitions.csv fills it exactly
+CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y
+CONFIG_ESPTOOLPY_FLASHSIZE="8MB"
+
+# PSRAM (8 MB, octal SPI)
+CONFIG_SPIRAM_MODE_OCT=y
+
+# The XIAO has no USB-UART bridge: console over the built-in USB Serial/JTAG
+# (USB-C) for flashing + monitor.
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
+
+# Name of the setup hotspot broadcast until WiFi credentials are stored.
+CONFIG_DEFAULT_AP_SSID="arply setup"
+
+# Name shown in the AirPlay device picker and advertised over mDNS, until a
+# name is saved from the web interface.
+CONFIG_DEFAULT_DEVICE_NAME="ARPLY"
+
+# =============================================================================
+# GPIO defaults (XIAO ESP32-S3 silkscreen -> chip GPIO)
+#   D8  = GPIO7  -> I2S bit clock (BCK)
+#   D9  = GPIO8  -> I2S word select (LRCK)
+#   D10 = GPIO9  -> I2S data out (DIN)
+#   D0  = GPIO1  -> PCM5102A XSMT (low = muted, high = audio)
+#   USER LED (orange) = GPIO21, active low (not on the castellated header)
+# MCLK is unused: the PCM5102A generates it internally.
+CONFIG_I2S_SCK_IO=-1
+CONFIG_I2S_BCK_IO=7
+CONFIG_I2S_WS_IO=8
+CONFIG_I2S_DO_IO=9
+CONFIG_MUTE_GPIO=1
+CONFIG_MUTE_GPIO_LEVEL=0
+CONFIG_LED_STATUS_GPIO=21
+
+# Status LED: breathe while looking for a network, off when idle, on when
+# audio is playing.
+CONFIG_LED_STATUS_SEARCHING_BREATHE=y
+CONFIG_LED_STATUS_PAUSED_OFF=y
+CONFIG_LED_STATUS_STANDBY_OFF=y
+CONFIG_LED_STATUS_PLAYING_STEADY=y
+
+# ESP-IDF also auto-applies "<file>.<target>" for every SDKCONFIG_DEFAULTS
+# entry, so sdkconfig.defaults drags in sdkconfig.defaults.esp32s3 (tuned for
+# the ESP32-S3-DevKitC-1) even though it is not listed. These three must be
+# cleared explicitly or DevKitC pins leak in on GPIOs the XIAO does not route.
+CONFIG_I2S_GND_IO=-1
+CONFIG_LED_RGB_GPIO=-1
+CONFIG_BAT_CHANNEL=-1
+
+# No CONFIG_DAC_* driver: the PCM5102A has no control bus, so volume is
+# applied in software by audio_output.c.

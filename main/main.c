@@ -24,6 +24,10 @@
 #include "rtsp_events.h"
 #endif
 
+#ifdef CONFIG_AUDIO_INPUT_USB_DAC
+#include "usb_dac_input.h"
+#endif
+
 #ifdef CONFIG_DAC_TAS57XX
 #include "dac_tas57xx.h"
 #endif
@@ -65,6 +69,9 @@ static void start_airplay_services(void) {
     ESP_ERROR_CHECK(hap_init());
     ESP_ERROR_CHECK(audio_receiver_init());
     ESP_ERROR_CHECK(audio_output_init());
+#ifdef CONFIG_AUDIO_INPUT_USB_DAC
+    ESP_ERROR_CHECK(usb_dac_input_init());
+#endif
     mdns_airplay_init();
     s_airplay_infrastructure_ready = true;
   }

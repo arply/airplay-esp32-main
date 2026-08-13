@@ -208,6 +208,33 @@ menu "Airplay ESP Configuration"
                 when needed.
     endchoice
 
+    config AUDIO_INPUT_USB_DAC
+        bool "Also act as a USB audio DAC (alternate input source)"
+        depends on AUDIO_OUTPUT_I2S
+        depends on IDF_TARGET_ESP32S3 || IDF_TARGET_ESP32S2 || IDF_TARGET_ESP32P4
+        select USB_DEVICE_UAC_AS_PART
+        help
+            In addition to the normal AirPlay/I2S path, expose arply as a
+            USB Audio Class 2.0 speaker. When a connected computer plays
+            audio to arply over USB, that audio automatically takes over
+            the I2S/DAC output; AirPlay resumes automatically once the USB
+            stream stops. Detection is automatic — no button or setting
+            needed to switch between the two.
+
+            This requires a custom composite USB descriptor (UAC speaker +
+            CDC serial), which takes over the same USB PHY the fixed
+            USB Serial/JTAG console normally uses. The console is not
+            lost — it moves to a CDC serial port over the same cable —
+            but this is a different USB personality than the plain
+            console, so re-flashing still needs the usual BOOT+RESET
+            download-mode sequence (this is a ROM-level mechanism,
+            unaffected by which application USB stack was last flashed).
+
+            Requires a chip with USB OTG support. The UAC sample rate
+            (Component config -> USB Device UAC -> Sample rate) must match
+            the Output sample rate below, and "UAC Speaker channel number"
+            / "UAC Mic channel number" should be set to 2 / 0.
+
     choice OUTPUT_SAMPLE_RATE
         prompt "Output sample rate"
         default OUTPUT_SAMPLE_RATE_44100

@@ -9,9 +9,13 @@
  * the I2S/DAC output; AirPlay resumes automatically once the USB
  * stream stops (or the cable is unplugged).
  *
- * Also brings up a CDC-ACM serial port and redirects the console to
- * it, since the custom TinyUSB stack this requires takes over the same
- * USB PHY the fixed-function USB Serial/JTAG console normally uses.
+ * Also brings up a CDC-ACM port as part of the composite USB descriptor
+ * (the custom TinyUSB stack this requires takes over the same USB PHY
+ * the fixed-function USB Serial/JTAG console normally uses, so that
+ * console is unavailable regardless). Console logs are not routed to
+ * it — the web UI's own log streaming (main/network/log_stream.c)
+ * already covers that and, unlike a CDC redirect, doesn't fight it for
+ * the single global esp_log_set_vprintf() hook.
  *
  * Only meaningful when CONFIG_AUDIO_INPUT_USB_DAC is enabled — the I2S
  * output backend (audio_output.c) must be the active audio_output_*

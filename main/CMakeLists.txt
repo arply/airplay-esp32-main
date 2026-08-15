@@ -55,15 +55,20 @@ else()
 endif()
 
 # USB-DAC alternate input source (composite UAC speaker + CDC console).
-# CONFIG_AUDIO_INPUT_USB_DAC selects CONFIG_USB_DEVICE_UAC_AS_PART, which
-# makes usb_device_uac leave its own tusb_config.h/usb_descriptors.c
-# unbuilt, expecting the project to supply them (see main/usb/). That also
-# means the include paths it would normally add to the tinyusb component
-# have to be added here instead — same mechanism, just triggered by our
-# config instead of "not AS_PART".
-if(CONFIG_AUDIO_INPUT_USB_DAC)
-    list(APPEND SRC_FILES "audio/usb_dac_input.c" "usb/usb_descriptors.c")
-endif()
+#
+# usb_dac_input.c and usb_descriptors.c both need CFG_TUSB_MCU and
+# tinyusb's own private FreeRTOS glue include path (freertos/FreeRTOS.h
+# resolved via CFG_TUSB_OS_INC_PATH), neither of which PRIV_REQUIRES makes
+# visible: ESP-IDF's REQUIRES/PRIV_REQUIRES only propagate a required
+# component's *public include dirs*, not its target_compile_options() or
+# private include dirs. tinyusb sets CFG_TUSB_MCU on itself via
+# target_compile_options(... PUBLIC ...), which only reaches its own
+# sources — not ours, even as a "requiring" component. usb_device_uac's
+# own CMakeLists.txt hits the same wall for its (AS_PART-only) reference
+# usb_descriptors.c and works around it the same way: attach the sources
+# directly to the tinyusb component's target below via target_sources(),
+# so they compile as tinyusb's own sources and inherit its flags for real.
+# They are deliberately NOT added to SRC_FILES/DEPS here.
 
 # Bluetooth A2DP sink (only available on ESP32 with Classic BT)
 if(CONFIG_BT_A2DP_ENABLE)
@@ -124,9 +129,12 @@ set( DEPS
     list(APPEND DEPS esp_eth)
 #endif()
 
-# USB-DAC input needs direct TinyUSB header access (tud_cdc_*, the
-# tud_*_cb lifecycle callbacks) that the existing AUDIO_OUTPUT_USB variant
-# never required.
+# usb_device_uac and tinyusb are pulled into the build unconditionally via
+# main/idf_component.yml (target-gated, not CONFIG_AUDIO_INPUT_USB_DAC-gated),
+# so they're resolvable below regardless of whether main itself REQUIRES
+# them — and main no longer needs to: usb_dac_input.c/usb_descriptors.c are
+# compiled as tinyusb's own sources (see below), and main.c only sees
+# usb_dac_input.h, which is tinyusb-free.
 if(CONFIG_AUDIO_INPUT_USB_DAC)
     idf_build_get_property(build_components BUILD_COMPONENTS)
     if(tinyusb IN_LIST build_components)
@@ -134,7 +142,11 @@ if(CONFIG_AUDIO_INPUT_USB_DAC)
     else()
         set(usb_dac_tusb_name espressif__tinyusb)
     endif()
-    list(APPEND DEPS usb_device_uac ${usb_dac_tusb_name})
+    if(usb_device_uac IN_LIST build_components)
+        set(usb_dac_uac_name usb_device_uac)
+    else()
+        set(usb_dac_uac_name espressif__usb_device_uac)
+    endif()
 endif()
 
 idf_component_register(
@@ -151,11 +163,37 @@ idf_component_register(
 # Restore that here, the same way its own CMakeLists.txt does it, so both
 # usb_device_uac.c and this project's own USB sources can still reach
 # those headers.
+#
+# usb_dac_input.c and usb_descriptors.c are attached directly to tinyusb's
+# own target (target_sources), not main's — see the comment above SRC_FILES
+# for why. They still need main's own headers (audio_output.h, live in
+# main/audio/, resolved via quote-include relative to usb_dac_input.c
+# itself; playback_control.h/led.h live at main/ root and rtsp_events.h in
+# main/rtsp/ need it added explicitly), so that's added here as a private
+# include dir on tinyusb.
 if(CONFIG_AUDIO_INPUT_USB_DAC)
     idf_component_get_property(usb_dac_tusb_lib ${usb_dac_tusb_name} COMPONENT_LIB)
-    idf_component_get_property(usb_dac_uac_dir usb_device_uac COMPONENT_DIR)
+    idf_component_get_property(usb_dac_uac_dir ${usb_dac_uac_name} COMPONENT_DIR)
+    # esp_timer.h / freertos/ringbuf.h: tinyusb itself only REQUIRES
+    # freertos, so its own public include path doesn't carry these along —
+    # usb_dac_input.c needs esp_timer directly (esp_timer_get_time() for the
+    # idle-timeout check) and esp_ringbuf for its ring buffer, so add both
+    # here the same way as the other headers this file wouldn't otherwise see.
+    idf_component_get_property(usb_dac_esp_timer_dir esp_timer COMPONENT_DIR)
+    idf_component_get_property(usb_dac_esp_ringbuf_dir esp_ringbuf COMPONENT_DIR)
     target_include_directories(${usb_dac_tusb_lib} PUBLIC
         "${CMAKE_CURRENT_SOURCE_DIR}/usb"
         "${usb_dac_uac_dir}/tusb_uac"
+        "${usb_dac_uac_dir}/include"
+    )
+    target_include_directories(${usb_dac_tusb_lib} PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/rtsp"
+        "${usb_dac_esp_timer_dir}/include"
+        "${usb_dac_esp_ringbuf_dir}/include"
+    )
+    target_sources(${usb_dac_tusb_lib} PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/audio/usb_dac_input.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/usb/usb_descriptors.c"
     )
 endif()

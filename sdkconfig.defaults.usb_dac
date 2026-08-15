@@ -18,11 +18,16 @@ CONFIG_UAC_MIC_CHANNEL_NUM=0
 CONFIG_UAC_SAMPLE_RATE=48000
 CONFIG_OUTPUT_SAMPLE_RATE_48000=y
 
-# NOTE: the vendored usb_device_uac component's own README states it
-# "cannot be compatible with both Windows and Linux simultaneously" — if
-# you need macOS support specifically, also set CONFIG_UAC_SUPPORT_MACOS=y
-# (not enabled here, since that's a tradeoff only you can make for your
-# actual target hosts).
+# The vendored usb_device_uac component's own README states it "cannot be
+# compatible with both Windows and Linux simultaneously" as macOS support —
+# without this, macOS's Core Audio gets malformed 16.16 feedback-endpoint
+# values (full-speed devices need 10.14) and under-drives the isochronous
+# OUT stream, which is audible as continuous, severe stutter (confirmed:
+# ~50% of the expected byte rate arriving at usb_output_cb when testing
+# from macOS with this off). Enabled here since macOS is this project's
+# primary target host; flip back off (and see the component's own README)
+# if Windows/Linux hosts matter more for your setup.
+CONFIG_UAC_SUPPORT_MACOS=y
 
 # The fixed USB Serial/JTAG peripheral and the custom TinyUSB stack this
 # feature needs share the same physical USB PHY/pins on the ESP32-S3 and

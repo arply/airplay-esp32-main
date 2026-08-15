@@ -55,8 +55,13 @@ tusb_desc_device_t const desc_device = {
     .bDeviceProtocol = MISC_PROTOCOL_IAD,
     .bMaxPacketSize0 = CFG_TUD_ENDPOINT0_SIZE,
 
-    .idVendor = CONFIG_UAC_TUSB_VID,
-    .idProduct = CONFIG_UAC_TUSB_PID,
+    // CONFIG_UAC_TUSB_VID/PID (usb_device_uac's own Kconfig) only exist
+    // when !USB_DEVICE_UAC_AS_PART, which this build isn't — literal here
+    // for the same reason the string descriptors below are, and matching
+    // usb_device_uac's own defaults (shared Espressif VID; no unique PID
+    // registered for this project).
+    .idVendor = 0x303A,
+    .idProduct = 0x8000,
     .bcdDevice = 0x0100,
 
     .iManufacturer = 0x01,
@@ -85,11 +90,84 @@ uint8_t const desc_configuration[] = {
     TUD_CDC_DESCRIPTOR(ITF_NUM_CDC, 4, EPNUM_CDC_NOTIF, 8, EPNUM_CDC_OUT,
                        EPNUM_CDC_IN, 64),
 
-    // UAC speaker: control interface number, string index, EP out, EP in
-    // (unused in the speaker-only build — TUD_AUDIO_DESCRIPTOR ignores it),
-    // feedback EP
-    TUD_AUDIO_DESCRIPTOR(ITF_NUM_AUDIO_CONTROL, 5, EPNUM_AUDIO_OUT, 0,
-                        EPNUM_AUDIO_FB),
+    // UAC speaker, inlined from uac_descriptors.h's own
+    // TUD_AUDIO_SPEAK_DESCRIPTOR(ITF_NUM_AUDIO_CONTROL, 5, EPNUM_AUDIO_OUT,
+    // EPNUM_AUDIO_FB) with one change: that macro hardcodes the IAD's own
+    // string index to 0x00 (no string), which is what macOS actually reads
+    // to name this composite USB audio function — with no string there, it
+    // falls back to showing the raw driver class name ("IOUSBHostInterface")
+    // instead of a friendly device name. Point it at string index 6 instead.
+    /* Standard Interface Association Descriptor (IAD) */
+    TUD_AUDIO_DESC_IAD(/*_firstitfs*/ ITF_NUM_AUDIO_CONTROL,
+                       /*_nitfs*/ NUM_INTERFACES, /*_stridx*/ 6),
+    /* Standard AC Interface Descriptor(4.7.1) */
+    TUD_AUDIO_DESC_STD_AC(/*_itfnum*/ ITF_NUM_AUDIO_CONTROL, /*_nEPs*/ 0x00,
+                          /*_stridx*/ 5),
+    /* Class-Specific AC Interface Header Descriptor(4.7.2) */
+    TUD_AUDIO_DESC_CS_AC(/*_bcdADC*/ 0x0200,
+                         /*_category*/ AUDIO_FUNC_DESKTOP_SPEAKER,
+                         /*_totallen*/ TUD_AUDIO_DESC_CS_AC_TOTAL_LEN,
+                         /*_ctrl*/ AUDIO_CS_AS_INTERFACE_CTRL_LATENCY_POS),
+    /* Clock Source Descriptor(4.7.2.1) */
+    TUD_AUDIO_DESC_CLK_SRC(/*_clkid*/ UAC2_ENTITY_CLOCK, /*_attr*/ 3,
+                          /*_ctrl*/ 7, /*_assocTerm*/ 0x00, /*_stridx*/ 0x00),
+    /* Input Terminal Descriptor(4.7.2.4) */
+    TUD_AUDIO_DESC_INPUT_TERM(
+        /*_termid*/ UAC2_ENTITY_SPK_INPUT_TERMINAL,
+        /*_termtype*/ AUDIO_TERM_TYPE_USB_STREAMING, /*_assocTerm*/ 0x00,
+        /*_clkid*/ UAC2_ENTITY_CLOCK, /*_nchannelslogical*/ SPEAK_CHANNEL_NUM,
+        /*_channelcfg*/ AUDIO_CHANNEL_CONFIG_NON_PREDEFINED,
+        /*_idxchannelnames*/ 0x00,
+        /*_ctrl*/ (AUDIO_CTRL_R << AUDIO_IN_TERM_CTRL_CONNECTOR_POS),
+        /*_stridx*/ 0x00),
+    /* Feature Unit Descriptor(4.7.2.8) */
+    TUD_AUDIO_DESC_FEATURE_UNIT_N_CHANNEL(
+        /*_length*/ TUD_AUDIO_DESC_SPK_FEATURE_UNIT_N_CHANNEL_LEN,
+        /*_unitid*/ UAC2_ENTITY_SPK_FEATURE_UNIT,
+        /*_srcid*/ UAC2_ENTITY_SPK_INPUT_TERMINAL, /*_stridx*/ 0x00,
+        INPUT_CTRL),
+    /* Output Terminal Descriptor(4.7.2.5) */
+    TUD_AUDIO_DESC_OUTPUT_TERM(
+        /*_termid*/ UAC2_ENTITY_SPK_OUTPUT_TERMINAL,
+        /*_termtype*/ AUDIO_TERM_TYPE_OUT_GENERIC_SPEAKER,
+        /*_assocTerm*/ 0x00, /*_srcid*/ UAC2_ENTITY_SPK_FEATURE_UNIT,
+        /*_clkid*/ UAC2_ENTITY_CLOCK, /*_ctrl*/ 0x0000, /*_stridx*/ 0x00),
+    /* Interface 1, Alternate 0 - default alternate setting, 0 bandwidth */
+    TUD_AUDIO_DESC_STD_AS_INT(/*_itfnum*/ ITF_NUM_AUDIO_CONTROL + 1,
+                              /*_altset*/ 0x00, /*_nEPs*/ 0x00,
+                              /*_stridx*/ 6),
+    /* Interface 1, Alternate 1 - alternate interface for data streaming */
+    TUD_AUDIO_DESC_STD_AS_INT(/*_itfnum*/ ITF_NUM_AUDIO_CONTROL + 1,
+                              /*_altset*/ 0x01, /*_nEPs*/ 0x02,
+                              /*_stridx*/ 6),
+    /* Class-Specific AS Interface Descriptor(4.9.2) */
+    TUD_AUDIO_DESC_CS_AS_INT(
+        /*_termid*/ UAC2_ENTITY_SPK_INPUT_TERMINAL, /*_ctrl*/ AUDIO_CTRL_NONE,
+        /*_formattype*/ AUDIO_FORMAT_TYPE_I,
+        /*_formats*/ AUDIO_DATA_FORMAT_TYPE_I_PCM,
+        /*_nchannelsphysical*/ SPEAK_CHANNEL_NUM,
+        /*_channelcfg*/ AUDIO_CHANNEL_CONFIG_NON_PREDEFINED,
+        /*_stridx*/ 0x00),
+    /* Type I Format Type Descriptor(2.3.1.6 - Audio Formats) */
+    TUD_AUDIO_DESC_TYPE_I_FORMAT(
+        CFG_TUD_AUDIO_FUNC_1_FORMAT_1_N_BYTES_PER_SAMPLE_RX,
+        CFG_TUD_AUDIO_FUNC_1_FORMAT_1_RESOLUTION_RX),
+    /* Standard AS Isochronous Audio Data Endpoint Descriptor(4.10.1.1) */
+    TUD_AUDIO_DESC_STD_AS_ISO_EP(
+        /*_ep*/ EPNUM_AUDIO_OUT,
+        /*_attr*/ (TUSB_XFER_ISOCHRONOUS | TUSB_ISO_EP_ATT_ASYNCHRONOUS |
+                   TUSB_ISO_EP_ATT_DATA),
+        /*_maxEPsize*/ CFG_TUD_AUDIO_FUNC_1_FORMAT_1_EP_SZ_OUT,
+        /*_interval*/ 1),
+    /* Class-Specific AS Isochronous Audio Data Endpoint Descriptor(4.10.1.2) */
+    TUD_AUDIO_DESC_CS_AS_ISO_EP(
+        /*_attr*/ AUDIO_CS_AS_ISO_DATA_EP_ATT_NON_MAX_PACKETS_OK,
+        /*_ctrl*/ AUDIO_CTRL_NONE,
+        /*_lockdelayunit*/ AUDIO_CS_AS_ISO_DATA_EP_LOCK_DELAY_UNIT_MILLISEC,
+        /*_lockdelay*/ 0x0001),
+    /* Standard AS Isochronous Audio Data Endpoint Descriptor(4.10.1.1) */
+    TUD_AUDIO_DESC_STD_AS_ISO_FB_EP(/*_ep*/ EPNUM_AUDIO_FB, /*_epsize*/ 4,
+                                    /*_interval*/ 1),
 };
 
 uint8_t const *tud_descriptor_configuration_cb(uint8_t index) {
@@ -102,12 +180,15 @@ uint8_t const *tud_descriptor_configuration_cb(uint8_t index) {
 //--------------------------------------------------------------------+
 char const *string_desc_arr[] = {
     (const char[]){0x09, 0x04}, // 0: English (0x0409)
-    CONFIG_UAC_TUSB_MANUFACTURER, // 1
-    CONFIG_UAC_TUSB_PRODUCT,      // 2
-    CONFIG_UAC_TUSB_SERIAL_NUM,   // 3
+    "arply",                      // 1: manufacturer
+    "arply USB-DAC",              // 2: product
+    "1",                          // 3: serial number
     "arply console",              // 4: CDC interface
-    "arply audio",                // 5: UAC control interface (streaming
-                                   //    interface uses index 6, i.e. +1)
+    "arply audio",                // 5: UAC control interface
+    "Arply USB DAC",              // 6: IAD (the audio function's name, and
+                                   //    what macOS shows in Sound/Audio MIDI
+                                   //    Setup instead of "IOUSBHostInterface")
+                                   //    + the streaming interface, reusing it
 };
 
 static uint16_t _desc_str[32];

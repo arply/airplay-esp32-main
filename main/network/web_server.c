@@ -217,6 +217,23 @@ static esp_err_t captive_windows_handler(httpd_req_t *req) {
   return captive_portal_redirect(req);
 }
 
+// Catch-all for any URI not matched by a more specific handler above. Windows
+// NCSI, once it decides a captive portal is present via /connecttest.txt,
+// opens its sign-in browser against http://www.msftconnecttest.com/redirect
+// — a path we'd otherwise 404 on, which is why that browser was landing on
+// an error page instead of the setup UI. Registered last so it only catches
+// requests nothing else claimed; only redirects while the AP is actually up,
+// so a stray 404 in normal (STA-only) operation still behaves like a 404.
+static esp_err_t captive_catchall_handler(httpd_req_t *req) {
+  wifi_mode_t mode;
+  if (esp_wifi_get_mode(&mode) == ESP_OK &&
+      (mode == WIFI_MODE_AP || mode == WIFI_MODE_APSTA)) {
+    return captive_portal_redirect(req);
+  }
+  httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "Not found");
+  return ESP_OK;
+}
+
 static esp_err_t wifi_scan_handler(httpd_req_t *req) {
   wifi_ap_record_t *ap_list = NULL;
   uint16_t ap_count = 0;
@@ -1279,6 +1296,7 @@ esp_err_t web_server_start(uint16_t port) {
 #endif
   config.max_resp_headers = 8;
   config.stack_size = 8192;
+  config.uri_match_fn = httpd_uri_match_wildcard;
 
   esp_err_t err = httpd_start(&s_server, &config);
   if (err != ESP_OK) {
@@ -1458,6 +1476,12 @@ esp_err_t web_server_start(uint16_t port) {
 #endif
 
   log_stream_register(s_server);
+
+  // Must be registered last: with wildcard matching enabled, this only
+  // catches requests no more specific handler above already claimed.
+  httpd_uri_t captive_catchall = {
+      .uri = "/*", .method = HTTP_GET, .handler = captive_catchall_handler};
+  httpd_register_uri_handler(s_server, &captive_catchall);
 
   ESP_LOGI(TAG, "Web server started on port %d with captive portal support",
            port);

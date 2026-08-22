@@ -25,6 +25,5 @@ include(cmake/fix_usb_device_uac_platformio.cmake)
 # Build a SPIFFS image from data/ and flash it alongside the firmware.
 # Partition label "storage" matches partitions.csv. Used by:
 #   - components/dac_tas57xx/ (HybridFlow DAC firmware)
-#   - components/display/     (ST7789 background image)
 # Flash firmware + SPIFFS together with: idf.py build flash
 spiffs_create_partition_image(storage "${CMAKE_SOURCE_DIR}/data" FLASH_IN_PROJECT)

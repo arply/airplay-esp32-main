@@ -152,21 +152,21 @@ menu "Board Configuration"
                 default 18
                 depends on ETH_W5500_ENABLED
                 help
-                    SPI bus clock GPIO (shared with display).
+                    SPI bus clock GPIO.
 
             config SPI_MOSI_GPIO
                 int "SPI MOSI GPIO"
                 default 23
                 depends on ETH_W5500_ENABLED
                 help
-                    SPI bus MOSI GPIO (shared with display).
+                    SPI bus MOSI GPIO.
 
             config SPI_MISO_GPIO
                 int "SPI MISO GPIO"
                 default 19
                 depends on ETH_W5500_ENABLED
                 help
-                    SPI bus MISO GPIO (shared with display).
+                    SPI bus MISO GPIO.
 
             config ETH_W5500_CS_GPIO
                 int "W5500 Chip Select GPIO"

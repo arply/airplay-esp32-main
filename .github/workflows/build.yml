@@ -16,8 +16,6 @@ jobs:
             sdkconfig: "sdkconfig.defaults;sdkconfig.defaults.arply_v1"
     steps:
       - uses: actions/checkout@v6
-        with:
-          submodules: "recursive"
 
       - name: Build ${{ matrix.name }}
         uses: espressif/esp-idf-ci-action@v1

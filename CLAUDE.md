@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-ARPLY — AirPlay 2 receiver firmware for the Seeed XIAO ESP32-S3 with a PCM5102A I2S DAC. Supports ALAC and AAC decoding, optional OLED/TFT displays, hardware buttons, and OTA updates. Single board target: `arply_v1`.
+ARPLY — AirPlay 2 receiver firmware for the Seeed XIAO ESP32-S3 with a PCM5102A I2S DAC. Supports ALAC and AAC decoding, hardware buttons, and OTA updates. Single board target: `arply_v1`.
 
 Stripped-down fork of rbouteiller/airplay-esp32; SqueezeAMP, Esparagus, TAS57xx/TAS58xx, Bluetooth A2DP and W5500 Ethernet support has been removed.
 
@@ -88,10 +88,6 @@ main/
 components/
 ├── dac/                    # Abstract DAC API (Kconfig-selected implementation)
 │   └── dac.c               # Dispatch layer → TAS57xx or TAS58xx driver
-├── display/                # Display drivers
-│   ├── display.c           # Common display API
-│   ├── display_st7789.c    # ST7789 TFT with LVGL 9 rendering (ESP32-S3)
-│   └── display_stub.c      # No-op stub when display disabled
 ├── boards/                 # Board support (HAL)
 │   ├── board_common.c      # Shared board utilities
 │   └── arply-v1/          # ARPLY v1 board init (pins, XSMT mute from RTSP events)
@@ -102,9 +98,8 @@ components/
 
 ## Key Conventions
 
-- **CMake/Kconfig**: The board is selected via `CONFIG_BOARD_ARPLY_V1`; `CONFIG_BOARD_TARGET_PATH` names the directory under `components/boards/` that gets compiled. No `CONFIG_DAC_*` driver is set — the PCM5102A has no control bus, so `components/dac/` degrades to no-ops and volume is applied in software. Display and buttons remain Kconfig-gated and are off.
+- **CMake/Kconfig**: The board is selected via `CONFIG_BOARD_ARPLY_V1`; `CONFIG_BOARD_TARGET_PATH` names the directory under `components/boards/` that gets compiled. No `CONFIG_DAC_*` driver is set — the PCM5102A has no control bus, so `components/dac/` degrades to no-ops and volume is applied in software. Buttons remain Kconfig-gated and are off.
 - **Component structure**: Each component has its own `CMakeLists.txt` with `idf_component_register()`.
-- **Git submodules**: `u8g2` (OLED graphics) is a submodule — clone with `--recursive`, or the build fails at dependency resolution because `u8g2-hal-esp-idf` requires it.
 - **SPIFFS**: `data/` contents are flashed to SPIFFS by `-t uploadfs`, which `-t upload` does **not** do. `data/www/` holds the web UI (index, logs, speedtest, eq).
 - **Audio pipeline**: AudioReceiver (rtsp) → decoder → AudioBuffer → AudioOutput (I2S/SPDIF/USB). Buffered streams (AAC) use deep jitter buffer; realtime streams (ALAC) use low-latency UDP with early/late timing thresholds.
 - **Status LED**: One full breath at boot, breathing while searching for a network, off when idle, steady on when playing. Driven by a dedicated task in `main/led.c` — not a FreeRTOS timer, whose small stack overflows on the end-of-cycle handover.
@@ -120,14 +115,14 @@ components/
 **Pre-commit hook**: auto-formats staged C/H files with clang-format, runs clang-tidy (requires `build/compile_commands.json`). Install via `git config core.hooksPath .githooks`.
 
 **CI** (`.github/workflows/ci-release.yml`): On push/PR to `main`:
-- `format-check`: clang-format dry-run on all C/H files (excludes `components/u8g2`)
+- `format-check`: clang-format dry-run on all C/H files
 - `lint-check`: clang-tidy on build output (requires ESP-IDF v5.5 toolchain)
 - `build`: compiles the `arply_v1` target
 - `release`: auto-creates GitHub release with merged firmware bins (only on push)
 
 **Local tooling** (in `scripts/`):
 ```bash
-scripts/format.sh          # Format all C/H files (excludes u8g2 submodule)
+scripts/format.sh          # Format all C/H files
 scripts/lint.sh            # Run clang-tidy on all C/H files
 scripts/lint.sh --fix      # Attempt to auto-fix clang-tidy issues
 ```

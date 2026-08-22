@@ -2,7 +2,6 @@
 #include "audio_receiver.h"
 #include "buttons.h"
 #include "spiram_task.h"
-#include "display.h"
 #include "dns_server.h"
 #include "ethernet.h"
 #include "led.h"
@@ -276,25 +275,12 @@ void app_main(void) {
   ESP_ERROR_CHECK(playback_control_init());
   led_init();
 
-  // Initialize board-specific hardware (includes I2C/SPI bus for display and
-  // DAC)
+  // Initialize board-specific hardware (includes I2C/SPI bus for DAC)
   ESP_LOGI(TAG, "Board: %s", iot_board_get_info());
   esp_err_t err = iot_board_init();
   if (err != ESP_OK) {
     ESP_LOGE(TAG, "Board init failed: %s", esp_err_to_name(err));
   }
-
-  // Pass the board-owned bus to the display so it reuses it rather than
-  // creating a duplicate bus on the same pins.
-#if defined(CONFIG_DISPLAY_BUS_SPI)
-  display_init(iot_board_get_handle(BOARD_SPI_DISP_ID));
-#else
-  display_init(iot_board_get_handle(BOARD_I2C_DISP_ID));
-#endif
-
-  // Initialize LVGL-dependent board resources (e.g., touch input) after
-  // display/LVGL port is ready.
-  iot_board_init_lvgl_resources();
 
   // Try ethernet first
   bool eth_available = false;

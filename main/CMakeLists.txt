@@ -113,7 +113,6 @@ set( DEPS
     dac
     dac_tas58xx
     dac_tas57xx
-    display
     audio-resampler
     esp_eth
     spiffs_storage

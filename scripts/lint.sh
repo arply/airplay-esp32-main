@@ -14,9 +14,6 @@ PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 
 cd "$PROJECT_DIR"
 
-# Submodule and vendored paths to exclude
-SUBMODULES="components/u8g2 components/u8g2-hal-esp-idf"
-
 export PATH="$(brew --prefix llvm)/bin:$PATH"
 
 # Ensure clang-tidy is available (install via brew if needed)
@@ -37,14 +34,8 @@ if [ ! -f build/compile_commands.json ]; then
   exit 1
 fi
 
-# Build exclusion args for find
-EXCLUDE_ARGS=()
-for sm in $SUBMODULES; do
-  EXCLUDE_ARGS+=(-path "$sm" -prune -o)
-done
-
-# Find all C source files in main/ and components/, excluding submodules
-SOURCES=$(find main components "${EXCLUDE_ARGS[@]}" \( -name "*.c" -o -name "*.h" \) -print)
+# Find all C source files in main/ and components/
+SOURCES=$(find main components \( -name "*.c" -o -name "*.h" \) -print)
 
 echo "=== Running clang-tidy ==="
 WARNINGS=0

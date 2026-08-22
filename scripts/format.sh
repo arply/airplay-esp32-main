@@ -74,7 +74,7 @@ if [[ "$MODE" == "check" ]]; then
   FORMAT_ARGS=(--dry-run --Werror)
 fi
 
-find main components -path components/u8g2 -prune -o \( -name "*.c" -o -name "*.h" \) -print0 \
+find main components \( -name "*.c" -o -name "*.h" \) -print0 \
   | xargs -0 "$CLANG_FORMAT_BIN" "${FORMAT_ARGS[@]}"
 
 if [[ "$MODE" == "check" ]]; then

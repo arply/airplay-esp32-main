@@ -86,6 +86,14 @@ input:focus,select:focus{
   outline:none;border-color:var(--accent);
   box-shadow:0 0 0 3.5px rgba(0,113,227,.15);
 }
+.pass-wrap{position:relative}
+.pass-wrap input{padding-right:54px}
+.pass-toggle{
+  position:absolute;top:0;right:0;bottom:0;
+  padding:0 14px;background:none;border:none;
+  font-size:13px;font-weight:500;color:var(--accent);
+  cursor:pointer;
+}
 select{
   appearance:none;-webkit-appearance:none;cursor:pointer;
   background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8' fill='none' stroke='%236e6e73' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M1 1.5 6 6.5 11 1.5'/%3E%3C/svg%3E");
@@ -185,7 +193,12 @@ select{
 <button class='btn btn-secondary' onclick='scanWiFi()'>Scan Networks</button>
 <div id='wifi-list' class='wifi-list'></div>
 <div class='form-group'><label>Network Name (SSID)</label><input type='text' id='wifi-ssid' placeholder='Enter or select network' autocapitalize='none' autocorrect='off' spellcheck='false'></div>
-<div class='form-group'><label>Password</label><input type='password' id='wifi-pass' placeholder='Enter password'></div>
+<div class='form-group'><label>Password</label>
+<div class='pass-wrap'>
+<input type='password' id='wifi-pass' name='password' placeholder='Enter password' autocomplete='current-password' autocapitalize='none' autocorrect='off' spellcheck='false'>
+<button type='button' class='pass-toggle' id='wifi-pass-toggle' onclick='togglePass()' aria-label='Show password'>Show</button>
+</div>
+</div>
 <button class='btn btn-primary btn-block' onclick='saveWiFi()'>Connect to Wi-Fi</button>
 <div id='wifi-msg'></div></div>
 
@@ -253,6 +266,10 @@ select{
 </div>
 <script>
 function msg(id,txt,type){var e=document.getElementById(id);if(e){e.innerHTML='<div class="msg '+type+'">'+txt+'</div>';setTimeout(function(){e.innerHTML='';},4000);}}
+function togglePass(){
+  var i=document.getElementById('wifi-pass');var b=document.getElementById('wifi-pass-toggle');
+  var shown=i.type==='text';i.type=shown?'password':'text';
+  b.textContent=shown?'Show':'Hide';b.setAttribute('aria-label',shown?'Show password':'Hide password');}
 async function scanWiFi(){
   var l=document.getElementById('wifi-list');l.innerHTML='<div class="msg info">Scanning...</div>';
   try{var r=await fetch('/api/wifi/scan');var d=await r.json();

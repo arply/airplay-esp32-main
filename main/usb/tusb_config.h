@@ -9,8 +9,9 @@
  * though the fixed-function USB Serial/JTAG peripheral is not usable at
  * the same time as this custom TinyUSB stack (same physical USB PHY).
  *
- * Layout mirrors managed_components/espressif__usb_device_uac/tusb/tusb_config.h
- * (the component's own default, UAC-only build) with a CDC interface added.
+ * Layout mirrors
+ * managed_components/espressif__usb_device_uac/tusb/tusb_config.h (the
+ * component's own default, UAC-only build) with a CDC interface added.
  */
 #pragma once
 
@@ -36,7 +37,7 @@ extern "C" {
 #define CONFIG_USB_HS 1
 #else
 #define CFG_TUSB_RHPORT0_MODE (OPT_MODE_DEVICE | OPT_MODE_FULL_SPEED)
-#define CONFIG_USB_HS 0
+#define CONFIG_USB_HS         0
 #endif
 
 //--------------------------------------------------------------------
@@ -61,7 +62,7 @@ extern "C" {
 
 #if TU_CHECK_MCU(OPT_MCU_ESP32S2, OPT_MCU_ESP32S3, OPT_MCU_ESP32P4, \
                  OPT_MCU_ESP32S31, OPT_MCU_ESP32H4)
-#define CFG_TUSB_OS_INC_PATH freertos/
+#define CFG_TUSB_OS_INC_PATH freertos /
 #endif
 
 #define CFG_TUD_ENABLED 1
@@ -84,7 +85,7 @@ extern "C" {
 
 // CDC console (serial log output), in addition to CFG_TUD_AUDIO=1
 // (already defined by tusb_config_uac.h).
-#define CFG_TUD_CDC          1
+#define CFG_TUD_CDC            1
 #define CFG_TUD_CDC_RX_BUFSIZE 256
 #define CFG_TUD_CDC_TX_BUFSIZE 512
 

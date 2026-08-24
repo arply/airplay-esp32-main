@@ -94,9 +94,8 @@ esp_err_t settings_get_wifi_password(char *password, size_t len);
  * @return ESP_OK if at least the list was read (count may be 0),
  *         ESP_ERR_NOT_FOUND if nothing has ever been saved
  */
-esp_err_t
-settings_get_wifi_networks(settings_wifi_network_t networks[SETTINGS_MAX_WIFI_NETWORKS],
-                           int *count);
+esp_err_t settings_get_wifi_networks(
+    settings_wifi_network_t networks[SETTINGS_MAX_WIFI_NETWORKS], int *count);
 
 /**
  * Save WiFi credentials to persistent storage. Moves this network to the

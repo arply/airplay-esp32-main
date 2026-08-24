@@ -110,7 +110,7 @@ uint8_t const desc_configuration[] = {
                          /*_ctrl*/ AUDIO_CS_AS_INTERFACE_CTRL_LATENCY_POS),
     /* Clock Source Descriptor(4.7.2.1) */
     TUD_AUDIO_DESC_CLK_SRC(/*_clkid*/ UAC2_ENTITY_CLOCK, /*_attr*/ 3,
-                          /*_ctrl*/ 7, /*_assocTerm*/ 0x00, /*_stridx*/ 0x00),
+                           /*_ctrl*/ 7, /*_assocTerm*/ 0x00, /*_stridx*/ 0x00),
     /* Input Terminal Descriptor(4.7.2.4) */
     TUD_AUDIO_DESC_INPUT_TERM(
         /*_termid*/ UAC2_ENTITY_SPK_INPUT_TERMINAL,
@@ -155,8 +155,9 @@ uint8_t const desc_configuration[] = {
     /* Standard AS Isochronous Audio Data Endpoint Descriptor(4.10.1.1) */
     TUD_AUDIO_DESC_STD_AS_ISO_EP(
         /*_ep*/ EPNUM_AUDIO_OUT,
-        /*_attr*/ (TUSB_XFER_ISOCHRONOUS | TUSB_ISO_EP_ATT_ASYNCHRONOUS |
-                   TUSB_ISO_EP_ATT_DATA),
+        /*_attr*/
+        (TUSB_XFER_ISOCHRONOUS | TUSB_ISO_EP_ATT_ASYNCHRONOUS |
+         TUSB_ISO_EP_ATT_DATA),
         /*_maxEPsize*/ CFG_TUD_AUDIO_FUNC_1_FORMAT_1_EP_SZ_OUT,
         /*_interval*/ 1),
     /* Class-Specific AS Isochronous Audio Data Endpoint Descriptor(4.10.1.2) */
@@ -180,15 +181,15 @@ uint8_t const *tud_descriptor_configuration_cb(uint8_t index) {
 //--------------------------------------------------------------------+
 char const *string_desc_arr[] = {
     (const char[]){0x09, 0x04}, // 0: English (0x0409)
-    "arply",                      // 1: manufacturer
-    "arply USB-DAC",              // 2: product
-    "1",                          // 3: serial number
-    "arply console",              // 4: CDC interface
-    "arply audio",                // 5: UAC control interface
-    "Arply USB DAC",              // 6: IAD (the audio function's name, and
-                                   //    what macOS shows in Sound/Audio MIDI
-                                   //    Setup instead of "IOUSBHostInterface")
-                                   //    + the streaming interface, reusing it
+    "arply",                    // 1: manufacturer
+    "arply USB-DAC",            // 2: product
+    "1",                        // 3: serial number
+    "arply console",            // 4: CDC interface
+    "arply audio",              // 5: UAC control interface
+    "Arply USB DAC",            // 6: IAD (the audio function's name, and
+                                //    what macOS shows in Sound/Audio MIDI
+                                //    Setup instead of "IOUSBHostInterface")
+                                //    + the streaming interface, reusing it
 };
 
 static uint16_t _desc_str[32];

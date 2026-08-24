@@ -12,8 +12,9 @@ static const char *TAG = "settings";
 #ifdef CONFIG_BT_A2DP_ENABLE
 #define NVS_KEY_BT_VOLUME "bt_vol"
 #endif
-#define NVS_KEY_WIFI_SSID      "wifi_ssid" // legacy single-slot, migrated on init
-#define NVS_KEY_WIFI_PASSWORD  "wifi_pass" // legacy single-slot, migrated on init
+#define NVS_KEY_WIFI_SSID "wifi_ssid" // legacy single-slot, migrated on init
+#define NVS_KEY_WIFI_PASSWORD \
+  "wifi_pass" // legacy single-slot, migrated on init
 #define NVS_KEY_WIFI_NETWORKS  "wifi_nets"
 #define NVS_KEY_DEVICE_NAME    "device_name"
 #define NVS_KEY_EQ_GAINS       "eq_gains"
@@ -250,9 +251,8 @@ esp_err_t settings_persist_bt_volume(void) {
 }
 #endif
 
-esp_err_t
-settings_get_wifi_networks(settings_wifi_network_t networks[SETTINGS_MAX_WIFI_NETWORKS],
-                           int *count) {
+esp_err_t settings_get_wifi_networks(
+    settings_wifi_network_t networks[SETTINGS_MAX_WIFI_NETWORKS], int *count) {
   if (!networks || !count) {
     return ESP_ERR_INVALID_ARG;
   }

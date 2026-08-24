@@ -110,8 +110,9 @@ static esp_err_t usb_output_cb(uint8_t *buf, size_t len, void *cb_ctx) {
     // Expected steady-state: OUTPUT_RATE * 4 bytes/sec (stereo 16-bit) and
     // 1000/CONFIG_UAC_SPK_INTERVAL_MS calls/sec. Big shortfalls on either
     // number point at the USB host side, not our own consumption logic.
-    ESP_LOGI(TAG, "USB rx: %" PRIu32 " bytes, %" PRIu32 " calls in the last "
-                  "~%" PRId64 " ms",
+    ESP_LOGI(TAG,
+             "USB rx: %" PRIu32 " bytes, %" PRIu32 " calls in the last "
+             "~%" PRId64 " ms",
              s_rx_bytes, s_rx_calls,
              (s_last_rx_us - s_last_rate_log_us) / 1000);
     s_rx_bytes = 0;
@@ -199,9 +200,8 @@ static void arbiter_task(void *arg) {
       // receive timeout keeps this responsive to the idle-timeout check
       // above even when the host briefly stops sending.
       size_t item_size = 0;
-      void *data =
-          xRingbufferReceiveUpTo(s_ringbuf, &item_size, pdMS_TO_TICKS(20),
-                                 4096);
+      void *data = xRingbufferReceiveUpTo(s_ringbuf, &item_size,
+                                          pdMS_TO_TICKS(20), 4096);
       if (data && item_size > 0) {
         apply_gain((int16_t *)data, item_size / sizeof(int16_t));
         led_audio_feed((int16_t *)data, item_size / sizeof(int16_t) / 2);
@@ -231,13 +231,19 @@ static void arbiter_task(void *arg) {
 // component only provides these when CONFIG_USB_DEVICE_UAC_AS_PART is
 // unset, so this project's own composite descriptor build must supply
 // them itself.
-void tud_mount_cb(void) { ESP_LOGI(TAG, "USB mounted"); }
-void tud_umount_cb(void) { ESP_LOGI(TAG, "USB unmounted"); }
+void tud_mount_cb(void) {
+  ESP_LOGI(TAG, "USB mounted");
+}
+void tud_umount_cb(void) {
+  ESP_LOGI(TAG, "USB unmounted");
+}
 void tud_suspend_cb(bool remote_wakeup_en) {
   (void)remote_wakeup_en;
   ESP_LOGI(TAG, "USB suspended");
 }
-void tud_resume_cb(void) { ESP_LOGI(TAG, "USB resumed"); }
+void tud_resume_cb(void) {
+  ESP_LOGI(TAG, "USB resumed");
+}
 
 esp_err_t usb_dac_input_init(void) {
   ESP_LOGI(TAG, "Initialising USB DAC input (rate=%d)", OUTPUT_RATE);

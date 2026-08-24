@@ -84,10 +84,15 @@ static void dns_server_task(void *pvParameters) {
       ans[3] = 0x01;
       ans[4] = 0x00; // Class IN
       ans[5] = 0x01;
-      ans[6] = 0x00; // TTL (60 seconds)
+      // TTL=0: every captive-portal domain must be re-resolved on each
+      // lookup, in case a client's resolver already has a stale entry
+      // cached from a previous, real-internet network (which no TTL we
+      // hand out now could have prevented in the first place, but this
+      // at least keeps us from adding to the problem going forward).
+      ans[6] = 0x00;
       ans[7] = 0x00;
       ans[8] = 0x00;
-      ans[9] = 0x3C;
+      ans[9] = 0x00;
       ans[10] = 0x00; // RDLENGTH (4 bytes for IPv4)
       ans[11] = 0x04;
       // IP address (already in network byte order)

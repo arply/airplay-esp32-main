@@ -61,8 +61,18 @@ esp_err_t settings_set_bt_volume(uint8_t volume);
 esp_err_t settings_persist_bt_volume(void);
 #endif
 
+// Known WiFi networks are kept as a most-recently-used (MRU) list so a
+// device that has ever connected to a network stays reconnectable to it,
+// not just to whichever network was configured last.
+#define SETTINGS_MAX_WIFI_NETWORKS 8
+
+typedef struct {
+  char ssid[33];
+  char password[65];
+} settings_wifi_network_t;
+
 /**
- * Get saved WiFi SSID
+ * Get the most-recently-used saved WiFi SSID
  * @param ssid Output buffer for SSID
  * @param len Size of SSID buffer
  * @return ESP_OK if found, ESP_ERR_NOT_FOUND if no saved value
@@ -70,7 +80,7 @@ esp_err_t settings_persist_bt_volume(void);
 esp_err_t settings_get_wifi_ssid(char *ssid, size_t len);
 
 /**
- * Get saved WiFi password
+ * Get the most-recently-used saved WiFi password
  * @param password Output buffer for password
  * @param len Size of password buffer
  * @return ESP_OK if found, ESP_ERR_NOT_FOUND if no saved value
@@ -78,15 +88,36 @@ esp_err_t settings_get_wifi_ssid(char *ssid, size_t len);
 esp_err_t settings_get_wifi_password(char *password, size_t len);
 
 /**
- * Save WiFi credentials to persistent storage
+ * Get all saved WiFi networks, most-recently-used first.
+ * @param networks Output array of SETTINGS_MAX_WIFI_NETWORKS entries
+ * @param count Output: number of valid entries filled in
+ * @return ESP_OK if at least the list was read (count may be 0),
+ *         ESP_ERR_NOT_FOUND if nothing has ever been saved
+ */
+esp_err_t
+settings_get_wifi_networks(settings_wifi_network_t networks[SETTINGS_MAX_WIFI_NETWORKS],
+                           int *count);
+
+/**
+ * Save WiFi credentials to persistent storage. Moves this network to the
+ * front of the known-networks list (creating it if new), evicting the
+ * oldest entry once SETTINGS_MAX_WIFI_NETWORKS is exceeded. Previously
+ * saved networks are kept, not overwritten.
  * @param ssid WiFi SSID
  * @param password WiFi password
  */
 esp_err_t settings_set_wifi_credentials(const char *ssid, const char *password);
 
 /**
- * Check if WiFi credentials are stored
- * @return true if credentials exist, false otherwise
+ * Remove a previously saved WiFi network.
+ * @param ssid WiFi SSID to forget
+ * @return ESP_OK if removed, ESP_ERR_NOT_FOUND if it wasn't saved
+ */
+esp_err_t settings_forget_wifi_network(const char *ssid);
+
+/**
+ * Check if any WiFi credentials are stored
+ * @return true if at least one saved network exists, false otherwise
  */
 bool settings_has_wifi_credentials(void);
 

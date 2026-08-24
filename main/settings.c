@@ -12,8 +12,9 @@ static const char *TAG = "settings";
 #ifdef CONFIG_BT_A2DP_ENABLE
 #define NVS_KEY_BT_VOLUME "bt_vol"
 #endif
-#define NVS_KEY_WIFI_SSID      "wifi_ssid"
-#define NVS_KEY_WIFI_PASSWORD  "wifi_pass"
+#define NVS_KEY_WIFI_SSID      "wifi_ssid" // legacy single-slot, migrated on init
+#define NVS_KEY_WIFI_PASSWORD  "wifi_pass" // legacy single-slot, migrated on init
+#define NVS_KEY_WIFI_NETWORKS  "wifi_nets"
 #define NVS_KEY_DEVICE_NAME    "device_name"
 #define NVS_KEY_EQ_GAINS       "eq_gains"
 #define NVS_KEY_LED_BRIGHTNESS "led_bright"
@@ -42,11 +43,77 @@ static bool g_bt_volume_loaded = false;
 static float g_eq_gains[SETTINGS_EQ_BANDS];
 static bool g_eq_loaded = false;
 
+// Reads the known-networks blob. *count is always set (0 on any failure),
+// even though the NVS lookup itself can fail with ESP_ERR_NVS_NOT_FOUND on
+// a device that has never saved a network.
+static esp_err_t
+wifi_networks_load(nvs_handle_t nvs,
+                   settings_wifi_network_t out[SETTINGS_MAX_WIFI_NETWORKS],
+                   int *count) {
+  memset(out, 0, sizeof(settings_wifi_network_t) * SETTINGS_MAX_WIFI_NETWORKS);
+  *count = 0;
+
+  size_t len = sizeof(settings_wifi_network_t) * SETTINGS_MAX_WIFI_NETWORKS;
+  esp_err_t err = nvs_get_blob(nvs, NVS_KEY_WIFI_NETWORKS, out, &len);
+  if (err != ESP_OK) {
+    return err;
+  }
+
+  int n = 0;
+  while (n < SETTINGS_MAX_WIFI_NETWORKS && out[n].ssid[0] != '\0') {
+    n++;
+  }
+  *count = n;
+  return ESP_OK;
+}
+
+// One-time migration from the old single-slot wifi_ssid/wifi_pass keys to
+// the known-networks list, so devices already in the field don't lose their
+// only saved network when they pick up this firmware.
+static void migrate_legacy_wifi_credentials(nvs_handle_t nvs) {
+  settings_wifi_network_t existing[SETTINGS_MAX_WIFI_NETWORKS];
+  int existing_count = 0;
+  if (wifi_networks_load(nvs, existing, &existing_count) == ESP_OK) {
+    return; // list already present (migrated already, or created fresh)
+  }
+
+  char ssid[MAX_WIFI_SSID_LEN + 1] = {0};
+  size_t ssid_len = sizeof(ssid);
+  if (nvs_get_str(nvs, NVS_KEY_WIFI_SSID, ssid, &ssid_len) != ESP_OK ||
+      strlen(ssid) == 0) {
+    return; // nothing saved to migrate
+  }
+
+  char password[MAX_WIFI_PASSWORD_LEN + 1] = {0};
+  size_t pass_len = sizeof(password);
+  nvs_get_str(nvs, NVS_KEY_WIFI_PASSWORD, password, &pass_len);
+
+  settings_wifi_network_t list[SETTINGS_MAX_WIFI_NETWORKS] = {0};
+  strncpy(list[0].ssid, ssid, sizeof(list[0].ssid) - 1);
+  strncpy(list[0].password, password, sizeof(list[0].password) - 1);
+
+  esp_err_t err = nvs_set_blob(nvs, NVS_KEY_WIFI_NETWORKS, list, sizeof(list));
+  if (err == ESP_OK) {
+    err = nvs_commit(nvs);
+  }
+  if (err == ESP_OK) {
+    nvs_erase_key(nvs, NVS_KEY_WIFI_SSID);
+    nvs_erase_key(nvs, NVS_KEY_WIFI_PASSWORD);
+    nvs_commit(nvs);
+    ESP_LOGI(TAG, "Migrated legacy WiFi credentials to known-network list: %s",
+             ssid);
+  } else {
+    ESP_LOGE(TAG, "Failed to migrate legacy WiFi credentials: %s",
+             esp_err_to_name(err));
+  }
+}
+
 esp_err_t settings_init(void) {
   // Load volume on init
   nvs_handle_t nvs;
-  esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READONLY, &nvs);
+  esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &nvs);
   if (err == ESP_OK) {
+    migrate_legacy_wifi_credentials(nvs);
     int32_t vol_fixed;
     err = nvs_get_i32(nvs, NVS_KEY_VOLUME, &vol_fixed);
     if (err == ESP_OK) {
@@ -183,26 +250,39 @@ esp_err_t settings_persist_bt_volume(void) {
 }
 #endif
 
-esp_err_t settings_get_wifi_ssid(char *ssid, size_t len) {
-  if (!ssid || len == 0) {
+esp_err_t
+settings_get_wifi_networks(settings_wifi_network_t networks[SETTINGS_MAX_WIFI_NETWORKS],
+                           int *count) {
+  if (!networks || !count) {
     return ESP_ERR_INVALID_ARG;
   }
 
   nvs_handle_t nvs;
   esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READONLY, &nvs);
   if (err != ESP_OK) {
+    *count = 0;
     return ESP_ERR_NOT_FOUND;
   }
 
-  size_t required_size = len;
-  err = nvs_get_str(nvs, NVS_KEY_WIFI_SSID, ssid, &required_size);
+  err = wifi_networks_load(nvs, networks, count);
   nvs_close(nvs);
+  return err;
+}
 
-  if (err == ESP_OK && required_size > len) {
-    return ESP_ERR_NVS_INVALID_LENGTH;
+esp_err_t settings_get_wifi_ssid(char *ssid, size_t len) {
+  if (!ssid || len == 0) {
+    return ESP_ERR_INVALID_ARG;
   }
 
-  return err;
+  settings_wifi_network_t networks[SETTINGS_MAX_WIFI_NETWORKS];
+  int count = 0;
+  if (settings_get_wifi_networks(networks, &count) != ESP_OK || count == 0) {
+    return ESP_ERR_NOT_FOUND;
+  }
+
+  strncpy(ssid, networks[0].ssid, len - 1);
+  ssid[len - 1] = '\0';
+  return ESP_OK;
 }
 
 esp_err_t settings_get_wifi_password(char *password, size_t len) {
@@ -210,21 +290,15 @@ esp_err_t settings_get_wifi_password(char *password, size_t len) {
     return ESP_ERR_INVALID_ARG;
   }
 
-  nvs_handle_t nvs;
-  esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READONLY, &nvs);
-  if (err != ESP_OK) {
+  settings_wifi_network_t networks[SETTINGS_MAX_WIFI_NETWORKS];
+  int count = 0;
+  if (settings_get_wifi_networks(networks, &count) != ESP_OK || count == 0) {
     return ESP_ERR_NOT_FOUND;
   }
 
-  size_t required_size = len;
-  err = nvs_get_str(nvs, NVS_KEY_WIFI_PASSWORD, password, &required_size);
-  nvs_close(nvs);
-
-  if (err == ESP_OK && required_size > len) {
-    return ESP_ERR_NVS_INVALID_LENGTH;
-  }
-
-  return err;
+  strncpy(password, networks[0].password, len - 1);
+  password[len - 1] = '\0';
+  return ESP_OK;
 }
 
 esp_err_t settings_set_wifi_credentials(const char *ssid,
@@ -243,10 +317,27 @@ esp_err_t settings_set_wifi_credentials(const char *ssid,
     return err;
   }
 
-  err = nvs_set_str(nvs, NVS_KEY_WIFI_SSID, ssid);
-  if (err == ESP_OK) {
-    err = nvs_set_str(nvs, NVS_KEY_WIFI_PASSWORD, password);
+  settings_wifi_network_t existing[SETTINGS_MAX_WIFI_NETWORKS];
+  int existing_count = 0;
+  wifi_networks_load(nvs, existing, &existing_count);
+
+  // New/updated network goes to the front (MRU); keep the rest, dropping
+  // any prior entry for this SSID and evicting the oldest if now over the
+  // cap.
+  settings_wifi_network_t updated[SETTINGS_MAX_WIFI_NETWORKS] = {0};
+  strncpy(updated[0].ssid, ssid, sizeof(updated[0].ssid) - 1);
+  strncpy(updated[0].password, password, sizeof(updated[0].password) - 1);
+
+  int out_idx = 1;
+  for (int i = 0; i < existing_count && out_idx < SETTINGS_MAX_WIFI_NETWORKS;
+       i++) {
+    if (strcmp(existing[i].ssid, ssid) == 0) {
+      continue;
+    }
+    updated[out_idx++] = existing[i];
   }
+
+  err = nvs_set_blob(nvs, NVS_KEY_WIFI_NETWORKS, updated, sizeof(updated));
   if (err == ESP_OK) {
     err = nvs_commit(nvs);
   }
@@ -254,7 +345,8 @@ esp_err_t settings_set_wifi_credentials(const char *ssid,
   nvs_close(nvs);
 
   if (err == ESP_OK) {
-    ESP_LOGI(TAG, "Saved WiFi credentials: SSID=%s", ssid);
+    ESP_LOGI(TAG, "Saved WiFi credentials: SSID=%s (%d known networks)", ssid,
+             out_idx);
   } else {
     ESP_LOGE(TAG, "Failed to save WiFi credentials: %s", esp_err_to_name(err));
   }
@@ -262,9 +354,57 @@ esp_err_t settings_set_wifi_credentials(const char *ssid,
   return err;
 }
 
+esp_err_t settings_forget_wifi_network(const char *ssid) {
+  if (!ssid || strlen(ssid) == 0) {
+    return ESP_ERR_INVALID_ARG;
+  }
+
+  nvs_handle_t nvs;
+  esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &nvs);
+  if (err != ESP_OK) {
+    return err;
+  }
+
+  settings_wifi_network_t existing[SETTINGS_MAX_WIFI_NETWORKS];
+  int existing_count = 0;
+  if (wifi_networks_load(nvs, existing, &existing_count) != ESP_OK ||
+      existing_count == 0) {
+    nvs_close(nvs);
+    return ESP_ERR_NOT_FOUND;
+  }
+
+  settings_wifi_network_t updated[SETTINGS_MAX_WIFI_NETWORKS] = {0};
+  int out_idx = 0;
+  bool removed = false;
+  for (int i = 0; i < existing_count; i++) {
+    if (strcmp(existing[i].ssid, ssid) == 0) {
+      removed = true;
+      continue;
+    }
+    updated[out_idx++] = existing[i];
+  }
+
+  if (!removed) {
+    nvs_close(nvs);
+    return ESP_ERR_NOT_FOUND;
+  }
+
+  err = nvs_set_blob(nvs, NVS_KEY_WIFI_NETWORKS, updated, sizeof(updated));
+  if (err == ESP_OK) {
+    err = nvs_commit(nvs);
+  }
+  nvs_close(nvs);
+
+  if (err == ESP_OK) {
+    ESP_LOGI(TAG, "Forgot WiFi network: SSID=%s", ssid);
+  }
+  return err;
+}
+
 bool settings_has_wifi_credentials(void) {
-  char ssid[MAX_WIFI_SSID_LEN + 1];
-  return settings_get_wifi_ssid(ssid, sizeof(ssid)) == ESP_OK;
+  settings_wifi_network_t networks[SETTINGS_MAX_WIFI_NETWORKS];
+  int count = 0;
+  return settings_get_wifi_networks(networks, &count) == ESP_OK && count > 0;
 }
 
 esp_err_t settings_get_device_name(char *name, size_t len) {

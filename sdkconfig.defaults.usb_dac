@@ -1,0 +1,40 @@
+# =============================================================================
+# USB-DAC build variant — layers on top of sdkconfig.defaults.arply_v1
+# =============================================================================
+# Adds a USB Audio Class 2.0 speaker alongside the normal AirPlay/I2S path
+# (see main/audio/usb_dac_input.c). The console moves from the fixed
+# USB Serial/JTAG peripheral to a CDC-ACM port carried over the same
+# composite USB device — see CONFIG_AUDIO_INPUT_USB_DAC's help text in
+# main/Kconfig.projbuild for the full explanation and the flashing-safety
+# reasoning (BOOT+RESET still works; that's a ROM-level mechanism this
+# doesn't touch).
+
+CONFIG_AUDIO_OUTPUT_I2S=y
+CONFIG_AUDIO_INPUT_USB_DAC=y
+
+# Speaker-only (no mic direction), stereo, matching the I2S output rate.
+CONFIG_UAC_SPEAKER_CHANNEL_NUM=2
+CONFIG_UAC_MIC_CHANNEL_NUM=0
+CONFIG_UAC_SAMPLE_RATE=48000
+CONFIG_OUTPUT_SAMPLE_RATE_48000=y
+
+# The vendored usb_device_uac component's own README states it "cannot be
+# compatible with both Windows and Linux simultaneously" as macOS support —
+# without this, macOS's Core Audio gets malformed 16.16 feedback-endpoint
+# values (full-speed devices need 10.14) and under-drives the isochronous
+# OUT stream, which is audible as continuous, severe stutter (confirmed:
+# ~50% of the expected byte rate arriving at usb_output_cb when testing
+# from macOS with this off). Enabled here since macOS is this project's
+# primary target host; flip back off (and see the component's own README)
+# if Windows/Linux hosts matter more for your setup.
+CONFIG_UAC_SUPPORT_MACOS=y
+
+# The fixed USB Serial/JTAG peripheral and the custom TinyUSB stack this
+# feature needs share the same physical USB PHY/pins on the ESP32-S3 and
+# cannot both be active — ESP-IDF's own early boot console init claims
+# USB Serial/JTAG before app_main() ever runs, so it has to be turned off
+# at the ESP-IDF level, not just left for the app to "win" later.
+# usb_dac_input.c installs its own esp_log_set_vprintf() that routes log
+# output to the new CDC-ACM port instead once the composite device is up.
+CONFIG_ESP_CONSOLE_NONE=y
+CONFIG_ESP_CONSOLE_SECONDARY_NONE=y

@@ -194,7 +194,7 @@ Paths are restricted to `/spiffs/`, directory traversal is rejected, and uploads
 - **Status LED** — breathing / off / steady, see above
 - **48 kHz output** — optional 44.1 → 48 kHz conversion via sinc resampler
 - **Tunable AirPlay timing** — separate early/late thresholds for buffered and realtime streams
-- **Optional extras** — OLED or ST7789 display, hardware buttons, cover art (all off by default, see `menuconfig`)
+- **Optional extras** — hardware buttons, cover art (all off by default, see `menuconfig`)
 
 ### Limitations
 
@@ -269,7 +269,6 @@ main/
 components/
 ├── boards/arply-v1/  # Board HAL — pins, XSMT mute from playback events
 ├── dac/              # Abstract DAC API (no-op: PCM5102A has no control bus)
-├── display/          # Optional display driver
 ├── audio-resampler/  # 44.1 → 48 kHz sinc resampler
 └── spiffs_storage/   # SPIFFS mount
 data/

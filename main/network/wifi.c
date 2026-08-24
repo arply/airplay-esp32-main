@@ -38,6 +38,7 @@ static esp_timer_handle_t s_retry_timer = NULL;
 static wifi_config_t s_ap_config;
 
 static void wifi_select_best_ap(const char *ssid);
+static bool wifi_select_best_known_network(void);
 static void scan_and_connect_task(void *arg);
 
 static void sanitize_hostname(const char *name, char *out, size_t out_len) {
@@ -163,13 +164,94 @@ static void event_handler(void *arg, esp_event_base_t event_base,
 // One-shot task: scan for best AP then connect — runs outside the event loop
 // to avoid overflowing the sys_evt stack.
 static void scan_and_connect_task(void *arg) {
-  wifi_config_t cfg;
-  if (esp_wifi_get_config(WIFI_IF_STA, &cfg) == ESP_OK &&
-      strlen((char *)cfg.sta.ssid) > 0) {
-    wifi_select_best_ap((char *)cfg.sta.ssid);
+  // Prefer any known network currently in range over whichever one happens
+  // to be configured (which is just the most-recently-used one) — this is
+  // what lets the device reconnect to an older saved network if that's the
+  // one actually available right now.
+  if (!wifi_select_best_known_network()) {
+    wifi_config_t cfg;
+    if (esp_wifi_get_config(WIFI_IF_STA, &cfg) == ESP_OK &&
+        strlen((char *)cfg.sta.ssid) > 0) {
+      wifi_select_best_ap((char *)cfg.sta.ssid);
+    }
   }
   esp_wifi_connect();
   vTaskDelete(NULL);
+}
+
+// Scans all visible APs and, among the ones matching a saved network,
+// configures STA for the strongest one. Returns false (leaving STA config
+// untouched) if no saved network is currently in range.
+static bool wifi_select_best_known_network(void) {
+  settings_wifi_network_t networks[SETTINGS_MAX_WIFI_NETWORKS];
+  int net_count = 0;
+  if (settings_get_wifi_networks(networks, &net_count) != ESP_OK ||
+      net_count == 0) {
+    return false;
+  }
+
+  wifi_scan_config_t scan_config = {
+      .ssid = NULL,
+      .bssid = NULL,
+      .channel = 0,
+      .show_hidden = false,
+      .scan_type = WIFI_SCAN_TYPE_ACTIVE,
+      .scan_time = {.active = {.min = 0,
+                               .max = 0}}, // 0, 0 needed for BT co-exist
+  };
+
+  esp_err_t err = esp_wifi_scan_start(&scan_config, true);
+  if (err != ESP_OK) {
+    ESP_LOGW(TAG, "Known-network scan failed: %s", esp_err_to_name(err));
+    return false;
+  }
+
+  uint16_t ap_count = 0;
+  esp_wifi_scan_get_ap_num(&ap_count);
+  if (ap_count == 0) {
+    return false;
+  }
+
+  wifi_ap_record_t *ap_list = malloc(sizeof(wifi_ap_record_t) * ap_count);
+  if (!ap_list) {
+    esp_wifi_scan_get_ap_records(&ap_count, NULL);
+    return false;
+  }
+  esp_wifi_scan_get_ap_records(&ap_count, ap_list);
+
+  int best_ap_idx = -1;
+  int best_net_idx = -1;
+  for (int i = 0; i < ap_count; i++) {
+    for (int n = 0; n < net_count; n++) {
+      if (strcmp((char *)ap_list[i].ssid, networks[n].ssid) == 0) {
+        if (best_ap_idx < 0 || ap_list[i].rssi > ap_list[best_ap_idx].rssi) {
+          best_ap_idx = i;
+          best_net_idx = n;
+        }
+        break;
+      }
+    }
+  }
+
+  bool found = false;
+  if (best_ap_idx >= 0) {
+    wifi_config_t sta_cfg = {0};
+    strlcpy((char *)sta_cfg.sta.ssid, networks[best_net_idx].ssid,
+            sizeof(sta_cfg.sta.ssid));
+    strlcpy((char *)sta_cfg.sta.password, networks[best_net_idx].password,
+            sizeof(sta_cfg.sta.password));
+    sta_cfg.sta.threshold.authmode = WIFI_AUTH_WPA2_PSK;
+    memcpy(sta_cfg.sta.bssid, ap_list[best_ap_idx].bssid, 6);
+    sta_cfg.sta.bssid_set = true;
+    esp_wifi_set_config(WIFI_IF_STA, &sta_cfg);
+    s_bssid_set = true;
+    ESP_LOGI(TAG, "Selected known network '%s' (rssi=%d)",
+             networks[best_net_idx].ssid, ap_list[best_ap_idx].rssi);
+    found = true;
+  }
+
+  free(ap_list);
+  return found;
 }
 
 // Scan for the best AP matching our SSID and set its BSSID in the STA config

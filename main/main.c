@@ -48,6 +48,22 @@ static const char *TAG = "main";
 
 static bool s_airplay_started = false;
 static bool s_airplay_infrastructure_ready = false;
+static bool s_audio_output_ready = false;
+
+// audio_output_init() has two callers with no fixed ordering between them:
+// the USB DAC path brings it up before the network stack (see app_main), while
+// start_airplay_services() needs it whenever a network appears first. Whichever
+// runs first wins; the other is a no-op.
+static esp_err_t ensure_audio_output_init(void) {
+  if (s_audio_output_ready) {
+    return ESP_OK;
+  }
+  esp_err_t err = audio_output_init();
+  if (err == ESP_OK) {
+    s_audio_output_ready = true;
+  }
+  return err;
+}
 
 static void start_airplay_services(void) {
   if (s_airplay_started) {
@@ -67,10 +83,7 @@ static void start_airplay_services(void) {
 
     ESP_ERROR_CHECK(hap_init());
     ESP_ERROR_CHECK(audio_receiver_init());
-    ESP_ERROR_CHECK(audio_output_init());
-#ifdef CONFIG_AUDIO_INPUT_USB_DAC
-    ESP_ERROR_CHECK(usb_dac_input_init());
-#endif
+    ESP_ERROR_CHECK(ensure_audio_output_init());
     mdns_airplay_init();
     s_airplay_infrastructure_ready = true;
   }
@@ -281,6 +294,17 @@ void app_main(void) {
   if (err != ESP_OK) {
     ESP_LOGE(TAG, "Board init failed: %s", esp_err_to_name(err));
   }
+
+#ifdef CONFIG_AUDIO_INPUT_USB_DAC
+  // USB DAC input has no network dependency — bring it up here, before
+  // ethernet/WiFi, so arply enumerates as a USB Audio device regardless of
+  // network state. This used to live in start_airplay_services(), which only
+  // runs once a network is up, so a board with no stored credentials sat in
+  // captive-portal setup mode and never enumerated as a DAC at all — the host
+  // just saw the plain USB Serial/JTAG device.
+  ESP_ERROR_CHECK(ensure_audio_output_init());
+  ESP_ERROR_CHECK(usb_dac_input_init());
+#endif
 
   // Try ethernet first
   bool eth_available = false;

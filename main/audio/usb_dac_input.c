@@ -58,11 +58,26 @@
 #define USB_IDLE_TIMEOUT_MS 500
 #define ARBITER_POLL_MS     20
 
-// ~400 ms of stereo 16-bit audio at the configured rate — slack against
+// Bytes per stereo 16-bit frame.
+#define FRAME_BYTES 4
+
+// ~800 ms of stereo 16-bit audio at the configured rate — slack against
 // scheduling jitter between the USB receive side (usb_spk_task, driven by
 // the vendored UAC component on a CONFIG_UAC_SPK_INTERVAL_MS cadence) and
-// the arbiter/I2S consumer side.
-#define USB_RINGBUF_BYTES ((size_t)(OUTPUT_RATE) / 5 * 8)
+// the arbiter/I2S consumer side. Doubled from an earlier ~400ms after
+// intermittent true-silence dropouts were observed in practice — with only
+// 400ms of cushion, a scheduling stall approaching that length drains the
+// buffer (arbiter underrun) or overflows it (producer drop) well before
+// either side catches up.
+#define USB_RINGBUF_MS    800
+#define USB_RINGBUF_BYTES ((size_t)(OUTPUT_RATE)*FRAME_BYTES * USB_RINGBUF_MS / 1000)
+
+// Max bytes the arbiter drains per poll. Deliberately larger than one
+// ARBITER_POLL_MS's worth (~3.8KB at 48kHz) so that after any scheduling
+// delay lets a backlog build up, the arbiter can catch back up to "live" in
+// one shot instead of staying perpetually behind, itself feeding more
+// underrun/overflow cycles.
+#define ARBITER_MAX_DRAIN_BYTES 16384
 
 // How often to log a dropped-audio warning, at most — drops likely come in
 // bursts (one scheduling hiccup drops several chunks in a row), so this
@@ -200,8 +215,9 @@ static void arbiter_task(void *arg) {
       // receive timeout keeps this responsive to the idle-timeout check
       // above even when the host briefly stops sending.
       size_t item_size = 0;
-      void *data = xRingbufferReceiveUpTo(s_ringbuf, &item_size,
-                                          pdMS_TO_TICKS(20), 4096);
+      void *data = xRingbufferReceiveUpTo(
+          s_ringbuf, &item_size, pdMS_TO_TICKS(ARBITER_POLL_MS),
+          ARBITER_MAX_DRAIN_BYTES);
       if (data && item_size > 0) {
         apply_gain((int16_t *)data, item_size / sizeof(int16_t));
         led_audio_feed((int16_t *)data, item_size / sizeof(int16_t) / 2);

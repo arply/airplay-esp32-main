@@ -9,9 +9,6 @@ static const char *TAG = "settings";
 
 #define NVS_NAMESPACE  "airplay"
 #define NVS_KEY_VOLUME "volume_db"
-#ifdef CONFIG_BT_A2DP_ENABLE
-#define NVS_KEY_BT_VOLUME "bt_vol"
-#endif
 #define NVS_KEY_WIFI_SSID "wifi_ssid" // legacy single-slot, migrated on init
 #define NVS_KEY_WIFI_PASSWORD \
   "wifi_pass" // legacy single-slot, migrated on init
@@ -36,10 +33,6 @@ static const char *TAG = "settings";
 static float g_volume_db = -15.0f;
 static bool g_volume_loaded = false;
 
-#ifdef CONFIG_BT_A2DP_ENABLE
-static uint8_t g_bt_volume = 64; /* default: 50 % */
-static bool g_bt_volume_loaded = false;
-#endif
 
 static float g_eq_gains[SETTINGS_EQ_BANDS];
 static bool g_eq_loaded = false;
@@ -192,64 +185,6 @@ esp_err_t settings_persist_volume(void) {
   return err;
 }
 
-#ifdef CONFIG_BT_A2DP_ENABLE
-esp_err_t settings_get_bt_volume(uint8_t *volume) {
-  if (!volume) {
-    return ESP_ERR_INVALID_ARG;
-  }
-  if (!g_bt_volume_loaded) {
-    nvs_handle_t nvs;
-    esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READONLY, &nvs);
-    if (err != ESP_OK) {
-      return err;
-    }
-    err = nvs_get_u8(nvs, NVS_KEY_BT_VOLUME, &g_bt_volume);
-    nvs_close(nvs);
-    if (err != ESP_OK) {
-      return err;
-    }
-    g_bt_volume_loaded = true;
-  }
-  *volume = g_bt_volume;
-  return ESP_OK;
-}
-
-esp_err_t settings_set_bt_volume(uint8_t volume) {
-  if (g_bt_volume_loaded && volume == g_bt_volume) {
-    return ESP_OK;
-  }
-
-  g_bt_volume = volume;
-  g_bt_volume_loaded = true;
-  return ESP_OK;
-}
-
-esp_err_t settings_persist_bt_volume(void) {
-  if (!g_bt_volume_loaded) {
-    return ESP_OK;
-  }
-
-  nvs_handle_t nvs;
-  esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &nvs);
-  if (err != ESP_OK) {
-    ESP_LOGE(TAG, "Failed to open NVS: %s", esp_err_to_name(err));
-    return err;
-  }
-
-  err = nvs_set_u8(nvs, NVS_KEY_BT_VOLUME, g_bt_volume);
-  if (err == ESP_OK) {
-    err = nvs_commit(nvs);
-  }
-  nvs_close(nvs);
-
-  if (err == ESP_OK) {
-    ESP_LOGI(TAG, "Persisted BT volume: %d/127", g_bt_volume);
-  } else {
-    ESP_LOGE(TAG, "Failed to persist BT volume: %s", esp_err_to_name(err));
-  }
-  return err;
-}
-#endif
 
 esp_err_t settings_get_wifi_networks(
     settings_wifi_network_t networks[SETTINGS_MAX_WIFI_NETWORKS], int *count) {

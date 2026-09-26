@@ -39,27 +39,6 @@ esp_err_t settings_set_volume(float volume_db);
  */
 esp_err_t settings_persist_volume(void);
 
-#ifdef CONFIG_BT_A2DP_ENABLE
-/**
- * Get saved Bluetooth volume (AVRC 0-127 scale).
- * @param volume Output: 0 (mute) to 127 (max)
- * @return ESP_OK if found, ESP_ERR_NOT_FOUND if no saved value
- */
-esp_err_t settings_get_bt_volume(uint8_t *volume);
-
-/**
- * Update cached Bluetooth volume (does NOT write to NVS).
- * Caller is responsible for calling dac_set_volume().
- * @param volume 0 (mute) to 127 (max)
- */
-esp_err_t settings_set_bt_volume(uint8_t volume);
-
-/**
- * Persist the current cached BT volume to NVS.
- * Call once at session disconnect rather than on every change.
- */
-esp_err_t settings_persist_bt_volume(void);
-#endif
 
 // Known WiFi networks are kept as a most-recently-used (MRU) list so a
 // device that has ever connected to a network stays reconnectable to it,

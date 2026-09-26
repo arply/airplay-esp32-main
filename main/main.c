@@ -17,11 +17,6 @@
 #include "wifi.h"
 #include "spiffs_storage.h"
 
-#ifdef CONFIG_BT_A2DP_ENABLE
-#include "a2dp_sink.h"
-#include "bt_coex.h"
-#include "rtsp_events.h"
-#endif
 
 #ifdef CONFIG_AUDIO_INPUT_USB_DAC
 #include "usb_dac_input.h"
@@ -96,22 +91,6 @@ static void start_airplay_services(void) {
   playback_control_set_source(PLAYBACK_SOURCE_AIRPLAY);
   ESP_LOGI(TAG, "AirPlay ready");
 }
-#ifdef CONFIG_BT_A2DP_ENABLE
-static void stop_airplay_services(void) {
-  if (!s_airplay_started) {
-    return;
-  }
-
-  ESP_LOGI(TAG, "Stopping AirPlay services...");
-
-  rtsp_server_stop();
-  audio_output_stop();
-
-  s_airplay_started = false;
-  playback_control_set_source(PLAYBACK_SOURCE_NONE);
-  ESP_LOGI(TAG, "AirPlay stopped");
-}
-#endif
 
 static void network_monitor_task(void *pvParameters) {
   (void)pvParameters;
@@ -177,56 +156,6 @@ static void network_monitor_task(void *pvParameters) {
   }
 }
 
-#ifdef CONFIG_BT_A2DP_ENABLE
-static void on_bt_state_changed(bool connected) {
-  if (connected) {
-    ESP_LOGI(TAG, "BT connected — disabling AirPlay");
-    stop_airplay_services();
-    bt_coex_post(BT_COEX_EVT_BT_CONNECTED);
-    playback_control_set_source(PLAYBACK_SOURCE_BLUETOOTH);
-  } else {
-    ESP_LOGI(TAG, "BT disconnected — re-enabling AirPlay");
-    bt_coex_post(BT_COEX_EVT_BT_DISCONNECTED);
-    playback_control_set_source(PLAYBACK_SOURCE_NONE);
-    if (ethernet_is_connected() || wifi_is_connected()) {
-      start_airplay_services();
-    }
-  }
-}
-
-static void on_airplay_client_event(rtsp_event_t event,
-                                    const rtsp_event_data_t *data,
-                                    void *user_data) {
-  (void)data;
-  (void)user_data;
-  if (bt_a2dp_sink_is_connected()) {
-    return;
-  }
-  switch (event) {
-  case RTSP_EVENT_CLIENT_CONNECTED:
-    ESP_LOGI(TAG, "AirPlay client connected — disabling BT");
-    bt_a2dp_sink_set_discoverable(false);
-    bt_coex_post(BT_COEX_EVT_AIRPLAY_CONNECTED);
-    break;
-  case RTSP_EVENT_PLAYING:
-    bt_coex_post(BT_COEX_EVT_AIRPLAY_PLAYING);
-    break;
-  case RTSP_EVENT_PAUSED:
-    // Session still active — BT stays suspended and hidden so the phone
-    // reconnects to AirPlay rather than falling back to BT.
-    ESP_LOGI(TAG, "AirPlay paused — keeping BT suspended and hidden");
-    bt_coex_post(BT_COEX_EVT_AIRPLAY_PAUSED);
-    break;
-  case RTSP_EVENT_DISCONNECTED:
-    ESP_LOGI(TAG, "AirPlay client disconnected — BT resumes after idle delay");
-    bt_a2dp_sink_set_discoverable(true);
-    bt_coex_post(BT_COEX_EVT_AIRPLAY_DISCONNECTED);
-    break;
-  default:
-    break;
-  }
-}
-#endif
 
 void app_main(void) {
   // Initialize NVS
@@ -359,22 +288,6 @@ void app_main(void) {
     start_airplay_services();
   }
 
-#ifdef CONFIG_BT_A2DP_ENABLE
-  // Initialize Bluetooth A2DP Sink
-  {
-    char bt_name[65];
-    settings_get_device_name(bt_name, sizeof(bt_name));
-    esp_err_t bt_err = bt_a2dp_sink_init(bt_name, on_bt_state_changed);
-    if (bt_err != ESP_OK) {
-      ESP_LOGE(TAG, "BT A2DP init failed: %s", esp_err_to_name(bt_err));
-    } else {
-      if (bt_coex_start() != ESP_OK) {
-        ESP_LOGE(TAG, "BT coexistence task start failed");
-      }
-      rtsp_events_register(on_airplay_client_event, NULL);
-    }
-  }
-#endif
 
   // Boot baseline: free internal DRAM once WiFi (and BT, where enabled) are
   // resident but before any stream is active.  Compare against the

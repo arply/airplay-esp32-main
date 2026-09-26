@@ -70,12 +70,6 @@ endif()
 # so they compile as tinyusb's own sources and inherit its flags for real.
 # They are deliberately NOT added to SRC_FILES/DEPS here.
 
-# Bluetooth A2DP sink (only available on ESP32 with Classic BT)
-if(CONFIG_BT_A2DP_ENABLE)
-    list(APPEND SRC_FILES "audio/a2dp_sink.c")
-    list(APPEND SRC_FILES "bt_coex.c")
-endif()
-
 # W5500 SPI Ethernet
 if(CONFIG_ETH_W5500_ENABLED)
     list(APPEND SRC_FILES "network/ethernet.c")
@@ -117,11 +111,6 @@ set( DEPS
     esp_eth
     spiffs_storage
 )
-
-# Bluetooth component only needed when A2DP is enabled
-#if(CONFIG_BT_A2DP_ENABLE)
-    list(APPEND DEPS bt)
-#endif()
 
 # Ethernet component only needed when W5500 is enabled
 #if(CONFIG_ETH_W5500_ENABLED)

@@ -25,9 +25,6 @@
 
 #include "esp_log.h"
 
-#ifdef CONFIG_BT_A2DP_ENABLE
-#include "a2dp_sink.h"
-#endif
 
 static const char *TAG = "playback_ctrl";
 
@@ -138,11 +135,6 @@ void playback_control_play_pause(void) {
     }
     break;
   }
-#ifdef CONFIG_BT_A2DP_ENABLE
-  case PLAYBACK_SOURCE_BLUETOOTH:
-    bt_a2dp_send_playpause();
-    break;
-#endif
   default:
     ESP_LOGI(TAG, "Play/pause: no active source (source=%d)", s_source);
     break;
@@ -154,11 +146,6 @@ void playback_control_volume_up(void) {
   case PLAYBACK_SOURCE_AIRPLAY:
     airplay_adjust_volume(VOLUME_STEP_DB);
     break;
-#ifdef CONFIG_BT_A2DP_ENABLE
-  case PLAYBACK_SOURCE_BLUETOOTH:
-    bt_a2dp_send_volume_up();
-    break;
-#endif
   default:
     break;
   }
@@ -169,11 +156,6 @@ void playback_control_volume_down(void) {
   case PLAYBACK_SOURCE_AIRPLAY:
     airplay_adjust_volume(-VOLUME_STEP_DB);
     break;
-#ifdef CONFIG_BT_A2DP_ENABLE
-  case PLAYBACK_SOURCE_BLUETOOTH:
-    bt_a2dp_send_volume_down();
-    break;
-#endif
   default:
     break;
   }
@@ -185,11 +167,6 @@ void playback_control_next(void) {
     dacp_send_next();
     ESP_LOGI(TAG, "AirPlay next track via DACP");
     break;
-#ifdef CONFIG_BT_A2DP_ENABLE
-  case PLAYBACK_SOURCE_BLUETOOTH:
-    bt_a2dp_send_next();
-    break;
-#endif
   default:
     break;
   }
@@ -201,11 +178,6 @@ void playback_control_prev(void) {
     dacp_send_prev();
     ESP_LOGI(TAG, "AirPlay prev track via DACP");
     break;
-#ifdef CONFIG_BT_A2DP_ENABLE
-  case PLAYBACK_SOURCE_BLUETOOTH:
-    bt_a2dp_send_prev();
-    break;
-#endif
   default:
     break;
   }
@@ -229,12 +201,6 @@ void playback_control_toggle_mute(void) {
       ESP_LOGI(TAG, "AirPlay unmuted locally (%.1f dB)", s_pre_mute_db);
     }
     break;
-#ifdef CONFIG_BT_A2DP_ENABLE
-  case PLAYBACK_SOURCE_BLUETOOTH:
-    // Bluetooth uses AVRCP absolute volume — no dedicated mute. Log.
-    ESP_LOGI(TAG, "Bluetooth: mute toggle not supported (use source device)");
-    break;
-#endif
   default:
     ESP_LOGI(TAG, "Toggle mute: no active source (source=%d)", s_source);
     break;

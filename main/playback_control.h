@@ -6,20 +6,16 @@
 /**
  * Source-agnostic playback controller.
  *
- * Routes hardware button actions to the correct backend (AirPlay or
- * Bluetooth) and notifies the remote client of changes.
+ * Routes hardware button actions to the correct backend and notifies the
+ * remote client of changes.
  *
  * For AirPlay: applies volume/pause locally, then sends DACP commands
  * to the iOS/macOS client so its UI stays in sync.
- *
- * For Bluetooth: sends AVRCP passthrough commands to the source device,
- * which controls playback and sends volume back via absolute volume.
  */
 
 typedef enum {
   PLAYBACK_SOURCE_NONE,
   PLAYBACK_SOURCE_AIRPLAY,
-  PLAYBACK_SOURCE_BLUETOOTH,
   PLAYBACK_SOURCE_USB,
 } playback_source_t;
 

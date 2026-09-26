@@ -322,8 +322,7 @@ async function restart(){
 async function loadInfo(){
   try{var r=await fetch('/api/system/info');var d=await r.json();
     if(d.success){var i=d.info;var b=document.getElementById('status-bar');
-      if(i.eth_connected){b.className='status-bar ok';b.innerHTML='Ethernet: '+i.ip;}
-      else if(i.wifi_connected){b.className='status-bar ok';b.innerHTML='Wi-Fi: '+i.ip;}
+      if(i.wifi_connected){b.className='status-bar ok';b.innerHTML='Wi-Fi: '+i.ip;}
       else{b.className='status-bar err';b.innerHTML='Not connected - Configure Wi-Fi below';}
       document.getElementById('info-ip').textContent=i.ip||'-';
       document.getElementById('info-mac').textContent=i.mac||'-';

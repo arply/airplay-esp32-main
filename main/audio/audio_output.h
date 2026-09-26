@@ -17,7 +17,7 @@ typedef enum {
 } audio_channel_mode_t;
 
 /**
- * Initialize the audio output backend (I2S / SPDIF / USB UAC).
+ * Initialize the I2S audio output.
  */
 esp_err_t audio_output_init(void);
 

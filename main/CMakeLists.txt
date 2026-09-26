@@ -7,6 +7,7 @@ set( SRC_FILES
     "audio/audio_stream_realtime.c"
     "audio/audio_stream_buffered.c"
     "audio/audio_decoder.c"
+    "audio/audio_output.c"
     "audio/audio_buffer.c"
     "audio/audio_timing.c"
     "audio/audio_crypto.c"
@@ -44,14 +45,6 @@ set( SRC_FILES
     "dacp_client.c"
 )
 
-# Select audio output implementation at compile time
-if(CONFIG_AUDIO_OUTPUT_SPDIF)
-    list(APPEND SRC_FILES "audio/audio_output_spdif.c")
-elseif(CONFIG_AUDIO_OUTPUT_USB)
-    list(APPEND SRC_FILES "audio/audio_output_usb.c")
-else()
-    list(APPEND SRC_FILES "audio/audio_output.c")
-endif()
 
 # USB-DAC alternate input source (composite UAC speaker + CDC console).
 #
@@ -68,11 +61,6 @@ endif()
 # directly to the tinyusb component's target below via target_sources(),
 # so they compile as tinyusb's own sources and inherit its flags for real.
 # They are deliberately NOT added to SRC_FILES/DEPS here.
-
-# W5500 SPI Ethernet
-if(CONFIG_ETH_W5500_ENABLED)
-    list(APPEND SRC_FILES "network/ethernet.c")
-endif()
 
 set( INC_DIRS
     "."
@@ -104,14 +92,8 @@ set( DEPS
     esp_driver_ledc
     boards
     audio-resampler
-    esp_eth
     spiffs_storage
 )
-
-# Ethernet component only needed when W5500 is enabled
-#if(CONFIG_ETH_W5500_ENABLED)
-    list(APPEND DEPS esp_eth)
-#endif()
 
 # usb_device_uac and tinyusb are pulled into the build unconditionally via
 # main/idf_component.yml (target-gated, not CONFIG_AUDIO_INPUT_USB_DAC-gated),

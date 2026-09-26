@@ -3,7 +3,6 @@
 #include "buttons.h"
 #include "spiram_task.h"
 #include "dns_server.h"
-#include "ethernet.h"
 #include "led.h"
 #include "hap.h"
 #include "mdns_airplay.h"
@@ -88,10 +87,8 @@ static void start_airplay_services(void) {
 
 static void network_monitor_task(void *pvParameters) {
   (void)pvParameters;
-  bool had_network = ethernet_is_connected() || wifi_is_connected();
+  bool had_network = wifi_is_connected();
   bool dns_running = !had_network;
-  bool wifi_started = wifi_is_connected() || !ethernet_is_connected();
-  bool had_eth = ethernet_is_connected();
 
   led_set_network(had_network);
 
@@ -103,27 +100,7 @@ static void network_monitor_task(void *pvParameters) {
   while (1) {
     vTaskDelay(pdMS_TO_TICKS(2000));
 
-    bool eth_up = ethernet_is_connected();
-    bool wifi_up = wifi_is_connected();
-    bool has_network = eth_up || wifi_up;
-
-    // Ethernet just came up — stop WiFi entirely
-    if (eth_up && !had_eth && wifi_started) {
-      ESP_LOGI(TAG, "Ethernet connected — stopping WiFi");
-      wifi_stop();
-      wifi_started = false;
-      wifi_up = false;
-    }
-
-    // Ethernet dropped — bring up WiFi (AP + STA)
-    if (!eth_up && had_eth) {
-      ESP_LOGI(TAG, "Ethernet down — starting WiFi as fallback");
-      wifi_init_apsta(NULL, NULL);
-      wifi_started = true;
-    }
-
-    had_eth = eth_up;
-    has_network = eth_up || wifi_is_connected();
+    bool has_network = wifi_is_connected();
 
     if (has_network == had_network) {
       continue;
@@ -132,8 +109,7 @@ static void network_monitor_task(void *pvParameters) {
     led_set_network(has_network);
 
     if (has_network) {
-      ESP_LOGI(TAG, "Network up (eth=%s, wifi=%s)", eth_up ? "yes" : "no",
-               wifi_up ? "yes" : "no");
+      ESP_LOGI(TAG, "Network up");
       start_airplay_services();
       if (dns_running) {
         dns_server_stop();
@@ -175,7 +151,7 @@ void app_main(void) {
 
 #ifdef CONFIG_AUDIO_INPUT_USB_DAC
   // USB DAC input has no network dependency — bring it up here, before
-  // ethernet/WiFi, so arply enumerates as a USB Audio device regardless of
+  // WiFi, so arply enumerates as a USB Audio device regardless of
   // network state. This used to live in start_airplay_services(), which only
   // runs once a network is up, so a board with no stored credentials sat in
   // captive-portal setup mode and never enumerated as a DAC at all — the host
@@ -184,56 +160,24 @@ void app_main(void) {
   ESP_ERROR_CHECK(usb_dac_input_init());
 #endif
 
-  // Try ethernet first
-  bool eth_available = false;
-  err = ethernet_init();
-  if (err == ESP_OK) {
-    // Wait for ethernet link + DHCP (up to 5s for link, then 10s more for DHCP)
-    ESP_LOGI(TAG, "Waiting for ethernet...");
-    for (int i = 0; i < 25 && !ethernet_is_link_up(); i++) {
-      vTaskDelay(pdMS_TO_TICKS(200));
-    }
-    if (ethernet_is_link_up() && !ethernet_is_connected()) {
-      ESP_LOGI(TAG, "Ethernet link up, waiting for DHCP...");
-      for (int i = 0; i < 50 && !ethernet_is_connected(); i++) {
-        vTaskDelay(pdMS_TO_TICKS(200));
-      }
-    }
-    eth_available = ethernet_is_connected();
-    if (eth_available) {
-      ESP_LOGI(TAG, "Ethernet connected");
-    } else {
-      ESP_LOGI(TAG, "Ethernet not connected (cable?), will use WiFi");
-    }
-  } else if (err != ESP_ERR_NOT_SUPPORTED) {
-    ESP_LOGW(TAG, "Ethernet init failed: %s", esp_err_to_name(err));
-  }
+  wifi_init_apsta(NULL, NULL);
 
-  // Start WiFi only if ethernet is not available
-  if (!eth_available) {
-    wifi_init_apsta(NULL, NULL);
-
-    // Wait for initial WiFi connection if credentials exist
-    if (settings_has_wifi_credentials()) {
-      if (!wifi_wait_connected(30000)) {
-        ESP_LOGI(TAG, "Connect to '%s' -> http://192.168.4.1",
-                 CONFIG_DEFAULT_AP_SSID);
-      }
-    } else {
+  // Wait for initial WiFi connection if credentials exist
+  if (settings_has_wifi_credentials()) {
+    if (!wifi_wait_connected(30000)) {
       ESP_LOGI(TAG, "Connect to '%s' -> http://192.168.4.1",
                CONFIG_DEFAULT_AP_SSID);
     }
   } else {
-    ESP_LOGI(TAG, "Ethernet connected — skipping WiFi");
+    ESP_LOGI(TAG, "Connect to '%s' -> http://192.168.4.1",
+             CONFIG_DEFAULT_AP_SSID);
   }
 
-  // Start services that work on any interface
   web_server_start(80);
   task_create_spiram(network_monitor_task, "net_mon", 4096, NULL, 5, NULL,
                      NULL);
 
-  bool connected = eth_available || wifi_is_connected();
-  if (connected) {
+  if (wifi_is_connected()) {
     start_airplay_services();
   }
 

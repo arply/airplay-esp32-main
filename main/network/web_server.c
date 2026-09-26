@@ -15,7 +15,6 @@
 #include "settings.h"
 #include "led.h"
 #include "wifi.h"
-#include "ethernet.h"
 #include "ota.h"
 #include "log_stream.h"
 #include "rtsp_server.h"
@@ -305,7 +304,6 @@ static esp_err_t device_name_handler(httpd_req_t *req) {
     esp_err_t err = settings_set_device_name(name);
     if (err == ESP_OK) {
       wifi_set_hostname(name);
-      ethernet_set_hostname(name);
       cJSON_AddBoolToObject(response, "success", true);
     } else {
       cJSON_AddBoolToObject(response, "success", false);
@@ -501,23 +499,15 @@ static esp_err_t system_info_handler(httpd_req_t *req) {
   char mac_str[18] = {0};
   char device_name[65] = {0};
   bool wifi_connected = wifi_is_connected();
-  bool eth_connected = ethernet_is_connected();
 
-  // Show IP and MAC for the active interface
-  if (eth_connected) {
-    ethernet_get_ip_str(ip_str, sizeof(ip_str));
-    ethernet_get_mac_str(mac_str, sizeof(mac_str));
-  } else {
-    wifi_get_ip_str(ip_str, sizeof(ip_str));
-    wifi_get_mac_str(mac_str, sizeof(mac_str));
-  }
+  wifi_get_ip_str(ip_str, sizeof(ip_str));
+  wifi_get_mac_str(mac_str, sizeof(mac_str));
   settings_get_device_name(device_name, sizeof(device_name));
 
   cJSON_AddStringToObject(info, "ip", ip_str);
   cJSON_AddStringToObject(info, "mac", mac_str);
   cJSON_AddStringToObject(info, "device_name", device_name);
   cJSON_AddBoolToObject(info, "wifi_connected", wifi_connected);
-  cJSON_AddBoolToObject(info, "eth_connected", eth_connected);
   cJSON_AddNumberToObject(info, "free_heap", esp_get_free_heap_size());
 
   // WiFi link diagnostics (only meaningful when associated as STA)

@@ -13,14 +13,6 @@
 #include <inttypes.h>
 #include <stdlib.h>
 
-// SIDE NOTE; providing power from GPIO pins is capped ~20mA.
-#if CONFIG_I2S_GND_IO >= 0
-#define I2S_GND_PIN CONFIG_I2S_GND_IO
-#endif
-#if CONFIG_I2S_VCC_IO >= 0
-#define I2S_VCC_PIN CONFIG_I2S_VCC_IO
-#endif
-
 #define TAG           "audio_output"
 #define I2S_SCK_PIN   CONFIG_I2S_SCK_IO
 #define I2S_BCK_PIN   CONFIG_I2S_BCK_IO
@@ -208,16 +200,6 @@ esp_err_t audio_output_init(void) {
               .din = I2S_GPIO_UNUSED,
           },
   };
-#ifdef I2S_GND_PIN
-  gpio_reset_pin(I2S_GND_PIN);
-  gpio_set_direction(I2S_GND_PIN, GPIO_MODE_OUTPUT);
-  gpio_set_level(I2S_GND_PIN, 0);
-#endif
-#ifdef I2S_VCC_PIN
-  gpio_reset_pin(I2S_VCC_PIN);
-  gpio_set_direction(I2S_VCC_PIN, GPIO_MODE_OUTPUT);
-  gpio_set_level(I2S_VCC_PIN, 1);
-#endif
 
   ESP_RETURN_ON_ERROR(i2s_channel_init_std_mode(tx_handle, &std_cfg), TAG,
                       "std mode init failed");

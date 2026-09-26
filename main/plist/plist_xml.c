@@ -2,7 +2,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "base64.h"
+#include "mbedtls/base64.h"
 #include "plist.h"
 
 static void plist_append(plist_t *p, const char *str) {
@@ -72,7 +72,8 @@ void plist_dict_bool(plist_t *p, const char *key, bool value) {
 
 void plist_dict_data(plist_t *p, const char *key, const uint8_t *data,
                      size_t len) {
-  size_t b64_len = base64_encoded_length(len);
+  // 4 output bytes per 3 input bytes, rounded up, plus mbedtls' NUL.
+  size_t b64_len = 4 * ((len + 2) / 3) + 1;
   size_t remaining = p->capacity - p->size;
 
   if (remaining < strlen(key) + b64_len + 50) {
@@ -85,13 +86,12 @@ void plist_dict_data(plist_t *p, const char *key, const uint8_t *data,
     p->size += (size_t)written;
   }
 
-  int encoded =
-      base64_encode(data, len, p->buffer + p->size, p->capacity - p->size);
-  if (encoded < 0) {
+  size_t encoded = 0;
+  if (mbedtls_base64_encode((unsigned char *)p->buffer + p->size,
+                            p->capacity - p->size, &encoded, data, len) != 0) {
     return;
   }
-  p->size += (size_t)encoded;
-  p->buffer[p->size] = '\0';
+  p->size += encoded;
 
   plist_append(p, "</data>\n");
 }

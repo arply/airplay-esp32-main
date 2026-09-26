@@ -23,7 +23,6 @@ set( SRC_FILES
     "plist/plist_xml.c"
     "plist/bplist_parser.c"
     "plist/bplist_builder.c"
-    "plist/base64.c"
     "hap/hap.c"
     "hap/hap_pair_verify.c"
     "hap/hap_pair_setup.c"

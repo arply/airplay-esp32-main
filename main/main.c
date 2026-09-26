@@ -1,7 +1,6 @@
 #include "audio_output.h"
 #include "audio_receiver.h"
 #include "buttons.h"
-#include "spiram_task.h"
 #include "dns_server.h"
 #include "led.h"
 #include "hap.h"
@@ -174,8 +173,7 @@ void app_main(void) {
   }
 
   web_server_start(80);
-  task_create_spiram(network_monitor_task, "net_mon", 4096, NULL, 5, NULL,
-                     NULL);
+  xTaskCreate(network_monitor_task, "net_mon", 4096, NULL, 5, NULL);
 
   if (wifi_is_connected()) {
     start_airplay_services();

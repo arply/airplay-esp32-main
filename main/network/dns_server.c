@@ -1,5 +1,4 @@
 #include "dns_server.h"
-#include "spiram_task.h"
 
 #include "esp_log.h"
 #include "esp_netif.h"
@@ -144,8 +143,7 @@ esp_err_t dns_server_start(uint32_t redirect_ip) {
     return ESP_FAIL;
   }
 
-  task_create_spiram(dns_server_task, "dns_server", 4096, NULL, 5, &s_dns_task,
-                     NULL);
+  xTaskCreate(dns_server_task, "dns_server", 4096, NULL, 5, &s_dns_task);
 
   ESP_LOGI(TAG, "DNS server started, redirecting to " IPSTR,
            IP2STR((esp_ip4_addr_t *)&redirect_ip));

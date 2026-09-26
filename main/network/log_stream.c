@@ -7,7 +7,6 @@
  */
 
 #include "log_stream.h"
-#include "spiram_task.h"
 
 #include "esp_heap_caps.h"
 #include "esp_log.h"
@@ -233,8 +232,7 @@ esp_err_t log_stream_register(httpd_handle_t server) {
     return err;
   }
 
-  task_create_spiram(broadcast_task, "log_ws", BROADCAST_TASK_STACK, NULL, 3,
-                     NULL, NULL);
+  xTaskCreate(broadcast_task, "log_ws", BROADCAST_TASK_STACK, NULL, 3, NULL);
   ESP_LOGI("log_stream", "Log streaming on /ws/logs");
   return ESP_OK;
 }

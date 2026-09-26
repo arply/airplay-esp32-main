@@ -4,7 +4,6 @@
 #include <stddef.h>
 #include <stdbool.h>
 
-#include "base64.h"
 
 /**
  * Simple plist builder for AirPlay

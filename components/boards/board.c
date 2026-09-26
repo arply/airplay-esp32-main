@@ -78,15 +78,6 @@ const char *iot_board_get_info(void) {
   return BOARD_NAME;
 }
 
-bool iot_board_is_init(void) {
-  return s_board_initialized;
-}
-
-board_res_handle_t iot_board_get_handle(int id) {
-  (void)id;
-  return NULL;
-}
-
 esp_err_t iot_board_init(void) {
   if (s_board_initialized) {
     ESP_LOGW(TAG, "Board already initialized");
@@ -103,17 +94,5 @@ esp_err_t iot_board_init(void) {
 
   s_board_initialized = true;
   ESP_LOGI(TAG, "%s initialized", BOARD_DESCRIPTION);
-  return ESP_OK;
-}
-
-esp_err_t iot_board_deinit(void) {
-  if (!s_board_initialized) {
-    return ESP_OK;
-  }
-
-  rtsp_events_unregister(on_rtsp_event);
-  set_mute(true);
-
-  s_board_initialized = false;
   return ESP_OK;
 }

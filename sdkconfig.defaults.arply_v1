@@ -4,7 +4,7 @@
 # Dual-core Xtensa @ 240 MHz, 8 MB flash, 8 MB octal PSRAM (ESP32-S3R8),
 # native USB-C (no USB-UART bridge), external PCM5102A I2S DAC with an
 # XSMT mute pin driven from playback state.
-CONFIG_BOARD_ARPLY_V1=y
+
 
 # Flash layout (8 MB) — components/boards/partitions.csv fills it exactly
 CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y

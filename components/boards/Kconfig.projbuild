@@ -1,18 +1,4 @@
 menu "Board Configuration"
-    choice BOARD_TARGET
-        prompt "Select Target Board"
-        default BOARD_ARPLY_V1
-
-        config BOARD_ARPLY_V1
-            bool "ARPLY v1 (Seeed XIAO ESP32-S3, PCM5102A)"
-            depends on IDF_TARGET_ESP32S3
-
-    endchoice
-
-    config BOARD_TARGET_PATH
-        string
-        default "arply-v1" if BOARD_ARPLY_V1
-
     menu "Pin Configuration"
         menu "LED GPIOs"
             config LED_STATUS_GPIO

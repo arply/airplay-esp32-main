@@ -195,7 +195,7 @@ static void arbiter_task(void *arg) {
       audio_output_stop();
       playback_control_set_source(PLAYBACK_SOURCE_USB);
       // The board's XSMT mute pin only follows RTSP events (see
-      // components/boards/arply-v1/board.c) and boots muted, since it's
+      // components/boards/board.c) and boots muted, since it's
       // normally driven by actual AirPlay playback. USB input never goes
       // through RTSP, so without this, a device that's never had an
       // AirPlay session play would stay muted forever even with USB audio

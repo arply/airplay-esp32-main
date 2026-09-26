@@ -32,7 +32,8 @@ idf.py -p /dev/ttyUSB0 monitor
 
 | Environment | Board | Notes |
 |---|---|---|
-| `arply_v1` | Seeed XIAO ESP32-S3 + PCM5102A | The only target. 8MB flash, 8MB octal PSRAM, XSMT mute follows playback |
+| `arply_v1` | Seeed XIAO ESP32-S3 + PCM5102A | Default. 8MB flash, 8MB octal PSRAM, XSMT mute follows playback |
+| `arply_v1_usbdac` | same hardware | Also enumerates as a USB Audio Class speaker; see `main/audio/usb_dac_input.c` |
 
 Sdkconfig defaults are layered via `cmake_extra_args` (left-to-right override). Custom board config: create `sdkconfig.user.<name>` + `user_platformio.ini` to extend any environment without modifying the main config.
 
@@ -52,15 +53,13 @@ main/
 │   ├── audio_timing.c      # PTP-based timing — early/late frame handling
 │   ├── audio_resample.c    # Sample rate conversion (44.1→48kHz)
 │   ├── audio_output.c      # I2S output
-│   ├── audio_output_spdif.c # S/PDIF output
-│   ├── audio_output_usb.c  # USB audio output
-│   ├── audio_crypto.c      # AirPlay encryption
-│   └── eq_events.c         # EQ parameter changes (TAS58xx)
+│   ├── usb_dac_input.c     # USB Audio Class speaker input (arply_v1_usbdac)
+│   └── audio_crypto.c      # AirPlay encryption
 ├── rtsp/                   # RTSP protocol server
 │   ├── rtsp_server.c       # RTSP connection handler
 │   ├── rtsp_conn.c         # Connection management
 │   ├── rtsp_handlers.c     # RTSP method handlers (OPTIONS, SETUP, PLAY, etc.)
-│   ├── rtsp_events.c       # RTSP event handling (including BT passthrough)
+│   ├── rtsp_events.c       # RTSP event handling
 │   ├── rtsp_crypto.c       # RTSP-level encryption
 │   ├── rtsp_fairplay.c     # Apple FairPlay integration
 │   └── rtsp_rsa.c          # RSA crypto
@@ -86,22 +85,21 @@ main/
 └── led.c                   # LED status indicator
 
 components/
-├── dac/                    # Abstract DAC API (Kconfig-selected implementation)
-│   └── dac.c               # Dispatch layer → TAS57xx or TAS58xx driver
-├── boards/                 # Board support (HAL)
-│   ├── board_common.c      # Shared board utilities
-│   └── arply-v1/          # ARPLY v1 board init (pins, XSMT mute from RTSP events)
-├── spiffs_storage/         # SPIFFS filesystem mount (stores web pages + DSP configs)
+├── boards/                 # Board support
+│   ├── board.c             # ARPLY v1 init (XSMT mute driven from RTSP events)
+│   ├── iot_board.h         # Pin macros
+│   └── board_common.c      # board_power_off()
+├── spiffs_storage/         # SPIFFS filesystem mount (stores the web UI)
 ├── audio-resampler/        # sinc-based audio resampler (44.1→48kHz)
-└── board_utils/            # Board-level utilities
+└── board_utils/            # Shared GPIO ISR service
 ```
 
 ## Key Conventions
 
-- **CMake/Kconfig**: The board is selected via `CONFIG_BOARD_ARPLY_V1`; `CONFIG_BOARD_TARGET_PATH` names the directory under `components/boards/` that gets compiled. No `CONFIG_DAC_*` driver is set — the PCM5102A has no control bus, so `components/dac/` degrades to no-ops and volume is applied in software. Buttons remain Kconfig-gated and are off.
+- **CMake/Kconfig**: One board, compiled directly from `components/boards/` — no board-selection indirection. The PCM5102A has no control bus, so there is no DAC driver at all: volume is applied in software by `apply_volume()` in `audio_output.c` from `airplay_get_volume_q15()`, and mute is the XSMT pin driven from RTSP events in `components/boards/board.c`. Buttons remain Kconfig-gated and are off.
 - **Component structure**: Each component has its own `CMakeLists.txt` with `idf_component_register()`.
-- **SPIFFS**: `data/` contents are flashed to SPIFFS by `-t uploadfs`, which `-t upload` does **not** do. `data/www/` holds the web UI (index, logs, speedtest, eq).
-- **Audio pipeline**: AudioReceiver (rtsp) → decoder → AudioBuffer → AudioOutput (I2S/SPDIF/USB). Buffered streams (AAC) use deep jitter buffer; realtime streams (ALAC) use low-latency UDP with early/late timing thresholds.
+- **SPIFFS**: `data/` contents are flashed to SPIFFS by `-t uploadfs`, which `-t upload` does **not** do. `data/www/` holds the web UI (index, logs, speedtest).
+- **Audio pipeline**: AudioReceiver (rtsp) → decoder → AudioBuffer → AudioOutput (I2S). Buffered streams (AAC) use deep jitter buffer; realtime streams (ALAC) use low-latency UDP with early/late timing thresholds.
 - **Status LED**: One full breath at boot, breathing while searching for a network, off when idle, steady on when playing. Driven by a dedicated task in `main/led.c` — not a FreeRTOS timer, whose small stack overflows on the end-of-cycle handover.
 
 ## Code Quality

@@ -39,7 +39,6 @@ set( SRC_FILES
     "network/dns_server.c"
     "network/log_stream.c"
     "led.c"
-    "audio/eq_events.c"
     "buttons.c"
     "playback_control.c"
     "dacp_client.c"
@@ -104,9 +103,6 @@ set( DEPS
     mbedtls
     esp_driver_ledc
     boards
-    dac
-    dac_tas58xx
-    dac_tas57xx
     audio-resampler
     esp_eth
     spiffs_storage

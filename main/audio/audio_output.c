@@ -2,7 +2,6 @@
 #include "rtsp_server.h"
 
 #include "audio_resample.h"
-#include "dac.h"
 #include "led.h"
 #include "settings.h"
 #include "driver/i2s_std.h"
@@ -13,12 +12,6 @@
 #include "audio_receiver.h"
 #include <inttypes.h>
 #include <stdlib.h>
-#ifdef CONFIG_DAC_TAS58XX
-#include "dac_tas58xx.h"
-#endif
-#ifdef CONFIG_DAC_TAS57XX
-#include "dac_tas57xx.h"
-#endif
 
 // SIDE NOTE; providing power from GPIO pins is capped ~20mA.
 #if CONFIG_I2S_GND_IO >= 0
@@ -62,7 +55,6 @@ static volatile bool resample_reinit_needed = false;
 static volatile audio_channel_mode_t channel_mode = AUDIO_CHANNEL_STEREO;
 
 static void apply_volume(int16_t *buf, size_t n) {
-#ifndef CONFIG_DAC_CONTROLS_VOLUME
   // Ramp toward the target gain instead of applying volume changes
   // instantly.  An abrupt gain step mid-waveform is a discontinuity scaled
   // by the signal's current amplitude — the classic volume "zipper" click,
@@ -87,7 +79,6 @@ static void apply_volume(int16_t *buf, size_t n) {
     }
     buf[i] = (int16_t)(((int32_t)buf[i] * cur_q15) >> 15);
   }
-#endif
 }
 
 // Apply the selected channel mode to an interleaved stereo buffer (L,R,...).
@@ -235,11 +226,6 @@ esp_err_t audio_output_init(void) {
   ESP_LOGI(TAG, "I2S initialized: Rate=%u, DMA_Desc=%d, DMA_Frame=%d",
            (unsigned int)OUTPUT_RATE, I2S_DMA_DESC_NUM, I2S_DMA_FRAME_NUM);
 
-  // MCLK/BCLK/LRCK are now running. Some codecs need this edge to finish their
-  // clock setup; amplifiers that manage power from board RTSP events can ignore
-  // the hook.
-  dac_on_i2s_started();
-
   audio_resample_init(44100, OUTPUT_RATE, 2);
 
   return ESP_OK;
@@ -322,16 +308,6 @@ uint32_t audio_output_get_hardware_latency_us(void) {
 /* With two amplifiers the DAC configuration already fixes the routing, so a
  * channel selection on top of that would only mute a speaker. */
 bool audio_output_channel_mode_locked(void) {
-#ifdef CONFIG_DAC_TAS58XX
-  if (dac_tas58xx_get_device_count() > 1) {
-    return true;
-  }
-#endif
-#ifdef CONFIG_DAC_TAS57XX
-  if (dac_tas57xx_get_device_count() > 1) {
-    return true;
-  }
-#endif
   return false;
 }
 

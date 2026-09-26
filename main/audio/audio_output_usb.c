@@ -76,7 +76,6 @@ static esp_err_t usb_input_cb(uint8_t *buf, size_t len, size_t *bytes_read,
 /* ── Volume ────────────────────────────────────────────────────────── */
 
 static void apply_volume(int16_t *buf, size_t n) {
-#ifndef CONFIG_DAC_CONTROLS_VOLUME
   // Ramp toward the target gain instead of applying volume changes
   // instantly.  An abrupt gain step mid-waveform is a discontinuity scaled
   // by the signal's current amplitude — the classic volume "zipper" click,
@@ -101,7 +100,6 @@ static void apply_volume(int16_t *buf, size_t n) {
     }
     buf[i] = (int16_t)(((int32_t)buf[i] * cur_q15) >> 15);
   }
-#endif
 }
 
 /* ── Playback task ─────────────────────────────────────────────────── */

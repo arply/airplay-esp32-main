@@ -17,7 +17,6 @@
 
 #include "playback_control.h"
 
-#include "dac.h"
 #include "dacp_client.h"
 #include "rtsp_events.h"
 #include "rtsp_server.h"
@@ -89,8 +88,6 @@ static void airplay_adjust_volume(float step_db) {
   if (s_muted) {
     // Update saved level so unmute restores the new volume
     s_pre_mute_db = new_db;
-  } else {
-    dac_set_volume(new_db);
   }
 
   ESP_LOGI(TAG, "AirPlay volume: %.1f -> %.1f dB%s", current_db, new_db,
@@ -122,12 +119,10 @@ void playback_control_play_pause(void) {
         if (settings_get_volume(&s_pre_mute_db) != ESP_OK) {
           s_pre_mute_db = -15.0f; // default 50 %
         }
-        dac_set_volume(VOLUME_MIN_DB);
         s_muted = true;
         rtsp_events_emit(RTSP_EVENT_PAUSED, NULL);
         ESP_LOGI(TAG, "AirPlay muted locally (was %.1f dB)", s_pre_mute_db);
       } else {
-        dac_set_volume(s_pre_mute_db);
         s_muted = false;
         rtsp_events_emit(RTSP_EVENT_PLAYING, NULL);
         ESP_LOGI(TAG, "AirPlay unmuted locally (%.1f dB)", s_pre_mute_db);
@@ -190,12 +185,10 @@ void playback_control_toggle_mute(void) {
       if (settings_get_volume(&s_pre_mute_db) != ESP_OK) {
         s_pre_mute_db = -15.0f; // default 50 %
       }
-      dac_set_volume(VOLUME_MIN_DB);
       s_muted = true;
       rtsp_events_emit(RTSP_EVENT_PAUSED, NULL);
       ESP_LOGI(TAG, "AirPlay muted locally (was %.1f dB)", s_pre_mute_db);
     } else {
-      dac_set_volume(s_pre_mute_db);
       s_muted = false;
       rtsp_events_emit(RTSP_EVENT_PLAYING, NULL);
       ESP_LOGI(TAG, "AirPlay unmuted locally (%.1f dB)", s_pre_mute_db);

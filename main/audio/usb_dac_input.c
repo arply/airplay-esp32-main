@@ -26,6 +26,7 @@
 #include "usb_dac_input.h"
 
 #include "audio_output.h"
+#include "audio_receiver.h"
 #include "playback_control.h"
 #include "led.h"
 #include "rtsp_events.h"
@@ -134,6 +135,15 @@ static esp_err_t usb_output_cb(uint8_t *buf, size_t len, void *cb_ctx) {
     s_rx_calls = 0;
     s_last_rate_log_us = s_last_rx_us;
   }
+  // Only buffer while USB actually owns the output. A macOS host with arply
+  // selected as its default output device streams continuously — silence
+  // included — so buffering when AirPlay holds the output would fill the ring
+  // with audio that is already stale by the time USB gets it back, and log a
+  // "ring buffer full" warning every second meanwhile. s_last_rx_us is still
+  // stamped above, so the arbiter's freshness check below is unaffected.
+  if (!s_usb_active) {
+    return ESP_OK;
+  }
   if (s_ringbuf && xRingbufferSend(s_ringbuf, buf, len, 0) != pdTRUE) {
     s_drop_count++;
     int64_t now = esp_timer_get_time();
@@ -190,7 +200,18 @@ static void arbiter_task(void *arg) {
         s_last_rx_us == 0 ? -1 : (esp_timer_get_time() - s_last_rx_us) / 1000;
     bool usb_fresh = have_data && idle_ms >= 0 && idle_ms < USB_IDLE_TIMEOUT_MS;
 
-    if (usb_fresh && !s_usb_active) {
+    // AirPlay outranks USB. Both paths end at the same I2S output, so a Mac
+    // that is both the AirPlay sender and has arply as its default output
+    // device drives both at once — and since the host keeps the UAC endpoint
+    // streaming whenever anything holds the audio device open, an
+    // unconditional USB takeover starves that AirPlay session completely
+    // (symptom: AirPlay connects, PTP locks, no audio). Claim the output only
+    // while no AirPlay stream is playing, and hand it straight back when one
+    // starts.
+    bool airplay_playing = audio_receiver_is_playing();
+    bool usb_should_play = usb_fresh && !airplay_playing;
+
+    if (usb_should_play && !s_usb_active) {
       ESP_LOGI(TAG, "USB audio started — pausing AirPlay output");
       audio_output_stop();
       playback_control_set_source(PLAYBACK_SOURCE_USB);
@@ -203,8 +224,9 @@ static void arbiter_task(void *arg) {
       // uses this same re-emit trick for the same reason.
       rtsp_events_emit(RTSP_EVENT_PLAYING, NULL);
       s_usb_active = true;
-    } else if (!usb_fresh && s_usb_active) {
-      ESP_LOGI(TAG, "USB audio stopped — resuming AirPlay output");
+    } else if (!usb_should_play && s_usb_active) {
+      ESP_LOGI(TAG, "%s — resuming AirPlay output",
+               airplay_playing ? "AirPlay stream started" : "USB audio stopped");
       s_usb_active = false;
       playback_control_set_source(PLAYBACK_SOURCE_AIRPLAY);
       audio_output_start();

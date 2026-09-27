@@ -1360,7 +1360,6 @@ static void handle_setup(int socket, rtsp_conn_t *conn,
                                       conn->client_control_port);
   }
 
-
   audio_receiver_set_playing(true);
   conn->stream_paused = false;
   conn->stream_active = true;
@@ -1378,7 +1377,6 @@ static void handle_record(int socket, rtsp_conn_t *conn,
 
   ESP_LOGI(TAG, "RECORD received - starting playback, stream_paused was %d",
            conn->stream_paused);
-
 
   if (conn->stream_paused) {
     // Resuming from PAUSE: the stream listener is still running and the

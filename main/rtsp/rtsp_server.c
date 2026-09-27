@@ -267,7 +267,13 @@ cleanup:
   close(slot->socket);
   slot->socket = -1;
 
-  // Immediate: stop audio and NTP
+  // Immediate: stop audio and NTP. Clear the playing flag explicitly — only
+  // the graceful TEARDOWN path (handle_teardown) does that, so a client that
+  // vanishes without one used to leave the timing layer stuck at playing=true
+  // (visible in the log as "set_playing: playing -> playing" on the next
+  // RECORD). That stale flag now also gates the USB DAC arbiter, which would
+  // read it as "AirPlay is busy" and refuse to take the output forever.
+  audio_receiver_set_playing(false);
   audio_receiver_stop();
   audio_output_flush();
   ntp_clock_stop();

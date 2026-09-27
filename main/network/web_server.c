@@ -753,7 +753,7 @@ esp_err_t web_server_start(uint16_t port) {
   config.max_open_sockets = 3; // Limit to save lwIP socket slots for AirPlay
   config.lru_purge_enable = true; // Reclaim stale sockets when all are in use
   config.max_uri_handlers =
-      30; // Room for captive portal + EQ + speedtest + brightness + channel
+      30; // Room for the 25 registered below, captive portal included
   config.max_resp_headers = 8;
   config.stack_size = 8192;
   config.uri_match_fn = httpd_uri_match_wildcard;

@@ -26,6 +26,14 @@
 #define AIRPLAY_FEATURES_LO 0x405C4A00
 #endif
 
+// Model identifier. Apple senders draw the AirPlay picker icon from this and
+// key some feature negotiation off it, so it must match everywhere it is
+// advertised: the mDNS "model"/"am" TXT records and both /info responses
+// (XML and binary plist). AirPort10,115 is the 2nd-gen AirPort Express, which
+// shipped real AirPlay 2 support and shows a generic speaker rather than the
+// HomePod glyph that AudioAccessory5,1 produced.
+#define AIRPLAY_MODEL "AirPort10,115"
+
 // Audio buffer size for buffered streams (type 103)
 #define AP2_AUDIO_BUFFER_SIZE (1 * 1024 * 1024)
 

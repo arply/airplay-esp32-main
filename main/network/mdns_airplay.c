@@ -12,7 +12,8 @@
 
 static const char *TAG = "mdns_airplay";
 
-// Feature flags are defined in rtsp_handlers.h (shared with /info handler)
+// Feature flags and AIRPLAY_MODEL are defined in rtsp_handlers.h (shared
+// with the /info handler)
 
 // Protocol version
 #ifdef CONFIG_AIRPLAY_FORCE_V1
@@ -36,10 +37,6 @@ static const char *TAG = "mdns_airplay";
 #else
 #define AIRPLAY_METADATA_TYPES "0,2"
 #endif
-
-// Model identifier - AudioAccessory for speaker appearance
-// AppleTV3,2 = Apple TV, AudioAccessory5,1 = HomePod mini (speaker)
-#define AIRPLAY_MODEL "AudioAccessory5,1"
 
 void mdns_airplay_init(void) {
   char mac_str[18];

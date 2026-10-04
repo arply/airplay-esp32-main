@@ -557,7 +557,8 @@ static void handle_get(int socket, rtsp_conn_t *conn, const rtsp_request_t *req,
       static uint8_t body[1024];
       size_t body_len =
           bplist_build_info_response(body, sizeof(body), device_id, device_name,
-                                     pk, 32, features, protocol_version);
+                                     AIRPLAY_MODEL, pk, 32, features,
+                                     protocol_version);
       if (body_len == 0) {
         ESP_LOGE(TAG, "Failed to build binary /info response");
         rtsp_send_response(socket, conn, 500, "Internal Error", req->cseq, NULL,
@@ -579,7 +580,7 @@ static void handle_get(int socket, rtsp_conn_t *conn, const rtsp_request_t *req,
 
     plist_dict_string(&p, "deviceid", device_id);
     plist_dict_uint(&p, "features", features);
-    plist_dict_string(&p, "model", "AudioAccessory5,1");
+    plist_dict_string(&p, "model", AIRPLAY_MODEL);
     plist_dict_string(&p, "protovers", "1.1");
     plist_dict_string(&p, "srcvers", "377.40.00");
     plist_dict_int(&p, "vv", protocol_version);

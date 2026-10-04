@@ -444,7 +444,7 @@ size_t bplist_build_feedback_response(uint8_t *out, size_t capacity,
 
 size_t bplist_build_info_response(uint8_t *out, size_t capacity,
                                   const char *device_id,
-                                  const char *device_name,
+                                  const char *device_name, const char *model,
                                   const uint8_t *public_key,
                                   size_t public_key_len, uint64_t features,
                                   int64_t protocol_version) {
@@ -492,7 +492,7 @@ size_t bplist_build_info_response(uint8_t *out, size_t capacity,
     return 0;
   }
   ADD_OFFSET(); // 5: model
-  if (!bplist_write_ascii_string(out, capacity, &pos, "AudioAccessory5,1")) {
+  if (!bplist_write_ascii_string(out, capacity, &pos, model)) {
     return 0;
   }
   ADD_OFFSET(); // 6: "protovers"

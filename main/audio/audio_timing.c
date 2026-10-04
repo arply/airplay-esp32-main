@@ -417,7 +417,20 @@ size_t audio_timing_read(audio_timing_t *timing, audio_buffer_t *buffer,
       if (now_us - timing->ready_time_us < 1000000) {
         return 0; // Still waiting for anchor
       }
-      // Waited 1 second, no anchor - proceed without sync
+      // Waited 1 second, no anchor - proceed without sync.
+      //
+      // This starts playout at whatever frame heads the buffer, with no
+      // reference to when it was meant to play. A buffered AirPlay 2 sender
+      // pushes ~7 s ahead, so that frame can be over a second early — and
+      // once playout is running the frames are continuous, so the early/late
+      // gate never re-locks and only the position servo corrects, at 710 ppm
+      // (0.71 ms/s). Measured on hardware: a standing err of 1285 ms that
+      // persisted 241 s until the sender happened to send a pause/resume,
+      // which reset playout and re-locked it to err=1 ms.
+      ESP_LOGW(TAG,
+               "Starting playout with no anchor after 1 s — position will be "
+               "unsynchronised until the next pause/resume (buffered=%d)",
+               buffered_frames);
     }
   }
 

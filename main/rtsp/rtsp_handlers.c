@@ -1768,7 +1768,26 @@ static void handle_flushbuffered(int socket, rtsp_conn_t *conn,
       // let it drain naturally to the boundary so the current track finishes.
       audio_receiver_set_deferred_flush((uint32_t)flush_until_ts);
     } else {
-      ESP_LOGI(TAG, "FLUSHBUFFERED immediate (missing from/until fields)");
+      ESP_LOGI(TAG,
+               "FLUSHBUFFERED immediate: fromSeq=%d fromTS=%d untilSeq=%d "
+               "untilTS=%d (body %zu B)",
+               got_from_seq, got_from_ts, got_until_seq, got_until_ts,
+               body_len);
+#ifdef CONFIG_AIRPLAY_RTSP_TRACE
+      // Only flushUntilTS is actually used below, but all four are required
+      // to arm the deferred flush — so a sender that supplies fewer loses the
+      // whole buffer. Dump the body to see which keys this sender really
+      // sends before changing that condition.
+      {
+        char hex[3 * 96 + 1];
+        size_t n = body_len < 96 ? body_len : 96;
+        for (size_t i = 0; i < n; i++) {
+          snprintf(hex + i * 3, 4, "%02x ", body[i]);
+        }
+        hex[n * 3] = '\0';
+        ESP_LOGI(TAG, "FLUSHBUFFERED body: %s", hex);
+      }
+#endif
     }
   }
 

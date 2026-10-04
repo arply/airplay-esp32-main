@@ -539,9 +539,8 @@ size_t bplist_build_info_response(uint8_t *out, size_t capacity,
   if (!bplist_write_ascii_string(out, capacity, &pos, "pi")) {
     return 0;
   }
-  ADD_OFFSET(); // 17: pairing identifier
-  if (!bplist_write_ascii_string(out, capacity, &pos,
-                                 "00000000-0000-0000-0000-000000000000")) {
+  ADD_OFFSET(); // 17: public identifier
+  if (!bplist_write_ascii_string(out, capacity, &pos, device_id)) {
     return 0;
   }
   ADD_OFFSET(); // 18: "name"

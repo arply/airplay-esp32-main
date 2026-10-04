@@ -594,7 +594,7 @@ static void handle_get(int socket, rtsp_conn_t *conn, const rtsp_request_t *req,
     plist_dict_int(&p, "vv", protocol_version);
     plist_dict_int(&p, "statusFlags", 4);
     plist_dict_data(&p, "pk", pk, 32);
-    plist_dict_string(&p, "pi", "00000000-0000-0000-0000-000000000000");
+    plist_dict_string(&p, "pi", device_id);
     plist_dict_string(&p, "name", device_name);
 
     // Audio formats array

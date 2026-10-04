@@ -69,6 +69,24 @@ void mdns_airplay_init(void) {
   snprintf(service_name, sizeof(service_name), "%02X%02X%02X%02X%02X%02X@%s",
            mac[0], mac[1], mac[2], mac[3], mac[4], mac[5], device_name);
 
+  // AirPlay 2 group identity. macOS routes system audio output through the
+  // grouping mechanism, and a receiver that advertises no group membership may
+  // not be an eligible target at all — the symptom being a refusal on the
+  // advertised record alone, with no connection ever opened. Derived from the
+  // MAC so it is stable across reboots, matching how a working third-party
+  // receiver on the test network presents itself (gcgl=1, isGroupLeader=0).
+  char gid_str[37];
+  snprintf(gid_str, sizeof(gid_str),
+           "%02X%02X%02X%02X-%02X%02X-4000-8000-%02X%02X%02X%02X%02X%02X",
+           mac[0], mac[1], mac[2], mac[3], mac[4], mac[5], mac[0], mac[1],
+           mac[2], mac[3], mac[4], mac[5]);
+
+  // Serial number: the MAC without separators, as good a unique id as exists
+  // on this hardware.
+  char serial_str[13];
+  snprintf(serial_str, sizeof(serial_str), "%02X%02X%02X%02X%02X%02X", mac[0],
+           mac[1], mac[2], mac[3], mac[4], mac[5]);
+
   // Initialize mDNS
   ESP_ERROR_CHECK(mdns_init());
 
@@ -86,10 +104,22 @@ void mdns_airplay_init(void) {
       {"flags", AIRPLAY_FLAGS},
       {"model", AIRPLAY_MODEL},
       {"pk", pk_str},
-      {"pi", "00000000-0000-0000-0000-000000000000"}, // Pairing identity UUID
+      {"pi", device_id}, // Public identifier; a working third-party AP2
+                         // receiver advertises pi == deviceid
       {"srcvers", AIRPLAY_SOURCE_VERSION},
       {"vv", AIRPLAY_PROTOCOL_VERSION},
       {"acl", "0"},
+      // Descriptive and group fields a working third-party AirPlay 2 receiver
+      // advertises and arply did not. Deliberately excludes "features" and
+      // "flags": those are capability claims the firmware would have to
+      // honour, whereas everything here is identity/metadata.
+      {"gid", gid_str},
+      {"gcgl", "1"},
+      {"isGroupLeader", "0"},
+      {"protovers", "1.1"},
+      {"manufacturer", "arply"},
+      {"serialNumber", serial_str},
+      {"rsf", "0x0"},
   };
 
   esp_err_t err =

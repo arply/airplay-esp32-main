@@ -38,3 +38,6 @@ CONFIG_UAC_SUPPORT_MACOS=y
 # output to the new CDC-ACM port instead once the composite device is up.
 CONFIG_ESP_CONSOLE_NONE=y
 CONFIG_ESP_CONSOLE_SECONDARY_NONE=y
+
+# Diagnosing the Apple Music AirPlay 2 stall: log every RTSP request/response.
+CONFIG_AIRPLAY_RTSP_TRACE=y

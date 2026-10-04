@@ -271,6 +271,20 @@ menu "Airplay ESP Configuration"
                 advertise et=0 (no encryption). If iOS refuses to connect,
                 audio encryption support may need to be added.
 
+        config AIRPLAY_RTSP_TRACE
+            bool "Trace every RTSP request and response"
+            default n
+            help
+                Log one line per RTSP request (method, path, CSeq,
+                Content-Type, body length) and one per response status.
+
+                Intended for diagnosing senders that open a session and
+                then stop — the normal logs only name the methods the
+                receiver recognises, so a sender that simply goes quiet
+                leaves no trace of what it last received.
+
+                Verbose: leave off for normal use.
+
         config AIRPLAY_TIMING_THRESHOLD_MS
             int "Early/late timing threshold for buffered streams (ms)"
             default 25

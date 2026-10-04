@@ -446,6 +446,14 @@ int rtsp_dispatch(int socket, rtsp_conn_t *conn, const uint8_t *raw_request,
     return -1;
   }
 
+#ifdef CONFIG_AIRPLAY_RTSP_TRACE
+  // One line per request, so a sender that opens a session and then goes
+  // quiet shows what it last asked for and what it last got back.
+  ESP_LOGI(TAG, ">> %s %s CSeq=%d type=%s body=%zu", req.method, req.path,
+           req.cseq, req.content_type[0] ? req.content_type : "-",
+           req.body_len);
+#endif
+
   // Extract DACP headers if present (AirPlay 1 only — modern iOS AirPlay 2
   // does not send these; it uses MRP for remote control instead).
   // parse_raw_header uses a static buffer — copy before calling again.

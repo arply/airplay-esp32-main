@@ -162,6 +162,11 @@ int rtsp_send_response(int socket, rtsp_conn_t *conn, int status_code,
   char header[1024];
   int header_len;
 
+#ifdef CONFIG_AIRPLAY_RTSP_TRACE
+  ESP_LOGI(TAG, "<< %d %s CSeq=%d body=%zu", status_code, status_text, cseq,
+           body_len);
+#endif
+
   if (extra_headers && body && body_len > 0) {
     header_len =
         snprintf(header, sizeof(header),

@@ -27,12 +27,24 @@
 #endif
 
 // Model identifier. Apple senders draw the AirPlay picker icon from this and
-// key some feature negotiation off it, so it must match everywhere it is
+// key feature negotiation off it, so it must match everywhere it is
 // advertised: the mDNS "model"/"am" TXT records and both /info responses
-// (XML and binary plist). AirPort10,115 is the 2nd-gen AirPort Express, which
-// shipped real AirPlay 2 support and shows a generic speaker rather than the
-// HomePod glyph that AudioAccessory5,1 produced.
-#define AIRPLAY_MODEL "AirPort10,115"
+// (XML and binary plist).
+//
+// This does NOT have to be an Apple model identifier. Third-party AirPlay 2
+// receivers advertise their own product name — a Belkin SOUNDFORM adapter on
+// the test network uses model="SOUNDFORM AirPlay2 Adapter" — and macOS shows
+// a generic speaker for them rather than the HomePod glyph that an
+// AudioAccessory* identifier produces.
+//
+// Borrowing a real Apple identifier is actively harmful: AirPort10,115
+// (2nd-gen AirPort Express) gave the right icon but is a legacy AirPlay 1
+// device, and advertising it alongside AIRPLAY_FEATURES_* (AirPlay 2, HomeKit
+// pairing, transient pairing, buffered audio) and srcvers 377.40.00 describes
+// hardware that never existed. macOS then refused the device for system audio
+// output outright — "kann nicht für Audioausgabe ausgewählt werden" — without
+// ever opening a connection, i.e. on the advertised metadata alone.
+#define AIRPLAY_MODEL "arply"
 
 // Audio buffer size for buffered streams (type 103)
 #define AP2_AUDIO_BUFFER_SIZE (1 * 1024 * 1024)

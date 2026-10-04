@@ -1062,8 +1062,14 @@ static void handle_setup(int socket, rtsp_conn_t *conn,
     for (size_t i = 0; i < stream_count; i++) {
       int64_t stream_type = -1;
       size_t ekey_len = 0, eiv_len = 0, shk_len = 0;
-      if (bplist_get_stream_info(body, body_len, i, &stream_type, &ekey_len,
-                                 &eiv_len, &shk_len)) {
+      bool parsed = bplist_get_stream_info(body, body_len, i, &stream_type,
+                                           &ekey_len, &eiv_len, &shk_len);
+#ifdef CONFIG_AIRPLAY_RTSP_TRACE
+      ESP_LOGI(TAG, "stream[%zu]: parse=%s type=%lld ekey=%zu eiv=%zu shk=%zu",
+               i, parsed ? "ok" : "FAILED", (long long)stream_type, ekey_len,
+               eiv_len, shk_len);
+#endif
+      if (parsed) {
         if (i == 0) {
           conn->stream_type = stream_type;
           audio_receiver_set_stream_type((audio_stream_type_t)stream_type);
@@ -1256,6 +1262,10 @@ static void handle_setup(int socket, rtsp_conn_t *conn,
   // Stream SETUP
   int64_t stream_type = conn->stream_type;
   if (stream_type == 0) {
+    // Nothing was parsed out of the request. Serving a realtime stream here
+    // is a guess: a sender that actually asked for a buffered stream (103)
+    // gets UDP data/control ports back and may give up.
+    ESP_LOGW(TAG, "SETUP: no stream type parsed — defaulting to 96");
     stream_type = 96;
   }
 

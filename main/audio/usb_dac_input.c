@@ -58,7 +58,13 @@
 // Generous enough to survive normal track-to-track gaps and brief host
 // stalls without audibly ping-ponging between sources.
 #define USB_IDLE_TIMEOUT_MS 500
-#define ARBITER_POLL_MS     20
+
+// How long AirPlay keeps the output after its last buffered frame. An open
+// AirPlay session is not enough to claim the output — see arbiter_task. Long
+// enough to ride out a track-change flush, short enough that a session which
+// has stopped sending audio releases the DAC promptly.
+#define AIRPLAY_IDLE_TIMEOUT_MS 1000
+#define ARBITER_POLL_MS         20
 
 // Bytes per stereo 16-bit frame.
 #define FRAME_BYTES 4
@@ -99,6 +105,7 @@ extern uint8_t const usb_dac_spk_itf_num;
 static RingbufHandle_t s_ringbuf;
 static volatile int64_t s_last_rx_us = 0;
 static volatile bool s_usb_active = false;
+static int64_t s_airplay_last_data_us = 0;
 static volatile bool s_muted = false;
 static uint32_t s_drop_count = 0;
 static int64_t s_last_drop_log_us = 0;
@@ -198,21 +205,30 @@ static void arbiter_task(void *arg) {
   (void)arg;
 
   while (true) {
+    int64_t now_us = esp_timer_get_time();
     bool have_data = s_ringbuf != NULL;
-    int64_t idle_ms =
-        s_last_rx_us == 0 ? -1 : (esp_timer_get_time() - s_last_rx_us) / 1000;
+    int64_t idle_ms = s_last_rx_us == 0 ? -1 : (now_us - s_last_rx_us) / 1000;
     bool usb_fresh = have_data && idle_ms >= 0 && idle_ms < USB_IDLE_TIMEOUT_MS;
 
-    // AirPlay outranks USB. Both paths end at the same I2S output, so a Mac
-    // that is both the AirPlay sender and has arply as its default output
-    // device drives both at once — and since the host keeps the UAC endpoint
-    // streaming whenever anything holds the audio device open, an
-    // unconditional USB takeover starves that AirPlay session completely
-    // (symptom: AirPlay connects, PTP locks, no audio). Claim the output only
-    // while no AirPlay stream is playing, and hand it straight back when one
-    // starts.
-    bool airplay_playing = audio_receiver_is_playing();
-    bool usb_should_play = usb_fresh && !airplay_playing;
+    // Whichever source is actually delivering audio owns the output, AirPlay
+    // winning when both are. Both tests ask "has this source produced audio
+    // recently", deliberately symmetric.
+    //
+    // An *open* AirPlay session is not sufficient. When arply is also the
+    // host's selected output device, macOS will complete the AirPlay session
+    // (SETUP, RECORD, SETPEERS, PTP lock) and then send the audio to the USB
+    // endpoint instead — Music's AirPlay picker does exactly this. Gating on
+    // the session's playing flag blocked USB while AirPlay had nothing to
+    // play, so the output went silent with audio arriving the whole time.
+    if (audio_receiver_is_playing() && audio_receiver_has_data()) {
+      s_airplay_last_data_us = now_us;
+    }
+    int64_t airplay_idle_ms =
+        s_airplay_last_data_us == 0 ? -1
+                                    : (now_us - s_airplay_last_data_us) / 1000;
+    bool airplay_active =
+        airplay_idle_ms >= 0 && airplay_idle_ms < AIRPLAY_IDLE_TIMEOUT_MS;
+    bool usb_should_play = usb_fresh && !airplay_active;
 
     if (usb_should_play && !s_usb_active) {
       ESP_LOGI(TAG, "USB audio started — pausing AirPlay output");
@@ -229,7 +245,7 @@ static void arbiter_task(void *arg) {
       s_usb_active = true;
     } else if (!usb_should_play && s_usb_active) {
       ESP_LOGI(TAG, "%s — resuming AirPlay output",
-               airplay_playing ? "AirPlay stream started" : "USB audio stopped");
+               airplay_active ? "AirPlay audio started" : "USB audio stopped");
       s_usb_active = false;
       playback_control_set_source(PLAYBACK_SOURCE_AIRPLAY);
       audio_output_start();

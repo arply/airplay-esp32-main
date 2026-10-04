@@ -6,6 +6,7 @@
 
 #include "audio_receiver.h"
 #include "ptp_clock.h"
+#include "audio_output.h"
 #include "settings.h"
 
 rtsp_conn_t *rtsp_conn_create(void) {
@@ -14,23 +15,15 @@ rtsp_conn_t *rtsp_conn_create(void) {
     return NULL;
   }
 
-  // Load saved volume or use default
+  // Load saved volume or use default. The gain itself is derived from the one
+  // shared setting at playout time (audio_output_volume_q15), so there is no
+  // per-connection copy to keep in step.
   float saved_volume;
   if (settings_get_volume(&saved_volume) == ESP_OK) {
     conn->volume_db = saved_volume;
-    // Apply volume curve
-    if (saved_volume <= -30.0f) {
-      conn->volume_q15 = 0;
-    } else if (saved_volume >= 0.0f) {
-      conn->volume_q15 = 32768;
-    } else {
-      float normalized = (saved_volume + 30.0f) / 30.0f;
-      conn->volume_q15 = (int32_t)(normalized * normalized * 32768.0f);
-    }
   } else {
-    conn->volume_db = -15.0f; // Half volume (midpoint of -30..0 dB range)
-    float normalized = (conn->volume_db + 30.0f) / 30.0f;
-    conn->volume_q15 = (int32_t)(normalized * normalized * 32768.0f);
+    conn->volume_db = AUDIO_VOLUME_DEFAULT_DB;
+    settings_set_volume(conn->volume_db);
   }
 
   conn->data_socket = -1;
@@ -119,26 +112,7 @@ void rtsp_conn_set_volume(rtsp_conn_t *conn, float volume_db) {
 
   conn->volume_db = volume_db;
 
-  // AirPlay volume: 0 dB = max, -30 dB = mute
-  // Use squared curve for better perceptual control
-  if (volume_db <= -30.0f) {
-    conn->volume_q15 = 0;
-  } else if (volume_db >= 0.0f) {
-    conn->volume_q15 = 32768;
-  } else {
-    // Map -30..0 to 0..1, then square for perceptual curve
-    float normalized = (volume_db + 30.0f) / 30.0f;
-    float curved = normalized * normalized;
-    conn->volume_q15 = (int32_t)(curved * 32768.0f);
-  }
-
-  // Update cached volume + DAC (NVS persisted at disconnect)
+  // Update the one shared volume (NVS persisted at disconnect). The output
+  // gain is derived from this, for every source.
   settings_set_volume(volume_db);
-}
-
-int32_t rtsp_conn_get_volume_q15(rtsp_conn_t *conn) {
-  if (!conn) {
-    return 32768; // Default full volume
-  }
-  return conn->volume_q15;
 }

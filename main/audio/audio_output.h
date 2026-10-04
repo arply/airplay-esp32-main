@@ -16,6 +16,27 @@ typedef enum {
   AUDIO_CHANNEL_MONO,
 } audio_channel_mode_t;
 
+/** Volume range shared by every input source. 0 dB = unity, -30 dB = silence. */
+#define AUDIO_VOLUME_MIN_DB     (-30.0f)
+#define AUDIO_VOLUME_MAX_DB     (0.0f)
+#define AUDIO_VOLUME_DEFAULT_DB (-15.0f)
+
+/**
+ * Convert a volume in dB to a Q15 linear gain (0..32768), applying the
+ * perceptual (squared) curve. The one place this curve is defined.
+ */
+int32_t audio_output_volume_q15_from_db(float volume_db);
+
+/**
+ * Current output gain as Q15, from the single shared volume setting.
+ *
+ * Every source that writes to the DAC must scale by this, so that switching
+ * between them does not change the level: arply has one physical output, so
+ * it has one volume. Both the AirPlay sender's slider and a USB host's UAC
+ * volume control write through to that same setting.
+ */
+int32_t audio_output_volume_q15(void);
+
 /**
  * Initialize the I2S audio output.
  */

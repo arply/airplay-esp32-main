@@ -46,6 +46,27 @@ static volatile int source_rate = 44100;
 static volatile bool resample_reinit_needed = false;
 static volatile audio_channel_mode_t channel_mode = AUDIO_CHANNEL_STEREO;
 
+int32_t audio_output_volume_q15_from_db(float volume_db) {
+  if (volume_db <= AUDIO_VOLUME_MIN_DB) {
+    return 0;
+  }
+  if (volume_db >= AUDIO_VOLUME_MAX_DB) {
+    return 32768;
+  }
+  // Map -30..0 dB to 0..1, then square for perceptual control.
+  float normalized = (volume_db - AUDIO_VOLUME_MIN_DB) /
+                     (AUDIO_VOLUME_MAX_DB - AUDIO_VOLUME_MIN_DB);
+  return (int32_t)(normalized * normalized * 32768.0f);
+}
+
+int32_t audio_output_volume_q15(void) {
+  float volume_db;
+  if (settings_get_volume(&volume_db) != ESP_OK) {
+    volume_db = AUDIO_VOLUME_DEFAULT_DB;
+  }
+  return audio_output_volume_q15_from_db(volume_db);
+}
+
 static void apply_volume(int16_t *buf, size_t n) {
   // Ramp toward the target gain instead of applying volume changes
   // instantly.  An abrupt gain step mid-waveform is a discontinuity scaled
@@ -56,7 +77,7 @@ static void apply_volume(int16_t *buf, size_t n) {
   // ~3 ms time constant and a worst-case per-frame gain step of ~0.4%,
   // with a minimum step of 1 so the ramp always completes.
   static int32_t cur_q15 = -1;
-  int32_t target = airplay_get_volume_q15();
+  int32_t target = audio_output_volume_q15();
   if (cur_q15 < 0) {
     cur_q15 = target; // first call: no audio has played yet, jump silently
   }

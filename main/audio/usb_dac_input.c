@@ -28,6 +28,7 @@
 #include "audio_output.h"
 #include "audio_receiver.h"
 #include "playback_control.h"
+#include "settings.h"
 #include "led.h"
 #include "rtsp_events.h"
 #include "esp_check.h"
@@ -98,7 +99,6 @@ extern uint8_t const usb_dac_spk_itf_num;
 static RingbufHandle_t s_ringbuf;
 static volatile int64_t s_last_rx_us = 0;
 static volatile bool s_usb_active = false;
-static volatile int32_t s_volume_percent = 100;
 static volatile bool s_muted = false;
 static uint32_t s_drop_count = 0;
 static int64_t s_last_drop_log_us = 0;
@@ -159,9 +159,16 @@ static esp_err_t usb_output_cb(uint8_t *buf, size_t len, void *cb_ctx) {
 
 static void usb_set_volume_cb(uint32_t volume, void *cb_ctx) {
   (void)cb_ctx;
-  // Component already maps the feature unit's dB range to 0..100.
-  s_volume_percent = (int32_t)volume;
-  ESP_LOGI(TAG, "Host volume: %d%%", (int)s_volume_percent);
+  // The component already maps the feature unit's dB range to 0..100. Write it
+  // through to the one shared volume setting rather than keeping a USB-local
+  // level: both sources feed the same DAC, so a separate USB gain made the
+  // output jump by however far the two happened to disagree (up to 12 dB at
+  // the defaults) every time the arbiter switched source.
+  float volume_db = AUDIO_VOLUME_MIN_DB +
+                    ((float)volume / 100.0f) *
+                        (AUDIO_VOLUME_MAX_DB - AUDIO_VOLUME_MIN_DB);
+  settings_set_volume(volume_db);
+  ESP_LOGI(TAG, "Host volume: %d%% (%.1f dB)", (int)volume, volume_db);
 }
 
 static void usb_set_mute_cb(uint32_t mute, void *cb_ctx) {
@@ -175,14 +182,10 @@ static void apply_gain(int16_t *buf, size_t n) {
     memset(buf, 0, n * sizeof(int16_t));
     return;
   }
-  int32_t vol = s_volume_percent;
-  if (vol >= 100) {
-    return;
+  int32_t q15 = audio_output_volume_q15();
+  if (q15 >= 32768) {
+    return; // unity gain, nothing to scale
   }
-  if (vol < 0) {
-    vol = 0;
-  }
-  int32_t q15 = (vol * 32767) / 100;
   for (size_t i = 0; i < n; i++) {
     buf[i] = (int16_t)(((int32_t)buf[i] * q15) >> 15);
   }

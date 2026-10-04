@@ -66,14 +66,6 @@ void airplay_set_volume(float volume_db) {
   }
 }
 
-int32_t airplay_get_volume_q15(void) {
-  client_slot_t *c = &clients[current_slot];
-  if (c->conn && !c->is_old) {
-    return rtsp_conn_get_volume_q15(c->conn);
-  }
-  return 16384; // 50% volume for new clients
-}
-
 void rtsp_server_request_resume(void) {
   s_resume_requested = true;
 }

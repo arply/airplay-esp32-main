@@ -193,11 +193,19 @@ Measured 2026-11-24 on the `DUT` board (XIAO ESP32-S3, `arply_v1`, 44.1 kHz).
   server costs ~15 KB internal (task stack). Internal free stays > 175 KB.
 - `/dsp` (69 KB) loads in 0.31 s over HTTP and 0.91 s over HTTPS (incl.
   handshake).
-- **Pending (needs the user):** iPhone Safari `getUserMedia` on
-  `https://dut.local/mictest` with the accepted warning (and, only if that
-  fails, with the trusted profile); TLS handshakes while AirPlay plays,
-  listening for dropouts. The page reports its result to the serial log
-  (`https: mictest: {...}`). Until then the decision below is open.
+- **iPhone result (2026-11-24, Till):** Safari grants the microphone on
+  `https://dut.local/dsp` after the certificate warning is accepted (the
+  level check reached its mic branch). **Decision: per-device self-signed
+  certificate (4.2), HTTPS as the default** — done. The warning looked
+  confusing at first, so the settings page now also offers the certificate
+  as a profile download (`/arply.crt`) with the steps to trust it.
+- The level meter read "far too quiet" with very loud noise: the analyser
+  was not connected to the destination, and Safari only pulls audio through
+  nodes that reach the output. Fixed: a fresh AudioContext after
+  `getUserMedia`, analysis chain ends in a muted gain at the destination,
+  and a "microphone delivers silence" message below −100 dBFS.
+  **Pending:** re-test on the iPhone.
+- **Pending:** TLS handshakes while AirPlay plays, listening for dropouts.
 
 **0.2 CPU** — measured on the device with the real `dsp_process()`
 (not the synthetic loop), per 352-sample frame (8 ms):
@@ -624,8 +632,8 @@ would be confusing). `gen_chime.py` takes the sample rate as an argument;
 both `arply_chime_44100.pcm` and `arply_chime_48000.pcm` are committed, and
 CMake embeds the one matching `CONFIG_OUTPUT_SAMPLE_RATE_HZ`. API:
 `GET/POST /api/audio/chime {"on": bool}`, toggle in `index.html`.
-Verified: a soft restart plays no chime. **Pending:** a real power-on
-(unplug/replug) plays it once, about 5 s after power-on, when Wi-Fi is up.
+Verified: a soft restart plays no chime; a real power-on plays it (Till,
+2026-11-24).
 
 ---
 
@@ -696,3 +704,45 @@ Decided concept (see the project notes):
 - Distortion measurement (harmonics from the sweep) — possible later; the
   impulse response already contains them at negative times.
 - Per-iPhone-model microphone correction curves.
+
+
+---
+
+## Feedback round 1 (2026-11-24) — what changed
+
+From Till's first test on the iPhone:
+
+- **HTTPS is the default.** Plain-HTTP requests for `/` and `/dsp` get a
+  302 to the same URL on HTTPS, except for clients on the setup hotspot
+  (captive portal stays HTTP). Settings page, calibration page and their
+  APIs are registered on both servers from one table
+  (`web_server_register_shared()`); `/logs` (single-server websocket) and
+  `/speedtest` (should measure Wi-Fi, not TLS) stay HTTP-only and redirect
+  back from HTTPS. This also fixes "Nothing matches the given URI" on the
+  "← Settings" link, which pointed at `/` on HTTPS. APIs on HTTP keep
+  working (curl, scripts). HTTPS now allows 3 sockets.
+- **The original logo.** `dut.local` had a hand-drawn SVG, `/dsp` a trace
+  of an older source image. Both now use `arply-web/assets/arply-logo.png`
+  (1.5 KB) as a CSS mask, so it follows light/dark mode.
+- **Level check far too loud.** Measurement signals now follow arply's one
+  volume (the one AirPlay and USB use); they used to play at full digital
+  level regardless. New `GET/POST /api/audio/volume` and a volume slider
+  in Step 1 and in Listen. The chime keeps its fixed level.
+- **Listen plays on arply, not the phone.** The page renders the built-in
+  sample at arply's rate and uploads it (`POST /api/dsp/listen?channels=`,
+  raw s16le, ≤ 3 MB, PSRAM); arply loops it through channel mode, DSP and
+  volume until `/api/dsp/stop`. Groove (stereo, 1.7 MB) uploads in 4.6 s
+  over HTTPS, 3.9 s over HTTP. Own music: play it via AirPlay. The browser
+  WebAudio preview chain is gone.
+- **Removed** demo measurement, "Play sweep only" and recording import.
+- **Target and range:** filters are calculated automatically after every
+  measurement; the sliders moved into a collapsed "Advanced" section of the
+  filter panel and recalculate on change.
+- **OTA works:** `curl -X POST --data-binary @.pio/build/arply_v1/firmware.bin
+  http://dut.local/api/ota/update` (39 s), then pages with
+  `curl -X POST --data-binary @data/www/dsp.html
+  "http://dut.local/api/fs/upload?path=/spiffs/www/dsp.html"` (upload cap
+  raised from 64 to 256 KB for the 68 KB page).
+- Checked in jsdom against a fake API (loads, previews, listen upload,
+  volume, bypass, save) and on the board with curl (redirects, routes on
+  both servers, certificate download, listen upload/stop).

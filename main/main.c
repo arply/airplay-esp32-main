@@ -14,13 +14,12 @@
 #include "log_stream.h"
 #include "wifi.h"
 #include "spiffs_storage.h"
-
+#include "https_server.h"
+#include "chime.h"
 
 #ifdef CONFIG_AUDIO_INPUT_USB_DAC
 #include "usb_dac_input.h"
 #endif
-
-
 
 #include "iot_board.h"
 #include "esp_heap_caps.h"
@@ -76,6 +75,7 @@ static void start_airplay_services(void) {
   }
 
   audio_output_start();
+  chime_boot_play();
 
   ESP_ERROR_CHECK(rtsp_server_start());
 
@@ -125,7 +125,6 @@ static void network_monitor_task(void *pvParameters) {
   }
 }
 
-
 void app_main(void) {
   // Initialize NVS
   esp_err_t ret = nvs_flash_init();
@@ -136,6 +135,7 @@ void app_main(void) {
   }
   ESP_ERROR_CHECK(ret);
   ESP_ERROR_CHECK(settings_init());
+  chime_boot_arm();
   spiffs_storage_init();
   log_stream_init();
   ESP_ERROR_CHECK(playback_control_init());
@@ -173,12 +173,12 @@ void app_main(void) {
   }
 
   web_server_start(80);
+  https_server_start();
   xTaskCreate(network_monitor_task, "net_mon", 4096, NULL, 5, NULL);
 
   if (wifi_is_connected()) {
     start_airplay_services();
   }
-
 
   // Boot baseline: free internal DRAM once WiFi (and BT, where enabled) are
   // resident but before any stream is active.  Compare against the

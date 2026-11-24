@@ -1,0 +1,63 @@
+#pragma once
+
+/**
+ * @file audio_dsp.h
+ * @brief The user's DSP profile: stored in NVS, resolved onto the outputs.
+ *
+ * A profile holds three filter sets as the calibration page knows them:
+ * L and R (stereo, left only, right only) and M (mono). Which set runs on
+ * which output follows the current channel mode:
+ *
+ *   STEREO: L -> left output, R -> right output
+ *   MONO:   M -> both     LEFT: L -> both     RIGHT: R -> both
+ *
+ * All functions are safe to call from any task except the audio task.
+ */
+
+#include <stdbool.h>
+
+#include "audio_output.h"
+#include "dsp.h"
+#include "esp_err.h"
+
+typedef enum {
+  AUDIO_DSP_SET_L = 0,
+  AUDIO_DSP_SET_R,
+  AUDIO_DSP_SET_M,
+  AUDIO_DSP_SET_COUNT,
+} audio_dsp_set_t;
+
+typedef struct {
+  float preamp_db;
+  dsp_filter_t sets[AUDIO_DSP_SET_COUNT][DSP_MAX_FILTERS_PER_CH];
+  uint8_t count[AUDIO_DSP_SET_COUNT];
+  dsp_pbe_t pbe;
+} audio_dsp_profile_t;
+
+/** dsp_init() at the output rate, then load and apply the saved profile. */
+void audio_dsp_init(uint32_t sample_rate);
+
+/** A flat profile (no filters, 0 dB, bass enhancement off). */
+void audio_dsp_profile_flat(audio_dsp_profile_t *p);
+
+/** Clamp every value into range, in place (same rules as the DSP). */
+void audio_dsp_profile_clamp(audio_dsp_profile_t *p);
+
+/** The saved profile (not a running preview). */
+void audio_dsp_get_saved(audio_dsp_profile_t *p);
+
+/** Apply and persist, and switch to @p mode (persisted too). */
+esp_err_t audio_dsp_save(const audio_dsp_profile_t *p,
+                         audio_channel_mode_t mode);
+
+/** Apply without persisting; @p mode is applied but not persisted either. */
+void audio_dsp_preview(const audio_dsp_profile_t *p, audio_channel_mode_t mode);
+
+/** Drop a running preview: back to the saved profile and channel mode. */
+void audio_dsp_revert(void);
+
+/** True while a preview runs instead of the saved profile. */
+bool audio_dsp_previewing(void);
+
+/** Re-resolve the running profile for a new channel mode. */
+void audio_dsp_on_channel_mode(audio_channel_mode_t mode);

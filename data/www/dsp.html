@@ -1,0 +1,1148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>arply Room Calibration</title>
+<style>
+/* VOICE: calm, precise maker tool in the arply.de language (see design-language.md)
+   IDEA: a measurement bench – one large response chart, controls as quiet white cards
+   PICTURE: the frequency-response chart, live, correction band tinted in the accent
+   COLOUR and TYPE: ground #f7f8fb, cards #fff, ink #0b0d14, slate #4f556a, indigo #4e54dc; Inter + JetBrains Mono labels
+   LAYOUT: header bar with wordmark, eyebrow + statement title, chart first, cards in an auto-fit grid, one column on phone */
+:root{color-scheme:light dark;
+--bg:light-dark(#f7f8fb,#0e1016);--card:light-dark(#ffffff,#161922);--ink:light-dark(#0b0d14,#eef0f6);
+--mut:light-dark(#4f556a,#a9aec0);--quiet:light-dark(#6b6f82,#8e93a6);--line:light-dark(#eceef4,#262a36);
+--btnline:light-dark(#e3e5ee,#30354a);--acc:light-dark(#4e54dc,#8b90f0);--accbg:light-dark(#e9eafb,#23264a);
+--acctx:light-dark(#2f34a8,#c3c6fa);--band:light-dark(#eef0fd,#1b1e33);--meas:light-dark(#9aa0b4,#6f7489);
+--warnbg:light-dark(#f9f3e8,#2d2618);--warntx:light-dark(#6b4a10,#e8c98e)}
+:root[data-theme=light]{color-scheme:light}:root[data-theme=dark]{color-scheme:dark}
+*{box-sizing:border-box;min-width:0}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55 Inter,system-ui,sans-serif;overflow-x:clip}
+.top{border-bottom:1px solid var(--line);padding:0 max(4vw,16px)}
+.top .in{max-width:1100px;margin:0 auto;min-height:64px;display:flex;align-items:center;justify-content:space-between;gap:12px}
+.logo{color:var(--ink);text-decoration:none;line-height:0;display:inline-block}.logo svg{display:block;height:26px;width:auto}footer .logo svg{height:18px}
+#status a{color:var(--acc)}
+.wrap{max-width:1100px;margin:0 auto;padding:clamp(24px,4vw,44px) max(4vw,16px) 60px}
+.eyebrow{display:block;font:500 11.5px 'JetBrains Mono',ui-monospace,monospace;letter-spacing:1.4px;text-transform:uppercase;color:var(--acc);margin:0 0 6px}
+h1{font-size:clamp(32px,5vw,48px);line-height:1.08;font-weight:700;letter-spacing:-0.02em;margin:0 0 8px;text-wrap:balance}
+h2{font-size:18px;margin:0 0 10px;font-weight:600}
+p{margin:0 0 8px}.small{font-size:13.5px;color:var(--quiet)}
+#status{font-size:15px;color:var(--mut);margin:0 0 20px}
+#status b{color:var(--ink);font-weight:600}
+code{font:500 .9em 'JetBrains Mono',ui-monospace,monospace;background:var(--accbg);color:var(--acctx);padding:1px 6px;border-radius:6px;overflow-wrap:anywhere}
+.chartbox{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:12px 12px 8px}
+.fig{position:relative;height:clamp(260px,52vh,440px)}.fig>canvas{position:absolute;inset:0;width:100%;height:100%;touch-action:pan-y}
+.legend{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:13.5px;color:var(--mut);padding:6px 4px 2px}
+.legend i{display:inline-block;width:18px;height:3px;border-radius:2px;vertical-align:middle;margin-right:6px}
+#readout{font:500 12.5px 'JetBrains Mono',ui-monospace,monospace;color:var(--mut);min-height:1.5em;padding:0 4px}
+.kpis{display:flex;flex-wrap:wrap;gap:8px 32px;margin:18px 2px 6px}
+.kpi b{display:block;font-size:clamp(22px,4vw,30px);line-height:1.1;font-weight:700;letter-spacing:-0.01em;font-variant-numeric:tabular-nums}
+.kpi span{font-size:13.5px;color:var(--quiet)}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,330px),1fr));gap:16px;margin-top:16px}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:20px}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:8px 0}
+button,.btn{font:600 15px Inter,system-ui,sans-serif;min-height:44px;padding:0 18px;border-radius:999px;border:1px solid var(--btnline);background:var(--card);color:var(--ink);cursor:pointer}
+button.pri,button.mag{background:var(--acc);border-color:var(--acc);color:#fff}
+:root[data-theme=dark] button.pri,:root[data-theme=dark] button.mag{color:#0e1016}
+button:disabled{opacity:.45;cursor:default}
+button:focus-visible,input:focus-visible,select:focus-visible,a:focus-visible{outline:3px solid var(--acc);outline-offset:2px}
+label.f{display:grid;grid-template-columns:8.5em 1fr 4.4em;align-items:center;gap:8px;font-size:14.5px;margin:4px 0}
+label.f output{text-align:right;font:500 13px 'JetBrains Mono',ui-monospace,monospace;color:var(--mut);white-space:nowrap}
+input[type=range]{width:100%;accent-color:var(--acc);min-height:32px}
+input[type=number],select{font:16px Inter,system-ui,sans-serif;min-height:40px;border:1px solid var(--btnline);border-radius:10px;background:var(--card);color:var(--ink);padding:0 10px;width:100%}
+.chk{display:flex;gap:8px;align-items:center;font-size:14.5px;min-height:40px}
+.chk input{width:20px;height:20px;accent-color:var(--acc)}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{display:inline-flex;align-items:center;gap:4px;border:1px solid var(--line);border-radius:99px;padding:2px 4px 2px 12px;font-size:14px;background:var(--bg)}
+.chip button{min-height:32px;width:32px;padding:0;border:0;font-size:18px;background:transparent}
+.filt{border-top:1px solid var(--line);padding:10px 0 6px}
+.filt:first-child{border-top:0}
+.fhead{display:flex;gap:8px;align-items:center}
+.fhead select{width:auto;flex:1}
+.fhead button{min-height:40px;padding:0 14px}
+pre{overflow-x:auto;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:10px;font:12.5px/1.5 'JetBrains Mono',ui-monospace,monospace;max-height:260px;margin:8px 0}
+#msg{min-height:1.4em;font-size:14.5px;margin:6px 0 0}
+#msg.warn{color:#b42318}
+:root[data-theme=dark] #msg.warn{color:#ff8a80}
+progress{width:100%;height:8px;accent-color:var(--acc)}
+details{margin-top:18px;background:var(--warnbg);border-radius:16px;padding:4px 20px 12px}
+details .small{color:var(--warntx)}
+summary{cursor:pointer;font-weight:600;min-height:44px;display:flex;align-items:center}
+.probe{position:absolute;width:0;height:0;overflow:hidden}
+.tabs{display:flex;gap:6px;align-items:center;margin:0 0 10px}
+.tabs button{min-height:38px;padding:0 16px}
+.tabs button[aria-pressed=true]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.tabs .one{font:500 12px 'JetBrains Mono',ui-monospace,monospace;letter-spacing:1px;text-transform:uppercase;color:var(--mut);padding:0 4px}
+.mbar{position:relative;height:16px;border-radius:999px;background:var(--bg);border:1px solid var(--line);overflow:hidden;margin:8px 0 4px}
+.mzone{position:absolute;top:0;bottom:0;left:41.7%;width:38.3%;background:var(--accbg)}
+#mfill{position:absolute;top:0;bottom:0;left:0;width:0;background:var(--acc);transition:width .08s linear}
+.mscale{display:flex;justify-content:space-between;font:500 11.5px 'JetBrains Mono',ui-monospace,monospace;color:var(--quiet)}
+#mtext{font-size:14.5px;margin:4px 0 0;min-height:1.4em}
+#mtext b{color:var(--ink)}
+footer{margin-top:40px;padding:24px 0 0;border-top:1px solid var(--line);display:flex;flex-direction:column;align-items:center;gap:6px;text-align:center}
+@media(max-width:600px){label.f{grid-template-columns:7em 1fr 4.2em}}
+@media(prefers-reduced-motion:reduce){#mfill{transition:none}}
+</style>
+</head>
+<body>
+<header class="top"><div class="in">
+  <a class="logo" href="/" aria-label="arply settings"><svg xmlns="http://www.w3.org/2000/svg" viewBox="250 365 760 235" width="84" height="26" fill="currentColor" role="img" aria-label="arply"><g fill="none" stroke="currentColor" stroke-width="28"><circle cx="334" cy="484" r="64"/><circle cx="660" cy="484" r="64"/><path d="M473 484A64 64 0 0 1 544 420.4"/></g><rect x="384" y="484" width="28" height="74"/><rect x="459" y="484" width="28" height="74"/><rect x="581" y="484" width="28" height="113"/><rect x="785" y="370" width="28" height="188"/><path d="M856 412h32l43 97-16 35zM974 412h31l-82 185h-31z"/></svg></a>
+  <a href="/" style="font-size:14px;font-weight:500;color:var(--mut);text-decoration:none">← Settings</a>
+</div></header>
+<div class="wrap">
+  <span class="eyebrow">Room calibration</span>
+  <h1>Tune arply to your room.</h1>
+  <p id="status">Connecting to arply …</p>
+
+  <div class="tabs" id="tabs"></div>
+  <div class="chartbox">
+    <div class="fig"><canvas id="cv" aria-label="Frequency response"></canvas></div>
+    <div id="readout"></div>
+    <div class="legend">
+      <span><i style="background:var(--meas)"></i>Measured (average)</span>
+      <span><i style="background:var(--quiet)"></i>Target</span>
+      <span><i style="background:var(--acc)"></i>EQ</span>
+      <span><i style="background:var(--ink)"></i>Result</span>
+      <span><i style="background:var(--band);height:10px;border:1px solid var(--accbg)"></i>Correction range</span>
+    </div>
+  </div>
+
+  <div class="kpis">
+    <div class="kpi"><b id="k-before">–</b><span>Peaks above target, before (RMS)</span></div>
+    <div class="kpi"><b id="k-after">–</b><span>after</span></div>
+    <div class="kpi"><b id="k-pre">0.0 dB</b><span>Preamp</span></div>
+    <div class="kpi"><b id="k-n">0</b><span>Measurements</span></div>
+  </div>
+
+  <div class="grid">
+    <section class="panel">
+      <span class="eyebrow">Step 1</span>
+      <h2>Measure</h2>
+      <label class="f">Output<select id="o-mode"><option value="stereo">Stereo</option><option value="mono">Mono</option><option value="left">Left only</option><option value="right">Right only</option></select><span></span></label>
+      <p class="small" id="modehint"></p>
+      <div class="row"><button id="b-level">1. Check level</button></div>
+      <div id="meter" hidden>
+        <div class="mbar"><div class="mzone"></div><div id="mfill"></div></div>
+        <div class="mscale"><span>−60</span><span>−40</span><span>−20</span><span>0 dBFS</span></div>
+        <p id="mtext"></p>
+      </div>
+      <div class="row">
+        <button class="pri" id="b-live">2. Measure live</button>
+        <button id="b-demo">Demo measurement</button>
+      </div>
+      <div class="row">
+        <button id="b-sweep">Play sweep only</button>
+        <label class="btn" style="display:inline-flex;align-items:center">Import recording
+          <input type="file" id="f-rec" accept="audio/*" hidden></label>
+      </div>
+      <label class="chk"><input type="checkbox" id="o-tail"> Longer pause between sweeps (large or echoey room)</label>
+      <progress id="prog" value="0" max="1" hidden></progress>
+      <p id="msg"></p>
+      <div class="chips" id="meas"></div>
+      <p class="small" style="margin-top:8px">arply plays the sweeps itself at a fixed level – your AirPlay volume does not matter. In stereo mode each run measures left, then right. Measure 3–5 positions around the listening spot, phone at ear height, microphone (bottom edge) towards the speaker.</p>
+    </section>
+
+    <section class="panel">
+      <span class="eyebrow">Step 2</span>
+      <h2>Target and range</h2>
+      <label class="f">From<input type="range" id="o-fmin" min="20" max="200" step="5"><output id="v-fmin"></output></label>
+      <label class="f">To<input type="range" id="o-fmax" min="200" max="2000" step="50"><output id="v-fmax"></output></label>
+      <label class="f">Bass in target<input type="range" id="o-tilt" min="0" max="8" step="0.5"><output id="v-tilt"></output></label>
+      <label class="f">Smoothing<select id="o-detail"><option value="0.5">Coarse</option><option value="1">Normal</option><option value="2">Fine</option></select><span></span></label>
+      <label class="f">Max. filters<input type="range" id="o-maxn" min="1" max="10" step="1"><output id="v-maxn"></output></label>
+      <label class="f">Max. cut<input type="range" id="o-cut" min="3" max="18" step="1"><output id="v-cut"></output></label>
+      <div class="row"><button class="mag" id="b-fit">Calculate filters</button><button id="b-undo" disabled>Undo</button></div>
+      <p class="small">Smoothing follows frequency: “Normal” uses 1/12 octave in the bass up to 150&nbsp;Hz, getting coarser up to 1/3 octave from 3&nbsp;kHz. “Fine” halves the windows, “Coarse” doubles them.</p>
+      <p class="small">Cuts only: room-mode peaks are trimmed, dips are not filled. The iPhone microphone’s roll-off below about 80&nbsp;Hz looks like a dip and is therefore ignored.</p>
+    </section>
+
+    <section class="panel">
+      <span class="eyebrow">Optional</span>
+      <h2>Bass enhancement</h2>
+      <p class="small">Psychoacoustic: bass below the cutoff that the speaker can’t reproduce is replaced by harmonics – your ear fills in the fundamental. Useful for small speakers, not with a subwoofer.</p>
+      <label class="chk"><input type="checkbox" id="o-pbe"> Bass enhancement on</label>
+      <label class="f">Cutoff<input type="range" id="o-pbefc" min="60" max="150" step="5"><output id="v-pbefc"></output></label>
+      <label class="f">Intensity<input type="range" id="o-pbeamt" min="0" max="100" step="5"><output id="v-pbeamt"></output></label>
+      <div class="row"><button id="b-pbesug">Suggest from measurement</button></div>
+      <p class="small" id="pbemsg"></p>
+    </section>
+
+    <section class="panel">
+      <span class="eyebrow">Step 3</span>
+      <h2 id="filt-h">Filters</h2>
+      <div id="filters"></div>
+      <div class="row"><button id="b-add">Add filter</button><button id="b-clear">Remove all</button></div>
+    </section>
+
+    <section class="panel">
+      <span class="eyebrow">Step 4</span>
+      <h2>Listen</h2>
+      <p class="small">Every change you make is also previewed live on arply’s speakers (not saved until you press “Save to arply”). The samples below play through this device, with the correction applied in the browser.</p>
+      <label class="f">Sample<select id="o-sample"><option value="groove">Groove (built-in)</option><option value="tones">Bass tones 30–160 Hz</option><option value="noise">Pink noise</option><option value="file">Your own music file</option></select><span></span></label>
+      <p class="small" id="samplehint"></p>
+      <div class="row">
+        <label class="btn" id="l-music" style="display:inline-flex;align-items:center" hidden>Load music<input type="file" id="f-music" accept="audio/*" hidden></label>
+        <button class="pri" id="b-play">Play</button>
+      </div>
+      <label class="chk"><input type="checkbox" id="o-bypass"> Bypass EQ (A/B comparison, also on arply)</label>
+      <p class="small" id="musicname"></p>
+    </section>
+
+    <section class="panel">
+      <span class="eyebrow">Step 5</span>
+      <h2>Save to arply</h2>
+      <p class="small">One shared preamp for all channels, so the balance stays intact. Saved filters survive a restart.</p>
+      <div class="row"><button class="pri" id="b-send">Save to arply</button><button id="b-revert">Discard changes</button><button id="b-copy">Copy JSON</button></div>
+      <p id="sendmsg" class="small"></p>
+      <pre id="json"></pre>
+    </section>
+  </div>
+
+  <details>
+    <summary>Why doesn’t “Measure live” work here?</summary>
+    <p class="small">Browsers only allow the microphone on secure pages. Open this page via <code>https://</code> (the link at the top) and accept the certificate warning once – arply signs its own certificate.</p>
+    <p class="small">Import route without HTTPS: start a recording on your phone (e.g. Voice Memos), tap “Play sweep only” here, stop the recording when arply is quiet again and import the file. The recording may start any time earlier.</p>
+  </details>
+
+  <footer>
+    <span class="logo"><svg xmlns="http://www.w3.org/2000/svg" viewBox="250 365 760 235" width="84" height="26" fill="currentColor" role="img" aria-label="arply"><g fill="none" stroke="currentColor" stroke-width="28"><circle cx="334" cy="484" r="64"/><circle cx="660" cy="484" r="64"/><path d="M473 484A64 64 0 0 1 544 420.4"/></g><rect x="384" y="484" width="28" height="74"/><rect x="459" y="484" width="28" height="74"/><rect x="581" y="484" width="28" height="113"/><rect x="785" y="370" width="28" height="188"/><path d="M856 412h32l43 97-16 35zM974 412h31l-82 185h-31z"/></svg></span>
+    <span class="small">An unofficial, open AirPlay receiver.</span>
+  </footer>
+</div>
+<span class="probe" id="p-meas" style="color:var(--meas)"></span><span class="probe" id="p-mag" style="color:var(--acc)"></span><span class="probe" id="p-ink" style="color:var(--ink)"></span><span class="probe" id="p-mut" style="color:var(--quiet)"></span><span class="probe" id="p-sea" style="color:var(--band)"></span><span class="probe" id="p-line" style="color:var(--line)"></span>
+
+<script>
+/*DSP-START*/
+const DSP = (() => {
+  const TAU = 2 * Math.PI;
+  const nextPow2 = n => { let p = 1; while (p < n) p <<= 1; return p; };
+
+  function fft(re, im, inv) {
+    const n = re.length;
+    for (let i = 1, j = 0; i < n; i++) {
+      let b = n >> 1;
+      for (; j & b; b >>= 1) j ^= b;
+      j ^= b;
+      if (i < j) { let t = re[i]; re[i] = re[j]; re[j] = t; t = im[i]; im[i] = im[j]; im[j] = t; }
+    }
+    for (let len = 2; len <= n; len <<= 1) {
+      const ang = (inv ? TAU : -TAU) / len, wr = Math.cos(ang), wi = Math.sin(ang), h = len >> 1;
+      for (let i = 0; i < n; i += len) {
+        let cr = 1, ci = 0;
+        for (let k = 0; k < h; k++) {
+          const a = i + k, b = a + h;
+          const tr = re[b] * cr - im[b] * ci, ti = re[b] * ci + im[b] * cr;
+          re[b] = re[a] - tr; im[b] = im[a] - ti; re[a] += tr; im[a] += ti;
+          const nc = cr * wr - ci * wi; ci = cr * wi + ci * wr; cr = nc;
+        }
+      }
+    }
+    if (inv) for (let i = 0; i < n; i++) { re[i] /= n; im[i] /= n; }
+  }
+
+  // Exponential sine sweep (Farina)
+  function sweep(fs, T = 4, f1 = 20, f2 = 20000, amp = 0.25) {
+    const n = Math.round(T * fs), L = T / Math.log(f2 / f1), K = TAU * f1 * L;
+    const x = new Float32Array(n), fi = Math.round(0.01 * fs), fo = Math.round(0.005 * fs);
+    for (let i = 0; i < n; i++) {
+      let g = amp;
+      if (i < fi) g *= 0.5 - 0.5 * Math.cos(Math.PI * i / fi);
+      if (n - i < fo) g *= 0.5 - 0.5 * Math.cos(Math.PI * (n - i) / fo);
+      x[i] = g * Math.sin(K * (Math.exp(i / fs / L) - 1));
+    }
+    return { data: x, T, f1, f2, fs };
+  }
+
+  function bandWeight(f, lo, hi) {
+    const tw = 0.5; // half-octave taper
+    if (f <= 0) return 0;
+    const a = Math.log2(f / lo), b = Math.log2(hi / f);
+    let w = 1;
+    if (a < 0) w *= a < -tw ? 0 : 0.5 + 0.5 * Math.cos(Math.PI * a / tw);
+    if (b < 0) w *= b < -tw ? 0 : 0.5 + 0.5 * Math.cos(Math.PI * b / tw);
+    return w;
+  }
+
+  // Recording -> impulse response (sweep start in the recording = peak position)
+  function impulse(rec, sw, fs) {
+    const N = nextPow2(rec.length + sw.data.length);
+    const xr = new Float64Array(N), xi = new Float64Array(N), yr = new Float64Array(N), yi = new Float64Array(N);
+    xr.set(sw.data); yr.set(rec);
+    fft(xr, xi, false); fft(yr, yi, false);
+    let maxP = 0;
+    for (let k = 0; k <= N / 2; k++) maxP = Math.max(maxP, xr[k] * xr[k] + xi[k] * xi[k]);
+    const eps = maxP * 1e-6, lo = sw.f1 * 1.4, hi = Math.min(sw.f2 * 0.9, fs * 0.45);
+    for (let k = 0; k < N; k++) {
+      const f = (k <= N / 2 ? k : N - k) * fs / N, w = bandWeight(f, lo, hi);
+      const a = yr[k] * xr[k] + yi[k] * xi[k], b = yi[k] * xr[k] - yr[k] * xi[k];
+      const d = xr[k] * xr[k] + xi[k] * xi[k] + eps;
+      yr[k] = w * a / d; yi[k] = w * b / d;
+    }
+    fft(yr, yi, true);
+    // causal part only (harmonic distortion lands at negative times = end of the array)
+    return yr.subarray(0, Math.min(N, rec.length + Math.round(0.05 * fs)));
+  }
+
+  function argmaxAbs(h, a, b) {
+    a = Math.max(0, a); b = Math.min(h.length, b);
+    let p = -1, v = 0;
+    for (let i = a; i < b; i++) { const x = Math.abs(h[i]); if (x > v) { v = x; p = i; } }
+    return p;
+  }
+
+  // windowed impulse response around a peak -> power spectrum
+  function spectrumAt(h, peak, fs, winSec = 0.4) {
+    const pre = Math.round(0.002 * fs), L = Math.round(winSec * fs), M = nextPow2(L) * 2;
+    const hr = new Float64Array(M), hi = new Float64Array(M), fall = Math.round(L * 0.25);
+    for (let i = 0; i < L; i++) {
+      const src = peak - pre + i; if (src < 0 || src >= h.length) continue;
+      let w = 1;
+      if (i < pre) w = 0.5 - 0.5 * Math.cos(Math.PI * i / pre);
+      if (i > L - fall) w = 0.5 + 0.5 * Math.cos(Math.PI * (i - (L - fall)) / fall);
+      hr[i] = h[src] * w;
+    }
+    fft(hr, hi, false);
+    const P = new Float64Array(M / 2 + 1);
+    for (let k = 0; k <= M / 2; k++) P[k] = hr[k] * hr[k] + hi[k] * hi[k];
+    return { P, M, fs };
+  }
+
+  function deconvolve(rec, sw, fs, winSec = 0.4) {
+    const h = impulse(rec, sw, fs), peak = argmaxAbs(h, 0, h.length);
+    return { ...spectrumAt(h, peak, fs, winSec), delay: peak / fs };
+  }
+
+  // pink noise (Paul Kellet filter), scaled to an RMS level in dBFS
+  function pinkNoise(fs, sec, rmsDb = -15) {
+    const n = Math.round(fs * sec), x = new Float32Array(n);
+    let b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0, b6 = 0, s = 0;
+    for (let i = 0; i < n; i++) {
+      const w = Math.random() * 2 - 1;
+      b0 = 0.99886 * b0 + w * 0.0555179; b1 = 0.99332 * b1 + w * 0.0750759; b2 = 0.969 * b2 + w * 0.153852;
+      b3 = 0.8665 * b3 + w * 0.3104856; b4 = 0.55 * b4 + w * 0.5329522; b5 = -0.7616 * b5 - w * 0.016898;
+      x[i] = b0 + b1 + b2 + b3 + b4 + b5 + b6 + w * 0.5362; b6 = w * 0.115926; s += x[i] * x[i];
+    }
+    const g = Math.pow(10, rmsDb / 20) / Math.sqrt(s / n), fade = Math.round(0.02 * fs);
+    for (let i = 0; i < n; i++) {
+      let e = 1; if (i < fade) e = i / fade; if (n - i < fade) e = (n - i) / fade; // loop-friendly edges
+      x[i] *= g * e;
+    }
+    return x;
+  }
+
+  const logGrid = (a, b, n) => Array.from({ length: n }, (_, i) => a * Math.pow(b / a, i / (n - 1)));
+
+  // fractional-octave power average from FFT bins
+  function toGrid(P, M, fs, grid, frac) {
+    const cum = new Float64Array(P.length + 1);
+    for (let k = 0; k < P.length; k++) cum[k + 1] = cum[k] + P[k];
+    const r = Math.pow(2, 1 / (2 * frac));
+    return grid.map(f => {
+      let kl = Math.floor(f / r * M / fs), kh = Math.ceil(f * r * M / fs);
+      kl = Math.max(1, Math.min(kl, P.length - 2)); kh = Math.max(kl + 1, Math.min(kh, P.length - 1));
+      return 10 * Math.log10((cum[kh] - cum[kl]) / (kh - kl) + 1e-30);
+    });
+  }
+
+  // frequency-dependent smoothing: fine in the bass (room modes), coarse in the treble
+  // normal: 1/12 oct up to 150 Hz, falling to 1/3 oct at 3 kHz and above; detail scales it
+  function varFrac(f, detail = 1) {
+    const base = f <= 150 ? 12 : f >= 3000 ? 3 : 12 * Math.pow(3 / 12, Math.log(f / 150) / Math.log(20));
+    return Math.min(24, base * detail);
+  }
+
+  // further smoothing on the log grid (power domain); frac = number or function of f
+  function smoothGrid(db, grid, frac) {
+    const fr = typeof frac === 'function' ? frac : () => frac;
+    const lg = grid.map(Math.log2), p = db.map(d => Math.pow(10, d / 10));
+    return db.map((_, i) => {
+      const r = 1 / (2 * fr(grid[i]));
+      let s = 0, n = 0;
+      for (let j = i; j >= 0 && lg[i] - lg[j] <= r; j--) { s += p[j]; n++; }
+      for (let j = i + 1; j < db.length && lg[j] - lg[i] <= r; j++) { s += p[j]; n++; }
+      return 10 * Math.log10(s / n);
+    });
+  }
+
+  // highest frequency <= 300 Hz where the 1-octave-smoothed response is below -6 dB
+  // (= where the speaker's bass runs out); null if it never drops that far
+  function bassLimit(db, grid) {
+    const sm = smoothGrid(db, grid, 1);
+    for (let i = grid.length - 1; i >= 0; i--) if (grid[i] <= 300 && sm[i] < -6) return grid[i];
+    return null;
+  }
+
+  function normalize(db, grid, a = 200, b = 2000) {
+    let s = 0, n = 0;
+    grid.forEach((f, i) => { if (f >= a && f <= b) { s += db[i]; n++; } });
+    const m = n ? s / n : 0;
+    return db.map(d => d - m);
+  }
+
+  // RBJ cookbook biquads; shelves fixed at S=1 (Q=1/sqrt2) to match WebAudio
+  function coeffs(t, f, gain, q, fs) {
+    const A = Math.pow(10, gain / 40), w = TAU * f / fs, c = Math.cos(w), s = Math.sin(w);
+    const Q = (t === 'ls' || t === 'hs') ? Math.SQRT1_2 : q, al = s / (2 * Q);
+    let b0, b1, b2, a0, a1, a2;
+    if (t === 'peak') { b0 = 1 + al * A; b1 = -2 * c; b2 = 1 - al * A; a0 = 1 + al / A; a1 = -2 * c; a2 = 1 - al / A; }
+    else if (t === 'ls') { const r = 2 * Math.sqrt(A) * al;
+      b0 = A * ((A + 1) - (A - 1) * c + r); b1 = 2 * A * ((A - 1) - (A + 1) * c); b2 = A * ((A + 1) - (A - 1) * c - r);
+      a0 = (A + 1) + (A - 1) * c + r; a1 = -2 * ((A - 1) + (A + 1) * c); a2 = (A + 1) + (A - 1) * c - r; }
+    else if (t === 'hs') { const r = 2 * Math.sqrt(A) * al;
+      b0 = A * ((A + 1) + (A - 1) * c + r); b1 = -2 * A * ((A - 1) + (A + 1) * c); b2 = A * ((A + 1) + (A - 1) * c - r);
+      a0 = (A + 1) - (A - 1) * c + r; a1 = 2 * ((A - 1) - (A + 1) * c); a2 = (A + 1) - (A - 1) * c - r; }
+    else if (t === 'hp') { b0 = (1 + c) / 2; b1 = -(1 + c); b2 = (1 + c) / 2; a0 = 1 + al; a1 = -2 * c; a2 = 1 - al; }
+    else { b0 = (1 - c) / 2; b1 = 1 - c; b2 = (1 - c) / 2; a0 = 1 + al; a1 = -2 * c; a2 = 1 - al; } // lp
+    return { b0: b0 / a0, b1: b1 / a0, b2: b2 / a0, a1: a1 / a0, a2: a2 / a0 };
+  }
+
+  function magDb(k, f, fs) {
+    const w = TAU * f / fs, c1 = Math.cos(w), s1 = Math.sin(w), c2 = Math.cos(2 * w), s2 = Math.sin(2 * w);
+    const nr = k.b0 + k.b1 * c1 + k.b2 * c2, ni = -(k.b1 * s1 + k.b2 * s2);
+    const dr = 1 + k.a1 * c1 + k.a2 * c2, di = -(k.a1 * s1 + k.a2 * s2);
+    return 10 * Math.log10((nr * nr + ni * ni) / (dr * dr + di * di));
+  }
+
+  function eqCurve(filters, grid, fs) {
+    const out = new Array(grid.length).fill(0);
+    for (const f of filters) {
+      if (!f.on) continue;
+      const k = coeffs(f.type, f.f, f.gain, f.q, fs);
+      grid.forEach((x, i) => { out[i] += magDb(k, x, fs); });
+    }
+    return out;
+  }
+
+  const target = (f, tilt) => tilt / (1 + (f / 120) * (f / 120));
+
+  // greedy peak picking + coordinate-descent refinement, cut-only
+  function autoFit(meas, grid, o) {
+    const fs = o.fs, idx = [];
+    grid.forEach((f, i) => { if (f >= o.fmin && f <= o.fmax) idx.push(i); });
+    const tg = grid.map(f => target(f, o.tilt));
+    const respOf = flt => { const k = coeffs('peak', flt.f, flt.gain, flt.q, fs); return idx.map(i => magDb(k, grid[i], fs)); };
+    let filters = [], resp = [];
+    const others = skip => idx.map((_, j) => resp.reduce((s, r, n) => n === skip ? s : s + r[j], 0));
+    // peaks above target count fully; existing dips are ignored, only deepening them is penalized
+    const errWith = (base, r) => idx.reduce((s, i, j) => {
+      const r0 = meas[i] - tg[i], e = r0 + base[j] + r[j], pos = Math.max(e, 0), neg = Math.min(e, 0) - Math.min(r0, 0);
+      return s + pos * pos + neg * neg; }, 0);
+    const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+    function refine(flt, base) {
+      const p = [Math.log(flt.f), flt.gain, Math.log(flt.q)], st = [0.06, 0.6, 0.2];
+      const lim = [[Math.log(o.fmin * 0.8), Math.log(o.fmax * 1.2)], [-o.maxCut, 0], [Math.log(0.4), Math.log(12)]];
+      const mk = q => ({ type: 'peak', on: true, f: Math.exp(q[0]), gain: q[1], q: Math.exp(q[2]) });
+      let best = errWith(base, respOf(mk(p)));
+      for (let it = 0; it < 120 && st[0] > 0.002; it++) {
+        let imp = false;
+        for (let d = 0; d < 3; d++) for (const sg of [1, -1]) {
+          const q = p.slice(); q[d] = clamp(q[d] + sg * st[d], lim[d][0], lim[d][1]);
+          const e = errWith(base, respOf(mk(q)));
+          if (e < best - 1e-9) { best = e; p[d] = q[d]; imp = true; }
+        }
+        if (!imp) for (let d = 0; d < 3; d++) st[d] /= 2;
+      }
+      return mk(p);
+    }
+    for (let n = 0; n < o.maxN; n++) {
+      const base = others(-1);
+      let im = -1, rm = -Infinity;
+      idx.forEach((i, j) => { const r = meas[i] + base[j] - tg[i]; if (r > rm) { rm = r; im = j; } });
+      if (rm < 1.0) break;
+      let l = im, h = im;
+      const rr = j => meas[idx[j]] + base[j] - tg[idx[j]];
+      while (l > 0 && rr(l) > rm / 2) l--;
+      while (h < idx.length - 1 && rr(h) > rm / 2) h++;
+      const f0 = grid[idx[im]], bw = Math.max(grid[idx[h]] - grid[idx[l]], f0 / 12);
+      let flt = { type: 'peak', on: true, f: f0, gain: -Math.min(rm, o.maxCut), q: clamp(f0 / bw, 0.5, 10) };
+      flt = refine(flt, base);
+      filters.push(flt); resp.push(respOf(flt));
+    }
+    for (let pass = 0; pass < 2; pass++)
+      filters.forEach((flt, n) => { const nf = refine(flt, others(n)); filters[n] = nf; resp[n] = respOf(nf); });
+    return filters.filter(f => f.gain < -0.5).sort((a, b) => a.f - b.f)
+      .map(f => ({ ...f, f: Math.round(f.f * 10) / 10, gain: Math.round(f.gain * 10) / 10, q: Math.round(f.q * 100) / 100 }));
+  }
+
+  function biquadRun(x, k) {
+    const y = new Float32Array(x.length); let x1 = 0, x2 = 0, y1 = 0, y2 = 0;
+    for (let i = 0; i < x.length; i++) {
+      const v = k.b0 * x[i] + k.b1 * x1 + k.b2 * x2 - k.a1 * y1 - k.a2 * y2;
+      x2 = x1; x1 = x[i]; y2 = y1; y1 = v; y[i] = v;
+    }
+    return y;
+  }
+
+  // Synthetic room: speaker + room modes + iPhone mic high-pass, delay, noise
+  const DEMO_CHAIN = [['hp', 50, 0, 0.8], ['peak', 64, 9, 6], ['peak', 96, 6, 4], ['peak', 142, -10, 5],
+    ['peak', 230, 4, 3], ['hs', 6000, -3, 0], ['hp', 85, 0, 0.7]];
+  function simulate(fs, variant = 0, reflections = true, chanSeed = 0) {
+    const sw = sweep(fs), rnd = (a => () => (a = (a * 16807) % 2147483647) / 2147483647)(variant * 7919 + chanSeed * 104729 + 13);
+    let y = sw.data;
+    for (const [t, f, g, q] of DEMO_CHAIN) {
+      const gg = t === 'peak' && (variant || chanSeed) ? g * (0.7 + 0.6 * rnd()) : g;
+      y = biquadRun(y, coeffs(t, f, gg, q, fs));
+    }
+    const delay = Math.round(0.35 * fs), out = new Float32Array(sw.data.length + delay + Math.round(1.5 * fs));
+    const refl = reflections ? [[Math.round(0.0037 * fs), 0.25], [Math.round(0.0091 * fs), 0.15]] : [];
+    for (let i = 0; i < y.length; i++) {
+      out[i + delay] += y[i];
+      for (const [d, g] of refl) if (i + delay + d < out.length) out[i + delay + d] += g * y[i];
+    }
+    for (let i = 0; i < out.length; i++) out[i] += (rnd() - 0.5) * 2e-4;
+    return out;
+  }
+
+  return { bassLimit, varFrac, fft, sweep, impulse, argmaxAbs, spectrumAt, deconvolve, pinkNoise, logGrid, toGrid, smoothGrid, normalize, coeffs, magDb, eqCurve, target, autoFit, simulate, DEMO_CHAIN };
+})();
+/*DSP-END*/
+
+// Psychoacoustic bass (missing fundamental), WebAudio version for preview.
+// main path: high-pass at fc (the bass the speaker can't play)
+// harmonic path: low-pass at fc -> full-wave rectifier (|x|, level-independent 2nd/4th harmonics)
+//                -> band-pass fc..4fc -> gain -> mixed back in
+function buildPbe(c, input, o, keep) {
+  const fc = o.fc, out = c.createGain(); keep.push(out);
+  const bq = (type, f) => { const b = c.createBiquadFilter(); b.type = type; b.frequency.value = f; b.Q.value = 20 * Math.log10(Math.SQRT1_2); keep.push(b); return b; };
+  const hp = bq('highpass', fc); input.connect(hp); hp.connect(out);
+  const lp1 = bq('lowpass', fc), lp2 = bq('lowpass', fc), ws = c.createWaveShaper(); keep.push(ws);
+  const n = 2049, curve = new Float32Array(n);
+  for (let i = 0; i < n; i++) curve[i] = Math.abs(i / (n - 1) * 2 - 1);
+  ws.curve = curve; ws.oversample = '2x';
+  const hp2 = bq('highpass', fc), hp3 = bq('highpass', fc), lp3 = bq('lowpass', fc * 4), g = c.createGain(); keep.push(g);
+  g.gain.value = o.amount * 2.5;
+  input.connect(lp1); lp1.connect(lp2); lp2.connect(ws); ws.connect(hp2); hp2.connect(hp3); hp3.connect(lp3); lp3.connect(g); g.connect(out);
+  return out;
+}
+
+// Built-in listening samples, synthesized in the browser (no files, no copyright)
+const SAMPLE_HINT = {
+  groove: 'Original 4-bar loop with kick, deep bassline (41–62 Hz), snare, hi-hat and chords – good for judging bass enhancement and EQ.',
+  tones: 'Single sine tones from 30 to 160 Hz. Room modes stand out as booming notes, dips as nearly silent ones.',
+  noise: 'Even noise across all frequencies – shows tonal balance, not pleasant to listen to.',
+  file: 'A file from your device (MP3, AAC, WAV …).'
+};
+const TONES_HZ = [30, 35, 40, 45, 50, 55, 60, 65, 70, 80, 90, 100, 110, 120, 140, 160];
+function makeSample(c, kind) {
+  const fs = c.sampleRate, TAU = 2 * Math.PI;
+  if (kind === 'noise') {
+    const d = DSP.pinkNoise(fs, 6, -18), b = c.createBuffer(2, d.length, fs);
+    b.copyToChannel(d, 0); b.copyToChannel(d, 1); return b;
+  }
+  if (kind === 'tones') {
+    const dur = 0.9, n = Math.round(dur * fs), b = c.createBuffer(2, n * TONES_HZ.length, fs), d = new Float32Array(b.length);
+    TONES_HZ.forEach((f, k) => {
+      for (let i = 0; i < n; i++) {
+        const t = i / fs, e = Math.min(1, t / 0.05, (dur - 0.15 - t) / 0.05);
+        d[k * n + i] = 0.25 * Math.max(0, e) * Math.sin(TAU * f * t);
+      }
+    });
+    b.copyToChannel(d, 0); b.copyToChannel(d, 1); return b;
+  }
+  // groove: 4 bars at 100 bpm
+  const bpm = 100, beat = 60 / bpm, len = Math.round(16 * beat * fs), L = new Float32Array(len), R = new Float32Array(len);
+  let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647 * 2 - 1;
+  const hz = m => 440 * Math.pow(2, (m - 69) / 12);
+  const add = (at, n, fn, gl, gr) => { const s0 = Math.round(at * fs); for (let i = 0; i < n && s0 + i < len; i++) { const v = fn(i / fs); L[s0 + i] += v * gl; R[s0 + i] += v * gr; } };
+  for (let b = 0; b < 16; b++) {
+    const t0 = b * beat;
+    // kick: pitch drop 110 -> 45 Hz
+    add(t0, Math.round(0.4 * fs), t => { const ph = TAU * (45 * t + 65 * 0.03 * (1 - Math.exp(-t / 0.03))); return 0.9 * Math.exp(-t / 0.12) * Math.sin(ph); }, 1, 1);
+    // snare on 2 and 4: noise + 190 Hz body
+    if (b % 2 === 1) add(t0, Math.round(0.25 * fs), t => Math.exp(-t / 0.06) * (0.35 * rnd() + 0.3 * Math.sin(TAU * 190 * t)), 0.9, 0.9);
+    // hi-hat on eighths: differentiated noise, slightly right
+    for (const h of [0, 0.5]) { let prev = 0; add(t0 + h * beat, Math.round(0.05 * fs), t => { const x = rnd(), y = x - prev; prev = x; return 0.12 * Math.exp(-t / 0.012) * y; }, 0.6, 1); }
+  }
+  // bass line (eighths) in E minor, MIDI 28 = E1 (41 Hz) .. 35 = B1 (62 Hz)
+  const line = [28, 28, 31, 28, 33, 28, 31, 35];
+  for (let k = 0; k < 32; k++) {
+    const f = hz(line[k % 8]), dur = beat * 0.45;
+    add(k * beat / 2, Math.round(dur * fs), t => {
+      const e = Math.min(1, t / 0.005) * Math.exp(-t / 0.25) * Math.min(1, (dur - t) / 0.02);
+      return 0.55 * e * (Math.sin(TAU * f * t) + 0.35 * Math.sin(TAU * 2 * f * t) + 0.12 * Math.sin(TAU * 3 * f * t));
+    }, 1, 1);
+  }
+  // soft chord pad per bar: Em, C, G, D (mid range reference)
+  [[52, 55, 59], [48, 52, 55], [55, 59, 62], [50, 54, 57]].forEach((ch, bar) => {
+    const dur = 4 * beat;
+    add(bar * dur, Math.round(dur * fs), t => {
+      const e = Math.min(1, t / 0.3, (dur - t) / 0.3);
+      return 0.06 * e * ch.reduce((s, m, i) => s + Math.sin(TAU * hz(m) * t + i), 0);
+    }, 0.8, 1);
+  });
+  let pk = 0; for (let i = 0; i < len; i++) pk = Math.max(pk, Math.abs(L[i]), Math.abs(R[i]));
+  const g = 0.5 / pk; for (let i = 0; i < len; i++) { L[i] *= g; R[i] *= g; }
+  const b = c.createBuffer(2, len, fs); b.copyToChannel(L, 0); b.copyToChannel(R, 1); return b;
+}
+
+{
+  const $ = s => document.querySelector(s);
+  let FS = 44100; // arply output rate, replaced by GET /api/dsp
+  const grid = DSP.logGrid(20, 20000, 320);
+  const fmtDb = v => (v > 0 ? '+' : '') + v.toFixed(1) + ' dB';
+  const fmtHz = f => f >= 1000 ? (f / 1000).toFixed(f >= 10000 ? 0 : 1) + ' kHz' : Math.round(f) + ' Hz';
+  const CH_NAME = { L: 'Left', R: 'Right', M: 'Mono' };
+  const MODES = { stereo: ['L', 'R'], mono: ['M'], left: ['L'], right: ['R'] };
+  const MODE_HINT = {
+    stereo: 'Each channel is measured separately and gets its own filters.',
+    mono: 'Both outputs play the same signal – measured together, one filter set for both.',
+    left: 'The left source channel plays on both outputs – one filter set, measured on both outputs together.',
+    right: 'The right source channel plays on both outputs – one filter set, measured on both outputs together.'
+  };
+  const DEF_OPT = { fmin: 40, fmax: 500, tilt: 2, detail: 1, maxN: 6, maxCut: 12, tail: false, mode: 'stereo', pbe: { on: false, fc: 100, amt: 50 } };
+  const LEAD = 0.5;
+  const newCh = () => ({ meas: [], filters: [] });
+
+  let S = null;
+  try { S = JSON.parse(localStorage.getItem('arply-eq')); } catch (e) {}
+  if (!S || typeof S !== 'object') S = {};
+  S.opt = { ...DEF_OPT, ...(S.opt || {}) }; delete S.opt.frac;
+  S.opt.pbe = { ...DEF_OPT.pbe, ...(S.opt.pbe || {}) };
+  if (![0.5, 1, 2].includes(S.opt.detail)) S.opt.detail = 1;
+  S.ch = S.ch || {};
+  if (S.meas) { S.ch.M = { meas: S.meas, filters: S.filters || [] }; delete S.meas; delete S.filters; } // v1 data
+  for (const k of ['L', 'R', 'M']) S.ch[k] = S.ch[k] || newCh();
+  const chans = () => MODES[S.opt.mode] || MODES.stereo;
+  const fixView = () => { if (!chans().includes(S.view)) S.view = chans()[0]; };
+  fixView();
+  const cur = () => S.ch[S.view];
+  const save = () => { try { localStorage.setItem('arply-eq', JSON.stringify(S)); } catch (e) {} };
+  let undo = null, ctx = null, busy = false;
+  const getCtx = () => (ctx = ctx || new (window.AudioContext || window.webkitAudioContext)());
+  const msg = (t, warn) => { const m = $('#msg'); m.textContent = t; m.className = warn ? 'warn' : ''; };
+  const gap = () => (S.opt.tail ? 4 : 2);
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  const micOk = () => !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.isSecureContext);
+  async function getMic() {
+    if (navigator.audioSession) navigator.audioSession.type = 'play-and-record';
+    return navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
+  }
+
+  // ---------- derived curves ----------
+  function avgMeas(k = S.view) {
+    const ms = S.ch[k].meas; if (!ms.length) return null;
+    const sm = ms.map(m => DSP.smoothGrid(m.db, grid, f => DSP.varFrac(f, S.opt.detail)));
+    return { each: sm, avg: grid.map((_, i) => sm.reduce((s, d) => s + d[i], 0) / sm.length) };
+  }
+  const preampOf = eq => { const mx = Math.max(0, ...eq); return mx > 0 ? -Math.ceil(mx * 2) / 2 : 0; };
+  // one common preamp for all active channels keeps the balance
+  const preampAll = () => Math.min(0, ...chans().map(k => preampOf(DSP.eqCurve(S.ch[k].filters, grid, FS))));
+  function rms(arr, tg) {
+    let s = 0, n = 0;
+    grid.forEach((f, i) => { if (f >= S.opt.fmin && f <= S.opt.fmax) { const e = Math.max(0, arr[i] - tg[i]); s += e * e; n++; } });
+    return n ? Math.sqrt(s / n) : 0;
+  }
+
+  // ---------- chart ----------
+  const col = id => getComputedStyle($(id)).color;
+  let cache = null;
+  function draw() {
+    const c = $('#cv'), W = c.clientWidth, H = c.clientHeight, dpr = window.devicePixelRatio || 1;
+    if (!W || !H) return;
+    c.width = W * dpr; c.height = H * dpr;
+    const g = c.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, H);
+    const C = { brown: col('#p-meas'), mag: col('#p-mag'), ink: col('#p-ink'), mut: col('#p-mut'), sea: col('#p-sea'), line: col('#p-line') };
+    const pl = 34, pr = 8, pt = 8, pb = 22, y0 = -24, y1 = 15;
+    const X = f => pl + Math.log(f / 20) / Math.log(1000) * (W - pl - pr);
+    const Y = d => pt + (y1 - Math.max(y0, Math.min(y1, d))) / (y1 - y0) * (H - pt - pb);
+    g.fillStyle = C.sea; g.fillRect(X(S.opt.fmin), pt, X(S.opt.fmax) - X(S.opt.fmin), H - pt - pb);
+    g.font = '12px Inter, system-ui, sans-serif'; g.lineWidth = 1;
+    const fx = W < 520 ? [50, 100, 500, 1000, 5000, 10000] : [20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000];
+    g.strokeStyle = C.line; g.fillStyle = C.mut; g.textAlign = 'center';
+    for (const f of fx) { g.beginPath(); g.moveTo(X(f), pt); g.lineTo(X(f), H - pb); g.stroke();
+      g.fillText(f >= 1000 ? f / 1000 + 'k' : String(f), Math.min(W - 10, Math.max(pl + 8, X(f))), H - 6); }
+    g.textAlign = 'right';
+    for (let d = -24; d <= 12; d += 6) { g.beginPath(); g.moveTo(pl, Y(d)); g.lineTo(W - pr, Y(d)); g.stroke(); g.fillText(String(d), pl - 5, Y(d) + 4); }
+    const line = (arr, color, w, dash) => { g.strokeStyle = color; g.lineWidth = w; g.setLineDash(dash || []); g.beginPath();
+      arr.forEach((d, i) => { const x = X(grid[i]), y = Y(d); i ? g.lineTo(x, y) : g.moveTo(x, y); }); g.stroke(); g.setLineDash([]); };
+    const tg = grid.map(f => DSP.target(f, S.opt.tilt));
+    const eq = DSP.eqCurve(cur().filters, grid, FS), pre = preampAll();
+    line(tg, C.mut, 1.5, [5, 4]);
+    const am = avgMeas();
+    cache = { tg, eq, am, pre };
+    line(eq.map(e => e + pre), C.mag, 2);
+    if (pbeActive()) {
+      const x = X(S.opt.pbe.fc); g.strokeStyle = C.mag; g.lineWidth = 1.5; g.setLineDash([3, 3]);
+      g.beginPath(); g.moveTo(x, pt); g.lineTo(x, H - pb); g.stroke(); g.setLineDash([]);
+      g.fillStyle = C.mag; g.textAlign = 'left'; g.font = '12px Inter, system-ui, sans-serif';
+      g.fillText('Bass enh.', x + 4, Y(13));
+    }
+    if (am) {
+      g.globalAlpha = 0.35; am.each.forEach(d => line(d, C.brown, 1)); g.globalAlpha = 1;
+      line(am.avg, C.brown, 2.2);
+      line(eq.map(e => e + pre), C.mag, 2);
+      line(am.avg.map((d, i) => d + eq[i]), C.ink, 2.4);
+    } else {
+      g.fillStyle = C.mut; g.textAlign = 'center'; g.font = '15px Inter, system-ui, sans-serif';
+      g.fillText('No measurement yet (' + CH_NAME[S.view] + ')', (pl + W) / 2, Y(10));
+    }
+    updateKpis();
+  }
+  const ro = new ResizeObserver(draw); ro.observe($('#cv'));
+  $('#cv').addEventListener('pointermove', e => readout(e)); $('#cv').addEventListener('pointerdown', e => readout(e));
+  function readout(e) {
+    if (!cache) return;
+    const r = $('#cv').getBoundingClientRect(), pl = 34, pr = 8;
+    const f = 20 * Math.pow(1000, Math.max(0, Math.min(1, (e.clientX - r.left - pl) / (r.width - pl - pr))));
+    let i = 0; while (i < grid.length - 1 && grid[i] < f) i++;
+    let t = fmtHz(grid[i]) + ' · EQ ' + fmtDb(cache.eq[i]);
+    if (cache.am) t += ' · Measured ' + fmtDb(cache.am.avg[i]) + ' · Result ' + fmtDb(cache.am.avg[i] + cache.eq[i]);
+    $('#readout').textContent = t;
+  }
+  function updateKpis() {
+    const { tg, eq, am, pre } = cache;
+    $('#k-pre').textContent = fmtDb(pre);
+    $('#k-n').textContent = cur().meas.length;
+    const f = v => '±' + v.toFixed(1) + ' dB';
+    $('#k-before').textContent = am ? f(rms(am.avg, tg)) : '–';
+    $('#k-after').textContent = am ? f(rms(am.avg.map((d, i) => d + eq[i]), tg)) : '–';
+  }
+
+  // ---------- channel tabs / mode ----------
+  function renderTabs() {
+    const ks = chans();
+    $('#tabs').innerHTML = ks.length > 1
+      ? ks.map(k => `<button data-ch="${k}" aria-pressed="${k === S.view}">${CH_NAME[k]}</button>`).join('')
+      : `<span class="one">Channel: ${CH_NAME[ks[0]]}</span>`;
+    $('#filt-h').textContent = 'Filters – ' + CH_NAME[S.view];
+    $('#modehint').textContent = MODE_HINT[S.opt.mode];
+  }
+  $('#tabs').addEventListener('click', e => {
+    const b = e.target.closest('button[data-ch]'); if (!b) return;
+    S.view = b.dataset.ch; save(); renderAll();
+  });
+  $('#o-mode').value = S.opt.mode;
+  $('#o-mode').onchange = e => { S.opt.mode = e.target.value; fixView(); save(); renderAll(); preview(); if (lvl) { stopLevel(); } };
+  function renderAll() { renderSample(); renderPbe(); renderTabs(); renderMeas(); renderFilters(); renderJson(); draw(); clearTimeout(tmr); tmr = setTimeout(rebuildChain, 60); }
+
+  // ---------- arply API ----------
+  async function api(path, body) {
+    const r = await fetch(path, body === undefined ? { cache: 'no-store' }
+      : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    let j = null; try { j = await r.json(); } catch (e) {}
+    if (!r.ok) { const err = new Error((j && j.error) || 'HTTP ' + r.status); err.status = r.status; throw err; }
+    return j;
+  }
+  // outputs a sweep plays on, per measured filter set
+  const SWEEP_OUT = { L: 'L', R: 'R', M: 'LR' };
+  const sweepOuts = ks => S.opt.mode === 'stereo' ? ks.map(k => SWEEP_OUT[k]) : ['LR'];
+  const busyMsg = e => e.status === 409 ? 'arply is busy – stop AirPlay playback first.' : 'arply did not answer (' + e.message + ').';
+  async function deviceSweeps(ks) {
+    return api('/api/dsp/sweep', { channels: sweepOuts(ks), gap_ms: gap() * 1000 });
+  }
+  let devOk = false, previewing = false, pvTimer = null, pvLast = 0;
+  // throttled live preview on the speakers: at most every 150 ms, always ending on the latest state
+  function preview() {
+    if (!devOk) return;
+    clearTimeout(pvTimer);
+    const run = () => { pvLast = performance.now(); api('/api/dsp/preview', payload()).then(() => { previewing = true; showSaved(); }).catch(() => {}); };
+    const wait = 150 - (performance.now() - pvLast);
+    if (wait <= 0) run(); else pvTimer = setTimeout(run, wait);
+  }
+  function showSaved() {
+    $('#sendmsg').textContent = previewing ? 'Previewing on arply – not saved yet.' : 'Saved on arply.';
+  }
+
+  // ---------- playback helpers ----------
+  const OUT_IDX = { L: [0], R: [1], M: [0, 1] };
+
+  // ---------- level test ----------
+  let lvl = null;
+  function stopLevel() {
+    if (!lvl) return;
+    cancelAnimationFrame(lvl.raf);
+    if (lvl.noise) api('/api/dsp/noise', { on: false }).catch(() => {});
+    if (lvl.stream) lvl.stream.getTracks().forEach(t => t.stop());
+    if (lvl.src) lvl.src.disconnect();
+    lvl = null; $('#b-level').textContent = '1. Check level';
+  }
+  // pink noise from arply on both outputs; it stops by itself after 30 s
+  function startNoise() {
+    api('/api/dsp/noise', { on: true, channels: ['LR'] }).catch(e => { $('#mtext').textContent = busyMsg(e); });
+    return true;
+  }
+  $('#b-level').onclick = async () => {
+    if (lvl) { stopLevel(); return; }
+    if (busy) return;
+    const c = getCtx(); await c.resume();
+    $('#meter').hidden = false; $('#b-level').textContent = 'Stop level check';
+    lvl = { raf: 0, noise: null, stream: null, src: null };
+    if (!micOk()) {
+      lvl.noise = startNoise(); $('#mfill').style.width = '0';
+      $('#mtext').innerHTML = '<b>No microphone here</b> (open the https page for live levels). Noise is playing – set your amplifier by ear: clearly louder than normal music, but not unpleasant.';
+      return;
+    }
+    let stream;
+    try { stream = await getMic(); } catch (e) {
+      lvl.noise = startNoise();
+      $('#mtext').innerHTML = '<b>Microphone blocked.</b> Noise is playing – set the volume by ear.'; return;
+    }
+    if (!lvl) { stream.getTracks().forEach(t => t.stop()); return; }
+    const src = c.createMediaStreamSource(stream), an = c.createAnalyser(); an.fftSize = 2048; src.connect(an);
+    Object.assign(lvl, { stream, src });
+    const buf = new Float32Array(an.fftSize), t0 = performance.now(), floorAcc = [];
+    let sm = -90, floor = null, peakHold = -90;
+    const tick = () => {
+      if (!lvl) return;
+      an.getFloatTimeDomainData(buf);
+      let s = 0, pk = 0; for (const v of buf) { s += v * v; pk = Math.max(pk, Math.abs(v)); }
+      const db = 10 * Math.log10(s / buf.length + 1e-12), pdb = 20 * Math.log10(pk + 1e-9);
+      const el = performance.now() - t0;
+      if (floor === null) {
+        floorAcc.push(db);
+        $('#mtext').innerHTML = 'Measuring background noise – please stay quiet …';
+        $('#mfill').style.width = Math.max(0, (db + 60) / 60 * 100) + '%';
+        if (el > 1200) { floor = floorAcc.slice(5).reduce((a, b) => a + b, 0) / Math.max(1, floorAcc.length - 5); lvl.noise = startNoise(); }
+      } else {
+        sm = sm < -80 ? db : 0.85 * sm + 0.15 * db;
+        peakHold = Math.max(pdb, peakHold - 0.5);
+        $('#mfill').style.width = Math.max(0, Math.min(100, (sm + 60) / 60 * 100)) + '%';
+        const snr = sm - floor;
+        let v;
+        if (peakHold > -2) v = '<b>Clipping</b> – turn the amplifier down, or move the phone away.';
+        else if (sm > -12) v = '<b>Too loud</b> – turn the amplifier down a little.';
+        else if (sm < -50) v = '<b>Far too quiet</b> – turn the amplifier up a lot.';
+        else if (sm < -35) v = '<b>A bit quiet</b> – turn the amplifier up.';
+        else v = '<b>Good</b> – measure like this.';
+        let n = ' Level ' + sm.toFixed(0) + ' dBFS · background ' + floor.toFixed(0) + ' dBFS · margin ' + snr.toFixed(0) + ' dB';
+        if (snr < 25 && sm >= -35) n += ' – room too noisy, or raise the level.';
+        $('#mtext').innerHTML = v + n;
+      }
+      lvl.raf = requestAnimationFrame(tick);
+    };
+    tick();
+  };
+
+  // ---------- measurements ----------
+  // whole recording -> one impulse response -> one peak per channel
+  function analyzeRec(rec, fs, ks, live) {
+    let pk = 0; for (let i = 0; i < rec.length; i++) pk = Math.max(pk, Math.abs(rec[i]));
+    const lv = 20 * Math.log10(pk + 1e-12);
+    if (lv < -50) { msg('Recording too quiet (' + lv.toFixed(0) + ' dBFS). Check the level first, then try again.', true); return; }
+    const sw = DSP.sweep(fs), h = DSP.impulse(rec, sw, fs), step = Math.round((sw.T + gap()) * fs), win = Math.round(0.05 * fs);
+    let p0;
+    if (live) p0 = DSP.argmaxAbs(h, 0, Math.round(LEAD * fs) + step);
+    else {
+      p0 = DSP.argmaxAbs(h, 0, h.length);
+      for (let n = 0; n < ks.length; n++) { // walk back to the first sweep in the file
+        const q = DSP.argmaxAbs(h, p0 - step - win, p0 - step + win);
+        if (q >= 0 && Math.abs(h[q]) > 0.15 * Math.abs(h[p0])) p0 = q; else break;
+      }
+    }
+    const ref = Math.abs(h[p0]), out = [];
+    ks.forEach((k, i) => {
+      const p = i ? DSP.argmaxAbs(h, p0 + i * step - win, p0 + i * step + win) : p0;
+      if (p < 0 || Math.abs(h[p]) < 0.05 * ref) { out.push({ warn: true, t: CH_NAME[k] + ': no signal – is the speaker connected?' }); return; }
+      const sp = DSP.spectrumAt(h, p, fs, 0.4);
+      const db = DSP.normalize(DSP.toGrid(sp.P, sp.M, fs, grid, 24), grid).map(v => Math.round(v * 100) / 100);
+      const rel = 20 * Math.log10(Math.abs(h[p]) / ref);
+      S.ch[k].meas.push({ name: 'Pos ' + (S.ch[k].meas.length + 1), db });
+      out.push({ warn: false, t: CH_NAME[k] + (i ? ' (' + fmtDb(rel) + ' vs ' + CH_NAME[ks[0]] + ')' : '') + ': ok' });
+    });
+    save(); renderMeas(); draw();
+    const warn = lv > -1 || out.some(o => o.warn);
+    msg('Level ' + lv.toFixed(0) + ' dBFS, delay ' + Math.round(p0 / fs * 1000 - (live ? LEAD * 1000 : 0)) + ' ms' +
+      (lv > -1 ? ' – clipping, measure quieter!' : '') + ' · ' + out.map(o => o.t).join(' · '), warn);
+  }
+  function renderMeas() {
+    const other = chans().filter(k => k !== S.view).map(k => CH_NAME[k] + ': ' + S.ch[k].meas.length).join(', ');
+    $('#meas').innerHTML = cur().meas.map((m, i) => `<span class="chip">${CH_NAME[S.view]} · ${m.name.replace(/[<&]/g, '')}<button aria-label="Delete" data-i="${i}">×</button></span>`).join('')
+      + (other ? `<span class="small" style="align-self:center">${other} measurements</span>` : '');
+  }
+  $('#meas').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; cur().meas.splice(+b.dataset.i, 1); save(); renderMeas(); draw(); });
+  async function progress(sec) {
+    const p = $('#prog'); p.hidden = false; const t0 = performance.now();
+    while (performance.now() - t0 < sec * 1000) { p.value = (performance.now() - t0) / (sec * 1000); await sleep(100); }
+    p.hidden = true;
+  }
+  $('#b-demo').onclick = async () => {
+    if (busy) return; busy = true; stopLevel(); msg('Computing demo measurement …'); await sleep(30);
+    // synthetic recording: one sweep per channel, back to back, each through its own "room"
+    const fs = 48000, ks = chans(), step = Math.round((4 + gap()) * fs), parts = ks.map(k => DSP.simulate(fs, S.ch[k].meas.length + 1, true, { L: 1, R: 2, M: 3 }[k]));
+    const rec = new Float32Array(step * (ks.length - 1) + parts[ks.length - 1].length);
+    parts.forEach((p, i) => { for (let j = 0; j < p.length; j++) rec[i * step + j] += p[j]; });
+    analyzeRec(rec, fs, ks, false); busy = false;
+  };
+  $('#b-sweep').onclick = async () => {
+    stopLevel();
+    try {
+      const t = await deviceSweeps(chans()), sec = (t.lead_ms + t.count * (t.sweep_ms + t.gap_ms)) / 1000;
+      msg('arply plays the sweep: ' + chans().map(k => CH_NAME[k]).join(', then ') + ' (' + Math.round(sec) + ' s) …');
+    } catch (e) { msg(busyMsg(e), true); }
+  };
+  $('#b-live').onclick = async () => {
+    if (busy) return;
+    if (!micOk()) { msg('No microphone on this page – open the https link at the top, or use import (details below).', true); return; }
+    stopLevel(); busy = true;
+    const c = getCtx(); await c.resume();
+    let stream;
+    try { stream = await getMic(); } catch (e) { busy = false; msg('Microphone denied or blocked here (' + e.name + '). Use the demo or import.', true); return; }
+    const src = c.createMediaStreamSource(stream), proc = c.createScriptProcessor(4096, 1, 1), mute = c.createGain(), chunks = [];
+    let on = true; mute.gain.value = 0;
+    proc.onaudioprocess = e => { if (on) chunks.push(new Float32Array(e.inputBuffer.getChannelData(0))); };
+    src.connect(proc); proc.connect(mute); mute.connect(c.destination);
+    const ks = chans(), finish = () => { on = false; stream.getTracks().forEach(t => t.stop()); src.disconnect(); proc.disconnect(); };
+    // recording runs first; arply starts the sweeps lead_ms after the request
+    let t;
+    try { t = await deviceSweeps(ks); } catch (e) { finish(); busy = false; msg(busyMsg(e), true); return; }
+    msg('Measuring (' + ks.map(k => CH_NAME[k]).join(', then ') + ') – please stay quiet …');
+    await progress((t.lead_ms + t.count * (t.sweep_ms + t.gap_ms)) / 1000 + 0.5);
+    finish();
+    const n = chunks.reduce((s, a) => s + a.length, 0), rec = new Float32Array(n); let o = 0;
+    for (const a of chunks) { rec.set(a, o); o += a.length; }
+    // network delay is unknown, so find the first sweep in the recording like an import
+    analyzeRec(rec, c.sampleRate, ks, false); busy = false;
+  };
+  $('#f-rec').onchange = async e => {
+    const f = e.target.files[0]; if (!f) return; e.target.value = '';
+    msg('Reading ' + f.name + ' …');
+    try {
+      const c = getCtx(), buf = await c.decodeAudioData(await f.arrayBuffer());
+      let d = buf.getChannelData(0); if (d.length > buf.sampleRate * 60) d = d.subarray(0, buf.sampleRate * 60);
+      analyzeRec(d, buf.sampleRate, chans(), false);
+    } catch (err) { msg('Could not read the file.', true); }
+  };
+  $('#o-tail').checked = S.opt.tail; $('#o-tail').onchange = e => { S.opt.tail = e.target.checked; save(); };
+
+  // ---------- options ----------
+  const opts = [['fmin', v => fmtHz(v)], ['fmax', v => fmtHz(v)], ['tilt', v => '+' + String(v) + ' dB'], ['maxn', v => v], ['cut', v => '−' + v + ' dB']];
+  const key = { fmin: 'fmin', fmax: 'fmax', tilt: 'tilt', maxn: 'maxN', cut: 'maxCut' };
+  for (const [id, fmt] of opts) {
+    const el = $('#o-' + id), out = $('#v-' + id);
+    el.value = S.opt[key[id]]; out.textContent = fmt(+el.value);
+    el.oninput = () => { S.opt[key[id]] = +el.value; out.textContent = fmt(+el.value); save(); draw(); };
+  }
+  $('#o-detail').value = String(S.opt.detail); $('#o-detail').onchange = e => { S.opt.detail = +e.target.value; save(); draw(); };
+  $('#b-fit').onclick = () => {
+    const ks = chans().filter(k => S.ch[k].meas.length);
+    if (!ks.length) { msg('Measure first (or run the demo).', true); return; }
+    undo = JSON.stringify(chans().map(k => [k, S.ch[k].filters])); $('#b-undo').disabled = false;
+    const res = ks.map(k => {
+      S.ch[k].filters = DSP.autoFit(avgMeas(k).avg, grid, { fs: FS, fmin: S.opt.fmin, fmax: S.opt.fmax, tilt: S.opt.tilt, maxN: S.opt.maxN, maxCut: S.opt.maxCut });
+      const n = S.ch[k].filters.length; return CH_NAME[k] + ': ' + n + (n === 1 ? ' filter' : ' filters');
+    });
+    const miss = chans().filter(k => !S.ch[k].meas.length).map(k => CH_NAME[k]);
+    msg(res.join(' · ') + (miss.length ? ' · not measured: ' + miss.join(', ') : ''), miss.length > 0);
+    changed(true);
+  };
+  $('#b-undo').onclick = () => {
+    if (!undo) return;
+    for (const [k, f] of JSON.parse(undo)) S.ch[k].filters = f;
+    undo = null; $('#b-undo').disabled = true; changed(true);
+  };
+
+  // ---------- bass enhancement ----------
+  const pbeActive = () => S.opt.pbe.on && S.opt.mode !== 'bass';
+  const pbeOpt = () => ({ fc: S.opt.pbe.fc, amount: S.opt.pbe.amt / 100 });
+  function renderPbe() {
+    $('#o-pbe').checked = S.opt.pbe.on;
+    $('#o-pbefc').value = S.opt.pbe.fc; $('#v-pbefc').textContent = fmtHz(S.opt.pbe.fc);
+    $('#o-pbeamt').value = S.opt.pbe.amt; $('#v-pbeamt').textContent = S.opt.pbe.amt + ' %';
+    for (const id of ['#o-pbefc', '#o-pbeamt']) $(id).disabled = !S.opt.pbe.on;
+  }
+  const pbeChanged = () => { renderPbe(); save(); draw(); renderJson(); preview(); clearTimeout(tmr); tmr = setTimeout(rebuildChain, 60); };
+  $('#o-pbe').onchange = e => { S.opt.pbe.on = e.target.checked; pbeChanged(); };
+  $('#o-pbefc').oninput = e => { S.opt.pbe.fc = +e.target.value; pbeChanged(); };
+  $('#o-pbeamt').oninput = e => { S.opt.pbe.amt = +e.target.value; pbeChanged(); };
+  $('#b-pbesug').onclick = () => {
+    const lims = chans().map(k => [k, avgMeas(k)]).filter(([, a]) => a).map(([k, a]) => [k, DSP.bassLimit(a.avg, grid)]);
+    if (!lims.length) { $('#pbemsg').textContent = 'Measure first (or run the demo).'; return; }
+    if (lims.some(([, f]) => f === null)) { $('#pbemsg').textContent = 'No bass roll-off found up to 300 Hz – bass enhancement is probably unnecessary.'; return; }
+    const f6 = Math.max(...lims.map(([, f]) => f)), txt = lims.map(([k, f]) => CH_NAME[k] + ' ' + fmtHz(f)).join(', ');
+    if (f6 < 85) {
+      $('#pbemsg').textContent = '−6 dB roll-off at ' + txt + '. That is where the iPhone microphone rolls off itself – the speaker probably goes deeper. Bass enhancement is likely not needed.';
+      return;
+    }
+    S.opt.pbe.fc = Math.max(60, Math.min(150, Math.round(f6 / 5) * 5));
+    $('#pbemsg').textContent = '−6 dB roll-off at ' + txt + ' → cutoff set to ' + fmtHz(S.opt.pbe.fc) + '.';
+    pbeChanged();
+  };
+
+  // ---------- filter editor (current channel) ----------
+  const TYPES = { peak: 'Peak (bell)', ls: 'Low shelf', hs: 'High shelf', hp: 'High-pass', lp: 'Low-pass' };
+  const toSl = f => Math.round(Math.log(f / 20) / Math.log(1000) * 1000), fromSl = v => Math.round(20 * Math.pow(1000, v / 1000) * 10) / 10;
+  function renderFilters() {
+    const fl = cur().filters;
+    $('#filters').innerHTML = fl.length ? fl.map((f, i) => `
+      <div class="filt" data-i="${i}">
+        <div class="fhead"><input type="checkbox" data-k="on" ${f.on ? 'checked' : ''} aria-label="Filter ${i + 1} enabled" style="width:22px;height:22px;accent-color:var(--acc)">
+          <select data-k="type">${Object.entries(TYPES).map(([k, v]) => `<option value="${k}" ${k === f.type ? 'selected' : ''}>${v}</option>`).join('')}</select>
+          <button data-k="del" aria-label="Delete filter ${i + 1}">Delete</button></div>
+        <label class="f">Frequency<input type="range" data-k="f" min="0" max="1000" value="${toSl(f.f)}"><output>${fmtHz(f.f)}</output></label>
+        ${f.type === 'hp' || f.type === 'lp' ? '' : `<label class="f">Gain<input type="range" data-k="gain" min="-18" max="6" step="0.1" value="${f.gain}"><output>${fmtDb(f.gain)}</output></label>`}
+        ${f.type === 'ls' || f.type === 'hs' ? '' : `<label class="f">Q<input type="range" data-k="q" min="0.3" max="12" step="0.01" value="${f.q}"><output>${f.q.toFixed(2)}</output></label>`}
+      </div>`).join('') : '<p class="small">No filters for this channel yet. Use “Calculate filters” or add one by hand.</p>';
+    if (chans().length > 1 && fl.length) {
+      const o = chans().find(k => k !== S.view);
+      $('#filters').insertAdjacentHTML('beforeend', `<div class="row"><button id="b-copych">Copy to ${CH_NAME[o]}</button></div>`);
+      $('#b-copych').onclick = () => { S.ch[o].filters = JSON.parse(JSON.stringify(fl)); msg('Filters copied to ' + CH_NAME[o] + '.'); changed(true); };
+    }
+  }
+  $('#filters').addEventListener('input', e => {
+    const box = e.target.closest('.filt'); if (!box) return;
+    const f = cur().filters[+box.dataset.i], k = e.target.dataset.k, out = e.target.nextElementSibling;
+    if (k === 'f') { f.f = fromSl(+e.target.value); out.textContent = fmtHz(f.f); }
+    else if (k === 'gain') { f.gain = +e.target.value; out.textContent = fmtDb(f.gain); }
+    else if (k === 'q') { f.q = +e.target.value; out.textContent = f.q.toFixed(2); }
+    else return;
+    changed(false);
+  });
+  $('#filters').addEventListener('change', e => {
+    const box = e.target.closest('.filt'); if (!box) return;
+    const f = cur().filters[+box.dataset.i], k = e.target.dataset.k;
+    if (k === 'on') { f.on = e.target.checked; changed(false); }
+    if (k === 'type') { f.type = e.target.value; if (f.type === 'hp') { f.q = 0.71; if (f.f > 200) f.f = 30; } if (f.type === 'lp') { f.q = 0.71; if (f.f < 2000) f.f = 16000; } changed(true); }
+  });
+  $('#filters').addEventListener('click', e => {
+    const b = e.target.closest('button[data-k=del]'); if (!b) return;
+    cur().filters.splice(+b.closest('.filt').dataset.i, 1); changed(true);
+  });
+  $('#b-add').onclick = () => { cur().filters.push({ type: 'peak', on: true, f: 100, gain: -3, q: 2 }); changed(true); };
+  $('#b-clear').onclick = () => { undo = JSON.stringify([[S.view, cur().filters]]); $('#b-undo').disabled = false; cur().filters = []; changed(true); };
+
+  let tmr = null;
+  function changed(rebuild) {
+    if (rebuild) renderFilters();
+    save(); draw(); renderJson(); preview();
+    clearTimeout(tmr); tmr = setTimeout(rebuildChain, 60);
+  }
+
+  // ---------- export ----------
+  function payload() {
+    const r6 = v => Math.round(v * 1e8) / 1e8, channels = {};
+    for (const k of chans()) channels[k] = S.ch[k].filters.filter(f => f.on).map(f => {
+      const c = DSP.coeffs(f.type, f.f, f.gain, f.q, FS);
+      return { type: f.type, f: f.f, gain_db: f.type === 'hp' || f.type === 'lp' ? 0 : f.gain, q: f.type === 'ls' || f.type === 'hs' ? 0.7071 : f.q,
+        b: [r6(c.b0), r6(c.b1), r6(c.b2)], a: [r6(c.a1), r6(c.a2)] };
+    });
+    return { version: 2, fs: FS, mode: S.opt.mode, preamp_db: preampAll(), channels,
+      pbe: { on: pbeActive(), fc: S.opt.pbe.fc, amount: S.opt.pbe.amt / 100 } };
+  }
+  const renderJson = () => { $('#json').textContent = JSON.stringify(payload(), null, 1); };
+  $('#b-copy').onclick = async () => {
+    try { await navigator.clipboard.writeText(JSON.stringify(payload())); $('#sendmsg').textContent = 'Copied.'; }
+    catch (e) { $('#sendmsg').textContent = 'Copying not allowed – select the text below.'; }
+  };
+  $('#b-send').onclick = async () => {
+    $('#sendmsg').textContent = 'Saving …';
+    clearTimeout(pvTimer);
+    try { await api('/api/dsp', payload()); previewing = false; showSaved(); }
+    catch (e) { $('#sendmsg').textContent = 'Saving failed: ' + e.message; }
+  };
+  $('#b-revert').onclick = async () => {
+    clearTimeout(pvTimer);
+    try { applyDevice(await api('/api/dsp/revert', {})); previewing = false; showSaved(); renderAll(); }
+    catch (e) { $('#sendmsg').textContent = 'arply did not answer (' + e.message + ').'; }
+  };
+  // leaving the page drops an unsaved preview, so the speakers never keep a half-made EQ
+  addEventListener('pagehide', () => { if (previewing) navigator.sendBeacon('/api/dsp/revert'); });
+
+  // ---------- preview: same routing as ARPLY's output modes ----------
+  let audio = null, mediaSrc = null, inNode = null, bufSrc = null, playing = false, playT0 = 0, nodes = [], bypass = false;
+  const getIn = () => { if (!inNode) inNode = getCtx().createGain(); return inNode; };
+  S.opt.sample = S.opt.sample || 'groove';
+  function biquads(c, fl, first) {
+    let last = first;
+    for (const f of fl.filter(x => x.on)) {
+      const b = c.createBiquadFilter();
+      b.type = { peak: 'peaking', ls: 'lowshelf', hs: 'highshelf', hp: 'highpass', lp: 'lowpass' }[f.type];
+      b.frequency.value = f.f; b.gain.value = f.gain; b.Q.value = f.type === 'hp' || f.type === 'lp' ? 20 * Math.log10(f.q) : f.q;
+      last.connect(b); last = b; nodes.push(b);
+    }
+    return last;
+  }
+  function rebuildChain() {
+    if (!inNode) return;
+    const c = getCtx(), mode = S.opt.mode;
+    inNode.disconnect(); nodes.forEach(n => n.disconnect()); nodes = [];
+    const pre = c.createGain(); pre.gain.value = bypass ? 1 : Math.pow(10, preampAll() / 20); nodes.push(pre);
+    inNode.connect(pre);
+    const merger = c.createChannelMerger(2); nodes.push(merger); merger.connect(c.destination);
+    if (mode === 'stereo') {
+      const sp = c.createChannelSplitter(2); nodes.push(sp); pre.connect(sp);
+      ['L', 'R'].forEach((k, i) => {
+        const g = c.createGain(); g.channelCount = 1; g.channelCountMode = 'explicit'; nodes.push(g);
+        sp.connect(g, i);
+        let last = bypass ? g : biquads(c, S.ch[k].filters, g);
+        if (!bypass && pbeActive()) last = buildPbe(c, last, pbeOpt(), nodes);
+        last.connect(merger, 0, i);
+      });
+    } else {
+      const sum = c.createGain(); sum.channelCount = 1; sum.channelCountMode = 'explicit'; sum.channelInterpretation = 'speakers'; nodes.push(sum);
+      pre.connect(sum);
+      const k = chans()[0];
+      let last = bypass ? sum : biquads(c, S.ch[k].filters, sum);
+      if (!bypass && pbeActive()) last = buildPbe(c, last, pbeOpt(), nodes);
+      for (const i of OUT_IDX[k]) last.connect(merger, 0, i);
+    }
+  }
+  function stopPlay() {
+    if (bufSrc) { try { bufSrc.stop(); } catch (e) {} bufSrc.disconnect(); bufSrc = null; }
+    if (audio) audio.pause();
+    playing = false; $('#b-play').textContent = 'Play';
+    if (S.opt.sample === 'tones') $('#musicname').textContent = '';
+  }
+  function renderSample() {
+    const k = S.opt.sample;
+    $('#o-sample').value = k; $('#samplehint').textContent = SAMPLE_HINT[k];
+    $('#l-music').hidden = k !== 'file';
+    $('#b-play').disabled = k === 'file' && !audio;
+    if (k !== 'file') $('#musicname').textContent = '';
+    else if (audio) $('#musicname').textContent = audio.dataset.name || '';
+  }
+  $('#o-sample').onchange = e => { stopPlay(); S.opt.sample = e.target.value; save(); renderSample(); };
+  $('#f-music').onchange = e => {
+    const f = e.target.files[0]; if (!f) return;
+    stopPlay();
+    if (audio) URL.revokeObjectURL(audio.src);
+    audio = new Audio(URL.createObjectURL(f)); audio.loop = true; audio.dataset.name = f.name;
+    const c = getCtx(); if (mediaSrc) mediaSrc.disconnect();
+    mediaSrc = c.createMediaElementSource(audio); mediaSrc.connect(getIn()); rebuildChain();
+    renderSample();
+  };
+  // show the current tone while the bass tones play
+  function toneTick() {
+    if (!playing || S.opt.sample !== 'tones') return;
+    const t = (getCtx().currentTime - playT0) % (0.9 * TONES_HZ.length);
+    $('#musicname').textContent = 'Tone: ' + TONES_HZ[Math.min(TONES_HZ.length - 1, Math.floor(t / 0.9))] + ' Hz';
+    requestAnimationFrame(toneTick);
+  }
+  $('#b-play').onclick = async () => {
+    if (playing) { stopPlay(); return; }
+    const c = getCtx(); await c.resume(); getIn(); rebuildChain();
+    try {
+      if (S.opt.sample === 'file') { if (!audio) return; await audio.play(); }
+      else {
+        bufSrc = c.createBufferSource(); bufSrc.buffer = makeSample(c, S.opt.sample); bufSrc.loop = true;
+        bufSrc.connect(inNode); playT0 = c.currentTime + 0.05; bufSrc.start(playT0);
+      }
+      playing = true; $('#b-play').textContent = 'Stop'; toneTick();
+    } catch (e) { $('#musicname').textContent = 'Playback not allowed.'; }
+  };
+  $('#o-bypass').onchange = e => { bypass = e.target.checked; rebuildChain(); if (devOk) api('/api/dsp/bypass', { on: bypass }).catch(() => {}); };
+
+  // ---------- start ----------
+  // device filter {type,f,gain_db,q,enabled} -> page filter {type,on,f,gain,q}
+  function applyDevice(j) {
+    FS = j.fs || FS;
+    for (const k of ['L', 'R', 'M']) S.ch[k].filters = ((j.channels || {})[k] || []).map(f => ({ type: f.type, on: f.enabled !== false, f: f.f, gain: f.gain_db || 0, q: f.q }));
+    if (MODES[j.mode]) S.opt.mode = j.mode;
+    if (j.pbe) S.opt.pbe = { on: !!j.pbe.on, fc: j.pbe.fc, amt: Math.round(j.pbe.amount * 100) };
+    fixView(); save(); $('#o-mode').value = S.opt.mode;
+  }
+  const host = location.hostname;
+  const httpsLink = location.protocol === 'https:' ? '' : ` For live measuring with the microphone open <a href="https://${host}/dsp">https://${host}/dsp</a>.`;
+  renderAll();
+  api('/api/dsp').then(j => {
+    devOk = true; applyDevice(j); previewing = !!j.previewing; renderAll();
+    $('#o-bypass').checked = bypass = !!j.bypass;
+    $('#status').innerHTML = '<b>Connected to arply</b> at ' + host + ' (' + (FS / 1000) + ' kHz).' + (previewing ? ' An unsaved preview is playing.' : '') + httpsLink;
+    if (previewing) showSaved();
+  }).catch(() => {
+    $('#status').innerHTML = '<b>arply not reachable</b> – you can still try the demo and the editor.' + httpsLink;
+  });
+}
+</script>
+</body>
+</html>

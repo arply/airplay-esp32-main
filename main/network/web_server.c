@@ -1,3 +1,4 @@
+#include "web_dsp.h"
 #include "web_server.h"
 
 #include "esp_log.h"
@@ -28,8 +29,8 @@ static httpd_handle_t s_server = NULL;
 
 #define SPIFFS_CHUNK_SIZE 1024
 
-static esp_err_t serve_spiffs_file(httpd_req_t *req, const char *path,
-                                   const char *content_type) {
+esp_err_t web_server_send_file(httpd_req_t *req, const char *path,
+                               const char *content_type) {
   FILE *f = fopen(path, "r");
   if (!f) {
     ESP_LOGE(TAG, "Failed to open %s", path);
@@ -53,7 +54,7 @@ static esp_err_t serve_spiffs_file(httpd_req_t *req, const char *path,
 
 // API handlers
 static esp_err_t root_handler(httpd_req_t *req) {
-  return serve_spiffs_file(req, "/spiffs/www/index.html", "text/html");
+  return web_server_send_file(req, "/spiffs/www/index.html", "text/html");
 }
 
 static esp_err_t favicon_handler(httpd_req_t *req) {
@@ -63,11 +64,11 @@ static esp_err_t favicon_handler(httpd_req_t *req) {
 }
 
 static esp_err_t logs_page_handler(httpd_req_t *req) {
-  return serve_spiffs_file(req, "/spiffs/www/logs.html", "text/html");
+  return web_server_send_file(req, "/spiffs/www/logs.html", "text/html");
 }
 
 static esp_err_t speedtest_page_handler(httpd_req_t *req) {
-  return serve_spiffs_file(req, "/spiffs/www/speedtest.html", "text/html");
+  return web_server_send_file(req, "/spiffs/www/speedtest.html", "text/html");
 }
 
 // Tiny endpoint used by JS for RTT timing. Returns minimal body.
@@ -385,7 +386,7 @@ static esp_err_t led_brightness_post_handler(httpd_req_t *req) {
 
 /* Read a whole request body into a NUL-terminated heap buffer. httpd_req_recv()
  * can return a short read, so keep going until the declared length arrives. */
-static char *recv_body(httpd_req_t *req, size_t max_len) {
+char *web_server_recv_body(httpd_req_t *req, size_t max_len) {
   int len = req->content_len;
   if (len <= 0 || (size_t)len > max_len) {
     return NULL;
@@ -413,6 +414,42 @@ static bool json_int_in_range(const cJSON *v, int lo, int hi) {
          v->valueint >= lo && v->valueint <= hi;
 }
 
+static esp_err_t chime_get_handler(httpd_req_t *req) {
+  bool on = true;
+  settings_get_chime_on(&on);
+  cJSON *json = cJSON_CreateObject();
+  cJSON_AddBoolToObject(json, "on", on);
+  cJSON_AddBoolToObject(json, "success", true);
+  char *json_str = cJSON_PrintUnformatted(json);
+  httpd_resp_set_type(req, "application/json");
+  httpd_resp_sendstr(req, json_str);
+  free(json_str);
+  cJSON_Delete(json);
+  return ESP_OK;
+}
+
+static esp_err_t chime_post_handler(httpd_req_t *req) {
+  char *content = web_server_recv_body(req, 64);
+  cJSON *json = content ? cJSON_Parse(content) : NULL;
+  free(content);
+  const cJSON *on = json ? cJSON_GetObjectItem(json, "on") : NULL;
+  cJSON *response = cJSON_CreateObject();
+  if (cJSON_IsBool(on) && settings_set_chime_on(cJSON_IsTrue(on)) == ESP_OK) {
+    cJSON_AddBoolToObject(response, "success", true);
+    cJSON_AddBoolToObject(response, "on", cJSON_IsTrue(on));
+  } else {
+    cJSON_AddBoolToObject(response, "success", false);
+    cJSON_AddStringToObject(response, "error", "Expected {\"on\": bool}");
+  }
+  cJSON_Delete(json);
+  char *json_str = cJSON_PrintUnformatted(response);
+  httpd_resp_set_type(req, "application/json");
+  httpd_resp_sendstr(req, json_str);
+  free(json_str);
+  cJSON_Delete(response);
+  return ESP_OK;
+}
+
 static esp_err_t channel_mode_get_handler(httpd_req_t *req) {
   cJSON *json = cJSON_CreateObject();
   cJSON_AddNumberToObject(json, "mode", audio_output_get_channel_mode());
@@ -427,7 +464,7 @@ static esp_err_t channel_mode_get_handler(httpd_req_t *req) {
 }
 
 static esp_err_t channel_mode_post_handler(httpd_req_t *req) {
-  char *content = recv_body(req, 128);
+  char *content = web_server_recv_body(req, 128);
   if (!content) {
     httpd_resp_send_500(req);
     return ESP_FAIL;
@@ -462,8 +499,6 @@ static esp_err_t channel_mode_post_handler(httpd_req_t *req) {
   cJSON_Delete(response);
   return ESP_OK;
 }
-
-
 
 static esp_err_t ota_update_handler(httpd_req_t *req) {
   if (req->content_len == 0) {
@@ -741,7 +776,6 @@ static esp_err_t fs_list_handler(httpd_req_t *req) {
 /*  EQ Page + API  (only when TAS58xx DAC is configured)               */
 /* ================================================================== */
 
-
 esp_err_t web_server_start(uint16_t port) {
   if (s_server) {
     ESP_LOGW(TAG, "Web server already running");
@@ -750,10 +784,10 @@ esp_err_t web_server_start(uint16_t port) {
 
   httpd_config_t config = HTTPD_DEFAULT_CONFIG();
   config.server_port = port;
-  config.max_open_sockets = 3; // Limit to save lwIP socket slots for AirPlay
+  config.max_open_sockets = 3;    // Limit to save lwIP socket slots for AirPlay
   config.lru_purge_enable = true; // Reclaim stale sockets when all are in use
   config.max_uri_handlers =
-      30; // Room for the 25 registered below, captive portal included
+      32 + WEB_DSP_URI_COUNT; // 28 below (captive portal, log stream) + DSP
   config.max_resp_headers = 8;
   config.stack_size = 8192;
   config.uri_match_fn = httpd_uri_match_wildcard;
@@ -833,7 +867,15 @@ esp_err_t web_server_start(uint16_t port) {
                                        .handler = channel_mode_post_handler};
   httpd_register_uri_handler(s_server, &channel_mode_post_uri);
 
+  httpd_uri_t chime_get_uri = {.uri = "/api/audio/chime",
+                               .method = HTTP_GET,
+                               .handler = chime_get_handler};
+  httpd_register_uri_handler(s_server, &chime_get_uri);
 
+  httpd_uri_t chime_post_uri = {.uri = "/api/audio/chime",
+                                .method = HTTP_POST,
+                                .handler = chime_post_handler};
+  httpd_register_uri_handler(s_server, &chime_post_uri);
 
   httpd_uri_t ota_uri = {.uri = "/api/ota/update",
                          .method = HTTP_POST,
@@ -889,8 +931,8 @@ esp_err_t web_server_start(uint16_t port) {
                                  .handler = captive_windows_handler};
   httpd_register_uri_handler(s_server, &windows_captive);
 
-
   log_stream_register(s_server);
+  web_dsp_register(s_server);
 
   // Must be registered last: with wildcard matching enabled, this only
   // catches requests no more specific handler above already claimed.

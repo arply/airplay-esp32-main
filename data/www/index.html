@@ -220,6 +220,8 @@ select{
 <option value='3'>Mono (L+R)</option>
 </select></div>
 <div id='chan-msg'></div></div>
+<div class='form-group' style='margin-top:22px'><label style='display:flex;gap:10px;align-items:center;cursor:pointer'><input type='checkbox' id='chime-on' onchange='saveChime()' style='width:20px;height:20px'> Play a chime when powered on</label></div>
+<div id='chime-msg'></div>
 </div>
 
 <div class='card'><h2>Firmware Update</h2>
@@ -244,6 +246,10 @@ select{
 </div>
 <div class='actions'><button class='btn btn-danger' onclick='restart()'>Restart Device</button></div>
 </div>
+
+<div class='card'><h2>Room Calibration</h2>
+<p class='sub'>Measure the room with your phone and correct it with the built-in EQ</p>
+<a href='/dsp' class='btn btn-secondary'>Open Room Calibration</a></div>
 
 <div class='card'><h2>System Logs</h2>
 <p class='sub'>Live ESP log output via WebSocket</p>
@@ -306,6 +312,15 @@ async function saveChannel(){
       chanLocked=!!d.locked;applyChanLock();}
     else{msg('chan-msg',d.error,'err');}}
   catch(e){msg('chan-msg','Error','err');console.error('saveChannel failed',e);}}
+async function loadChime(){
+  try{var r=await fetch('/api/audio/chime');var d=await r.json();
+    if(d.success){document.getElementById('chime-on').checked=!!d.on;}}
+  catch(e){console.warn('Could not load chime setting',e);}}
+async function saveChime(){
+  var on=document.getElementById('chime-on').checked;
+  try{var r=await fetch('/api/audio/chime',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({on:on})});
+    var d=await r.json();if(d.success){msg('chime-msg','Saved!','ok');}else{msg('chime-msg',d.error,'err');}}
+  catch(e){msg('chime-msg','Error','err');console.error('saveChime failed',e);}}
 async function saveName(){
   var n=document.getElementById('dev-name').value.trim();if(!n){msg('name-msg','Enter a name','err');return;}
   try{var r=await fetch('/api/device/name',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:n})});
@@ -340,5 +355,5 @@ window.onload=function(){
   document.getElementById('fw-file').onchange=function(e){var f=e.target.files[0];
     document.getElementById('fw-name').textContent=f?f.name:'No file selected';
     document.getElementById('ota-btn').disabled=!f;};
-  loadInfo();loadBrightness();loadChannel();setInterval(loadInfo,30000);};
+  loadInfo();loadBrightness();loadChannel();loadChime();setInterval(loadInfo,30000);};
 </script></body></html>

@@ -83,3 +83,7 @@ CONFIG_AUDIO_ENCODER_ALAC_SUPPORT=n
 CONFIG_AUDIO_ENCODER_PCM_SUPPORT=n
 CONFIG_AUDIO_ENCODER_SBC_SUPPORT=n
 CONFIG_AUDIO_ENCODER_LC3_SUPPORT=n
+
+# HTTPS on port 443 for pages that need a secure context (iPhone microphone
+# access for room calibration, docs/web_dsp/PLAN.md).
+CONFIG_ESP_HTTPS_SERVER_ENABLE=y

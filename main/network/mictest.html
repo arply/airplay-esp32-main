@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>arply mic test</title>
+<style>
+body{font:16px system-ui,sans-serif;margin:0;padding:24px 16px;background:#f7f8fb;color:#4f556a}
+h1{font-size:22px;color:#0b0d14;margin:0 0 8px}
+button{font:inherit;font-weight:600;padding:12px 22px;border:0;border-radius:999px;background:#4e54dc;color:#fff}
+#bar{height:14px;border-radius:7px;background:#e9eafb;margin:20px 0 8px;overflow:hidden}
+#fill{height:100%;width:0;background:#4e54dc}
+pre{font:13px ui-monospace,monospace;white-space:pre-wrap;background:#fff;border:1px solid #eceef4;border-radius:10px;padding:12px}
+</style>
+</head>
+<body>
+<h1>Microphone test</h1>
+<p>Tap Start and allow microphone access. The bar should move when you speak.</p>
+<button id="go">Start</button>
+<div id="bar"><div id="fill"></div></div>
+<div id="db">–</div>
+<pre id="out"></pre>
+<script>
+const out = document.getElementById('out');
+const info = { secure: window.isSecureContext, ua: navigator.userAgent };
+function show() { out.textContent = JSON.stringify(info, null, 1); }
+function report() {
+  fetch('/api/mictest/log', { method: 'POST', body: JSON.stringify(info) }).catch(() => {});
+}
+show();
+document.getElementById('go').onclick = async () => {
+  try {
+    if (!navigator.mediaDevices) throw { name: 'NoMediaDevices', message: 'navigator.mediaDevices missing' };
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const src = ctx.createMediaStreamSource(stream), an = ctx.createAnalyser();
+    an.fftSize = 2048; src.connect(an);
+    const track = stream.getAudioTracks()[0];
+    info.result = 'granted';
+    info.rate = ctx.sampleRate;
+    info.settings = track.getSettings ? track.getSettings() : null;
+    info.peakDb = -120;
+    const buf = new Float32Array(an.fftSize);
+    let lastReport = 0;
+    (function tick(t) {
+      an.getFloatTimeDomainData(buf);
+      let s = 0; for (const v of buf) s += v * v;
+      const db = 10 * Math.log10(s / buf.length + 1e-12);
+      info.peakDb = Math.max(info.peakDb, Math.round(db));
+      document.getElementById('fill').style.width = Math.max(0, Math.min(100, (db + 80) * 1.25)) + '%';
+      document.getElementById('db').textContent = db.toFixed(1) + ' dBFS RMS';
+      if (t - lastReport > 3000) { lastReport = t; show(); report(); }
+      requestAnimationFrame(tick);
+    })(0);
+  } catch (e) {
+    info.result = 'error'; info.error = (e.name || '') + ': ' + (e.message || e);
+    show(); report();
+  }
+};
+report();
+</script>
+</body>
+</html>

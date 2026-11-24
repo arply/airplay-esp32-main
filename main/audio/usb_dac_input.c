@@ -260,6 +260,7 @@ static void arbiter_task(void *arg) {
           s_ringbuf, &item_size, pdMS_TO_TICKS(ARBITER_POLL_MS),
           ARBITER_MAX_DRAIN_BYTES);
       if (data && item_size > 0) {
+        audio_output_process((int16_t *)data, item_size / sizeof(int16_t) / 2);
         apply_gain((int16_t *)data, item_size / sizeof(int16_t));
         led_audio_feed((int16_t *)data, item_size / sizeof(int16_t) / 2);
         audio_output_write(data, item_size, portMAX_DELAY);

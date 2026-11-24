@@ -12,6 +12,9 @@ set( SRC_FILES
     "audio/audio_timing.c"
     "audio/audio_crypto.c"
     "audio/audio_resample.c"
+    "audio/audio_dsp.c"
+    "audio/test_signal.c"
+    "audio/chime.c"
     "rtsp/rtsp_server.c"
     "rtsp/rtsp_conn.c"
     "rtsp/rtsp_message.c"
@@ -38,6 +41,9 @@ set( SRC_FILES
     "network/ota.c"
     "network/dns_server.c"
     "network/log_stream.c"
+    "network/https_server.c"
+    "network/web_dsp.c"
+    "network/tls_cert.c"
     "led.c"
     "buttons.c"
     "playback_control.c"
@@ -84,6 +90,7 @@ set( DEPS
     esp_driver_i2s
     esp_timer
     esp_http_server
+    esp_https_server
     esp_http_client
     app_update
     json
@@ -91,6 +98,7 @@ set( DEPS
     esp_driver_ledc
     boards
     audio-resampler
+    dsp
     spiffs_storage
 )
 
@@ -118,6 +126,10 @@ idf_component_register(
     SRCS ${SRC_FILES}
     INCLUDE_DIRS ${INC_DIRS}
     PRIV_REQUIRES ${DEPS}
+    EMBED_TXTFILES
+        "network/mictest.html"
+    EMBED_FILES
+        "audio/chime/arply_chime_${CONFIG_OUTPUT_SAMPLE_RATE_HZ}.pcm"
 )
 
 # CONFIG_USB_DEVICE_UAC_AS_PART leaves usb_device_uac's own

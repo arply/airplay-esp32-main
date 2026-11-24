@@ -16,7 +16,8 @@ typedef enum {
   AUDIO_CHANNEL_MONO,
 } audio_channel_mode_t;
 
-/** Volume range shared by every input source. 0 dB = unity, -30 dB = silence. */
+/** Volume range shared by every input source. 0 dB = unity, -30 dB = silence.
+ */
 #define AUDIO_VOLUME_MIN_DB     (-30.0f)
 #define AUDIO_VOLUME_MAX_DB     (0.0f)
 #define AUDIO_VOLUME_DEFAULT_DB (-15.0f)
@@ -56,6 +57,11 @@ void audio_output_flush(void);
  * Stop the AirPlay playback task (for yielding I2S to another source)
  */
 void audio_output_stop(void);
+
+/**
+ * True while the playback task owns the I2S output.
+ */
+bool audio_output_is_running(void);
 
 /**
  * Write raw PCM data to the I2S output.
@@ -105,6 +111,23 @@ audio_channel_mode_t audio_output_cycle_channel_mode(void);
  * Set the output channel mode directly and persist it to NVS.
  */
 void audio_output_set_channel_mode(audio_channel_mode_t mode);
+
+/**
+ * Apply a channel mode for listening tests without persisting it.
+ */
+void audio_output_preview_channel_mode(audio_channel_mode_t mode);
+
+/**
+ * Return to the persisted channel mode (ends a preview).
+ */
+void audio_output_restore_channel_mode(void);
+
+/**
+ * Channel mode, then the output DSP, on interleaved stereo int16 in place —
+ * what the playback task does before volume. For writers that bypass the
+ * playback task (USB DAC input); call before applying volume.
+ */
+void audio_output_process(int16_t *buf, size_t frames);
 
 /**
  * Get the current output channel mode.

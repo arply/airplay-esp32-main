@@ -1,7 +1,10 @@
 #include "audio_output.h"
 #include "rtsp_server.h"
 
+#include "audio_dsp.h"
 #include "audio_resample.h"
+#include "dsp.h"
+#include "test_signal.h"
 #include "led.h"
 #include "settings.h"
 #include "driver/i2s_std.h"
@@ -119,6 +122,11 @@ static void apply_channel_mode(int16_t *buf, size_t frames) {
   }
 }
 
+void audio_output_process(int16_t *buf, size_t frames) {
+  apply_channel_mode(buf, frames);
+  dsp_process(buf, frames);
+}
+
 static void playback_task(void *arg) {
   int16_t *pcm = malloc((size_t)(FRAME_SAMPLES + 1) * 2 * sizeof(int16_t));
   int16_t *silence = calloc((size_t)FRAME_SAMPLES * 2, sizeof(int16_t));
@@ -145,6 +153,16 @@ static void playback_task(void *arg) {
       i2s_channel_disable(tx_handle);
       i2s_channel_enable(tx_handle);
     }
+    if (test_signal_active()) {
+      // arply's own signal (sweep, noise, chime): no DSP, no volume — the
+      // raw speaker at a fixed level.
+      test_signal_fill(pcm, FRAME_SAMPLES);
+      led_audio_feed(pcm, FRAME_SAMPLES);
+      i2s_channel_write(tx_handle, pcm,
+                        (size_t)FRAME_SAMPLES * 2 * sizeof(int16_t), &written,
+                        portMAX_DELAY);
+      continue;
+    }
     size_t samples = audio_receiver_read(pcm, FRAME_SAMPLES + 1);
     if (samples > 0) {
       int16_t *play_buf = pcm;
@@ -154,8 +172,11 @@ static void playback_task(void *arg) {
                                               MAX_RESAMPLE_FRAMES);
         play_buf = resample_buf;
       }
+      // Channel mode first: the filters belong to the outputs (speakers),
+      // not to the source channels. Volume last, so the user's volume
+      // never changes the EQ's headroom.
+      audio_output_process(play_buf, play_samples);
       apply_volume(play_buf, play_samples * 2);
-      apply_channel_mode(play_buf, play_samples);
       led_audio_feed(play_buf, play_samples);
       i2s_channel_write(tx_handle, play_buf, play_samples * 2 * sizeof(int16_t),
                         &written, portMAX_DELAY);
@@ -192,6 +213,9 @@ esp_err_t audio_output_init(void) {
     // fitted, so keep it for if the board is ever reconfigured.
     channel_mode = AUDIO_CHANNEL_STEREO;
   }
+
+  audio_dsp_init(OUTPUT_RATE);
+  test_signal_init(OUTPUT_RATE);
 
   i2s_chan_config_t chan_cfg =
       I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_0, I2S_ROLE_MASTER);
@@ -241,6 +265,10 @@ void audio_output_start(void) {
   playback_running = true;
   xTaskCreatePinnedToCore(playback_task, "audio_play", 4096, NULL, 7,
                           &playback_task_handle, PLAYBACK_CORE);
+}
+
+bool audio_output_is_running(void) {
+  return playback_task_handle != NULL;
 }
 
 void audio_output_stop(void) {
@@ -337,20 +365,46 @@ audio_channel_mode_t audio_output_cycle_channel_mode(void) {
   return next;
 }
 
-void audio_output_set_channel_mode(audio_channel_mode_t mode) {
+static void change_channel_mode(audio_channel_mode_t mode, bool persist) {
   if (audio_output_channel_mode_locked()) {
     return;
   }
   if (mode > AUDIO_CHANNEL_MONO) {
     mode = AUDIO_CHANNEL_STEREO;
   }
+  bool changed = mode != channel_mode;
   channel_mode = mode;
-  settings_set_channel_mode((uint8_t)mode);
-  ESP_LOGI(TAG, "Channel mode: %s",
-           mode == AUDIO_CHANNEL_LEFT    ? "LEFT only"
-           : mode == AUDIO_CHANNEL_RIGHT ? "RIGHT only"
-           : mode == AUDIO_CHANNEL_MONO  ? "MONO (L+R)"
-                                         : "STEREO");
+  // The EQ filters belong to the outputs, so a new routing needs the filter
+  // sets re-resolved (see audio_dsp.h).
+  audio_dsp_on_channel_mode(mode);
+  if (persist) {
+    settings_set_channel_mode((uint8_t)mode);
+  }
+  if (changed || persist) {
+    ESP_LOGI(TAG, "Channel mode: %s%s",
+             mode == AUDIO_CHANNEL_LEFT    ? "LEFT only"
+             : mode == AUDIO_CHANNEL_RIGHT ? "RIGHT only"
+             : mode == AUDIO_CHANNEL_MONO  ? "MONO (L+R)"
+                                           : "STEREO",
+             persist ? "" : " (preview)");
+  }
+}
+
+void audio_output_set_channel_mode(audio_channel_mode_t mode) {
+  change_channel_mode(mode, true);
+}
+
+void audio_output_preview_channel_mode(audio_channel_mode_t mode) {
+  change_channel_mode(mode, false);
+}
+
+void audio_output_restore_channel_mode(void) {
+  uint8_t saved;
+  if (settings_get_channel_mode(&saved) != ESP_OK ||
+      saved > AUDIO_CHANNEL_MONO) {
+    saved = AUDIO_CHANNEL_STEREO;
+  }
+  change_channel_mode((audio_channel_mode_t)saved, false);
 }
 
 audio_channel_mode_t audio_output_get_channel_mode(void) {

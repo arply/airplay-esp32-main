@@ -15,11 +15,18 @@
 
 #include "driver/gpio.h"
 #include "esp_log.h"
+#include "freertos/FreeRTOS.h"
 #include "rtsp_events.h"
 
 static const char TAG[] = "ARPLY-v1";
 
 static bool s_board_initialized = false;
+
+// Two independent reasons to pass audio: an AirPlay/USB stream reported as
+// playing, or a signal arply plays itself (test sweep, noise, chime).
+static bool s_stream_playing = false;
+static bool s_signal_active = false;
+static portMUX_TYPE s_mute_lock = portMUX_INITIALIZER_UNLOCKED;
 
 static void set_mute(bool muted) {
 #if BOARD_MUTE_GPIO >= 0
@@ -30,6 +37,13 @@ static void set_mute(bool muted) {
 #endif
 }
 
+static void update_mute(bool *reason, bool on) {
+  taskENTER_CRITICAL(&s_mute_lock);
+  *reason = on;
+  set_mute(!(s_stream_playing || s_signal_active));
+  taskEXIT_CRITICAL(&s_mute_lock);
+}
+
 static void on_rtsp_event(rtsp_event_t event, const rtsp_event_data_t *data,
                           void *user_data) {
   (void)data;
@@ -37,16 +51,20 @@ static void on_rtsp_event(rtsp_event_t event, const rtsp_event_data_t *data,
 
   switch (event) {
   case RTSP_EVENT_PLAYING:
-    set_mute(false);
+    update_mute(&s_stream_playing, true);
     break;
   case RTSP_EVENT_CLIENT_CONNECTED:
   case RTSP_EVENT_PAUSED:
   case RTSP_EVENT_DISCONNECTED:
-    set_mute(true);
+    update_mute(&s_stream_playing, false);
     break;
   case RTSP_EVENT_METADATA:
     break;
   }
+}
+
+void iot_board_set_signal_unmute(bool on) {
+  update_mute(&s_signal_active, on);
 }
 
 static esp_err_t init_mute_gpio(void) {

@@ -22,6 +22,15 @@ esp_err_t iot_board_init(void);
 const char *iot_board_get_info(void);
 
 /**
+ * @brief Unmute the DAC for a signal arply plays itself (test sweep, noise,
+ *        boot chime), independent of the stream state.
+ *
+ * The DAC passes audio while a stream plays OR such a signal is active.
+ * Safe from any task.
+ */
+void iot_board_set_signal_unmute(bool on);
+
+/**
  * @brief Power the board off.
  *
  * arply-v1 has no power latch, so this enters deep sleep.

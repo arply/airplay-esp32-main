@@ -22,35 +22,57 @@ hardware):
 | `design-language.md` | arply.de design tokens (colours, type, components). German. All device UI text is **English**. |
 | `chime.c`, `chime.h`, `gen_chime.py` | Boot chime (“F5 sparkle”, 2.0 s, −18 dBFS) and its generator. |
 
-The real logo is `docs/arply-logo.jpg` (geometric wordmark built from circles
-and straight stems).
+The real logo was `docs/arply-logo.jpg` (geometric wordmark built from circles
+and straight stems). Commit `bd1e2c6` (“Drop 20 MB of unreferenced binaries”)
+removed it from the tree; get it back with
+`git show 934c239:docs/arply-logo.jpg > /tmp/arply-logo.jpg`.
 
 ---
 
 ## What the code looks like today (read before starting)
 
+> **Rebased 2026-11-24** onto `chore/delete-dead-code` (DAC driver layer,
+> TAS57xx/58xx, SPDIF/USB output backends, BT, Ethernet and the board
+> abstraction are gone). The bullets below describe that tree.
+
 - **Output path** — `main/audio/audio_output.c`, `playback_task()` (core 1,
   prio 7, **4 KB stack**):
   `audio_receiver_read()` → optional resample → `apply_volume()` (int16, Q15
-  ramp) → `apply_channel_mode()` → `led_audio_feed()` → `i2s_channel_write()`.
-  Frames of up to `FRAME_SAMPLES + 1` = 353 stereo samples.
+  ramp, target from `audio_output_volume_q15()`) → `apply_channel_mode()` →
+  `led_audio_feed()` → `i2s_channel_write()`.
+  Frames of up to `FRAME_SAMPLES + 1` = 353 stereo samples (more after
+  44.1→48 kHz resampling, `MAX_RESAMPLE_FRAMES`).
+- **Second source: USB DAC** (`arply_v1_usbdac` env, 48 kHz output).
+  `main/audio/usb_dac_input.c` `arbiter_task()` **stops** the playback task
+  while USB audio flows and writes to I2S itself via `audio_output_write()`
+  after its own `apply_gain()`. It does **not** apply the channel mode. Items
+  can be up to `ARBITER_MAX_DRAIN_BYTES` (16 KB = 4096 frames). Any DSP must
+  be hooked in here too, and `dsp_process()` must not assume ≤ 353 frames.
+  Only one of the two writers runs at a time.
 - **I2S** is 16-bit stereo Philips at `CONFIG_OUTPUT_SAMPLE_RATE_HZ`
-  (44100 default, 48000 optional). The PCM5102A accepts 32-bit slots.
+  (44100 for `arply_v1`, 48000 for `arply_v1_usbdac`). The PCM5102A accepts
+  32-bit slots.
 - **Channel modes** (`audio_channel_mode_t`): STEREO, LEFT, RIGHT, MONO.
   ⚠️ LEFT/RIGHT route the chosen *source* channel to **both** outputs. The
   prototype assumed “left only = only the left jack plays”. The firmware
   semantics win; the page must be adapted (see Phase 2).
-- **Mute** — `components/boards/arply-v1/board.c` keeps XSMT low except while
-  RTSP reports PLAYING. Anything that plays outside AirPlay (sweep, noise,
-  chime) must unmute through a new board hook.
+- **Mute** — `components/boards/board.c` keeps XSMT low except while RTSP
+  reports PLAYING. `usb_dac_input.c` and `playback_control.c` unmute by
+  re-emitting `RTSP_EVENT_PLAYING`. Anything that plays outside AirPlay
+  (sweep, noise, chime) must unmute through a new board hook.
 - **Web server** — `main/network/web_server.c`: plain HTTP on port 80,
-  `max_open_sockets = 3`, `max_uri_handlers = 30`, 8 KB stack, wildcard URI
-  matching, pages served from SPIFFS (`data/www/*`, flashed with
-  `-t uploadfs`). JSON via cJSON. Handlers read bodies into **512-byte**
-  buffers — too small for DSP configs.
-- ⚠️ `/api/eq` and `data/www/eq.html` already exist for the (removed) TAS58xx
-  15-band hardware EQ, behind `CONFIG_DAC_TAS58XX`. **Use `/api/dsp`** to
-  avoid confusion.
+  `max_open_sockets = 3`, `max_uri_handlers = 30` (26 used incl.
+  `log_stream`), 8 KB stack, wildcard URI matching with a `/*` captive-portal
+  catch-all registered **last**, pages served from SPIFFS (`data/www/*`,
+  flashed with `-t uploadfs`). JSON via cJSON. A `recv_body(req, max_len)`
+  helper (full-length read into a heap buffer) already exists; some older
+  handlers still use a single `httpd_req_recv` into small stack buffers.
+- `/api/eq`, `eq.html` and the TAS58xx EQ are gone after the rebase. The new
+  API is still called **`/api/dsp`**.
+- **Flashing** — the `arply_v1_usbdac` image has no console and no auto-reset:
+  flashing it needs BOOT+RESET by hand and a physical replug after the USB
+  descriptor set changes. Develop on `arply_v1` (USB Serial/JTAG console,
+  esptool auto-reset), then verify the USB path once at the end.
 - **Settings** — `main/settings.c`, NVS namespace `"airplay"`, keys ≤ 15
   chars. NVS writes stall the flash cache; `audio_output.c` survives that via
   `auto_clear`, but **never write NVS from the audio task** and never on every
@@ -127,6 +149,38 @@ enough.
       buffers.
 - [ ] Record results under “Spike results”. Remove the spike code.
 
+#### Detail (Phase 0)
+
+- **0.1 files:** `main/network/https_server.c/.h` (`https_server_start()`,
+  called next to `web_server_start(80)`), `main/network/mictest.html`
+  embedded with `EMBED_TXTFILES`, cert/key in `main/certs/`. Needs
+  `CONFIG_ESP_HTTPS_SERVER_ENABLE=y` in `sdkconfig.defaults.arply_v1`.
+  The second httpd instance needs its own `ctrl_port` (`32769`); HTTP keeps
+  `32768`.
+- **0.1 cert:** iOS only accepts a user-trusted server cert with
+  **validity ≤ 825 days**, a SAN and `extendedKeyUsage = serverAuth`.
+  Command (documented in `main/certs/README.md`):
+  `openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes
+  -days 825 -keyout key.pem -out cert.pem -subj "/CN=<host>.local"
+  -addext "subjectAltName=DNS:<host>.local,DNS:arply.local"
+  -addext "extendedKeyUsage=serverAuth"`.
+- **0.1 result reporting:** the mictest page POSTs what it saw
+  (`getUserMedia` ok/error name, `AudioContext.sampleRate`, track settings,
+  peak level) to `/api/mictest/log`, which prints it to the serial log. The
+  result is then on record without anyone copying it by hand.
+- **0.1 RAM:** log `heap_caps_get_free_size(MALLOC_CAP_INTERNAL)`,
+  `…_largest_free_block(MALLOC_CAP_INTERNAL)` and SPIRAM free from the
+  `ESP_HTTPS_SERVER_EVENT` handler (`ON_CONNECTED`, `ON_DISCONNECTED`).
+  lwIP has `CONFIG_LWIP_MAX_SOCKETS=16`; count the sockets in use with
+  AirPlay playing before and after (listen + 2 clients).
+- **0.2:** spike code is compiled only with `-DDSP_BENCH` (no Kconfig) and is
+  removed afterwards. The benchmark runs on **every** frame, the silence
+  frames included, so it gives an idle number without a stream. Streaming
+  numbers need AirPlay playing (the user starts it). 48 kHz is measured by
+  building once with `CONFIG_OUTPUT_SAMPLE_RATE_48000=y` and reverting.
+  Expectation: 20 biquads × 353 samples ≈ 7 k biquad steps ≈ 70 k cycles ≈
+  0.3 ms at 240 MHz in plain C.
+
 ### Spike results
 
 _(fill in)_
@@ -198,6 +252,54 @@ unit-tested on the host.
       analytic magnitude (`magDb()` from the prototype) at ~20 frequencies,
       tolerance 0.1 dB. Add `scripts/dsp_host_test.sh`. Not wired into CI yet.
 
+#### Detail (Phase 1)
+
+- **Layout:** `components/dsp/{CMakeLists.txt, include/dsp.h, dsp.c,
+  dsp_biquad.c, dsp_biquad.h, test/host_test.c}`. `CMakeLists.txt` is
+  `idf_component_register(SRCS "dsp.c" "dsp_biquad.c" INCLUDE_DIRS
+  "include")`. No REQUIRES: C11 `<stdatomic.h>` and `<math.h>` only, so the
+  host test builds the same files with `cc`.
+- **Coefficients** are computed in `double` (the ESP32-S3 has no double FPU,
+  but this runs only on config changes), stored as `float`.
+- **Swap without a mutex in the audio path — three slots.** One `_Atomic
+  uint32_t` word holds `active` and `pending` slot indices. Writer
+  (`dsp_set_config`, any task, serialised by an `atomic_flag` spinlock):
+  pick a slot that is neither active nor pending, fill it, CAS
+  `pending = slot`, retrying if the audio side consumed the previous
+  pending meanwhile. Reader (`dsp_process`, once per call): if `pending` is
+  set, CAS `active = pending, pending = none`. With only two slots a writer
+  could overwrite the slot the audio task has just switched to; with three
+  the free slot is never in use. A newer pending config simply replaces an
+  unconsumed older one.
+- **History handover:** each slot carries a `structure_hash` (per output:
+  filter count + type of every filter). On swap the audio task copies the
+  `z1/z2` state from the old slot if the hash matches, otherwise it starts
+  from zero.
+- **Identity fast path:** a config with no enabled filter, `preamp_db == 0`
+  and PBE off, or `bypass`, makes `dsp_process()` return immediately. That is
+  what makes “flat = bit-identical” true, and it costs nothing for users who
+  never touch the EQ.
+- **Block processing:** convert in chunks of 128 frames into a static
+  `float work[2][128]` (1 KB). Run each biquad over the whole chunk (keeps
+  coefficients in registers), then the limiter, then dither back to int16.
+  Static buffers are fine because only one writer task runs at a time (see
+  USB DAC above). The input can be any length (USB items are up to 4096
+  frames).
+- **Denormals:** after each chunk, flush `|z| < 1e-15f` to 0 (cheap,
+  per filter per chunk, not per sample).
+- **Limiter:** memoryless soft knee, `T = 10^(−1/20)`:
+  `|x| ≤ T → x`, else `sign(x)·(T + (1−T)·tanh((|x|−T)/(1−T)))`. Continuous
+  with slope 1 at `T`, never exceeds full scale.
+- **Dither:** TPDF, ±1 LSB, two draws from a 32-bit xorshift per sample.
+- **Mode → outputs:** the component knows only outputs `DSP_CH_L/R`.
+  Mapping the JSON `L/R/M` sets onto outputs for the current channel mode
+  lives in `main/audio/audio_dsp.c` (Phase 2), so a mode change from the old
+  index page (`/api/audio/channel`) also re-resolves the filters.
+- **USB DAC hook (1.3):** in `arbiter_task()` the order becomes
+  `dsp_process()` → `apply_gain()` (volume last, as in the AirPlay path).
+- **Decision for 1.4 (24-bit):** decided after the Phase 0 CPU numbers;
+  recorded under “Spike results”.
+
 **Hardware test:** flat config = bit-identical to before (bypass), a −12 dB
 peak at 1 kHz Q 1 audibly removes a 1 kHz test tone, no clicks when toggling.
 
@@ -254,6 +356,30 @@ Mapping to the firmware's channel modes:
 - [ ] Bump `config.max_uri_handlers` accordingly.
 - [ ] Test with `curl` (document the commands here).
 
+#### Detail (Phase 2)
+
+- **Stored profile ≠ runtime config.** NVS holds the *profile*: `mode`,
+  `preamp_db`, all three filter sets `L`, `R`, `M` (≤ 10 each) and `pbe`.
+  Each filter is `{u8 type, u8 enabled, float f, gain_db, q}`, so 3 × 10 ×
+  16 B + header ≈ 500 B. `main/audio/audio_dsp.c` resolves the profile for
+  the current channel mode into a `dsp_config_t` (table above) and
+  re-resolves on every `audio_output_set_channel_mode()`. Keeping all three
+  sets means switching mode on the page does not lose the other mode's
+  filters.
+- **Handlers** live in `main/network/web_dsp.c` with
+  `web_dsp_register(httpd_handle_t)`. HTTP and HTTPS both call it, so the
+  page works on either origin with relative URLs. All handlers must be
+  registered **before** the `/*` catch-all.
+- **Validation:** unknown `type` or a non-number field → 400 with a message.
+  Out-of-range values are **clamped**, not rejected, and the reply carries
+  the clamped values so the page can show what the device actually runs.
+  More than 10 filters per set → 400.
+- **Preview** runs from RAM only. The device keeps playing it until the next
+  save, a `POST /api/dsp/revert` (reload the saved profile) or a reboot.
+  `GET /api/dsp` returns the saved profile plus `"previewing": true` while
+  one is active, so the page can warn about unsaved changes.
+- `max_uri_handlers` 30 → 44 (page, GET/POST dsp, preview, revert, bypass, sweep, noise, stop, mictest page + log, chime GET/POST, with headroom).
+
 ---
 
 ## Phase 3 — Test signals from the device
@@ -292,6 +418,34 @@ setting.
 - [ ] `POST /api/dsp/noise` `{"on": true, "channels": ["L","R"]}` → level
       check noise; auto-off after 30 s.
 - [ ] `POST /api/dsp/stop` → stop any test signal.
+
+#### Detail (Phase 3)
+
+- **Sweep phase without per-sample `exp()` in double.** The S3 has no
+  double FPU, and one soft-float `exp`+`sin` per sample costs a few ms per
+  frame. Compute the closed form `φ = K·(exp(n/(fs·L)) − 1)` exactly in
+  `double` once per chunk, step inside the chunk with the constant ratio
+  `r = exp(1/(fs·L))` (one double multiply per sample), wrap to ±π in
+  double, then `sinf()` in float. The host test checks it against the pure
+  closed form (max error < 1e-4 over the full 4 s), because the page
+  deconvolves with its own `sweep()` and needs a sample-exact match.
+- **Pink noise level:** the Kellet filter's output RMS for uniform white
+  input is a constant. The host test measures it once, the value is
+  hard-coded and the test asserts −15 dBFS ± 0.5 dB. No per-start
+  calibration pass.
+- **Timeline** (sweep request): `lead_ms` silence (500) → per channel: sweep
+  (4 s) → `gap_ms` silence. Unmute is requested at the start of the lead,
+  so XSMT has settled long before the first sample. Re-mute is an
+  `esp_timer` one-shot 100 ms after the last signal sample left the task
+  (+ DMA latency).
+- **Who may play:** refuse with 409 if `audio_receiver_is_playing() &&
+  audio_receiver_has_data()` (the same test `usb_dac_input.c` uses) or if
+  the playback task is not running (USB DAC owns the output). An
+  `RTSP_EVENT_PLAYING` while a signal runs stops it. That covers AirPlay
+  and the USB/playback_control re-emits.
+- **Mute arbiter in `board.c`:** `rtsp_playing || signal_active` under a
+  `portMUX` critical section, new `iot_board_set_signal_unmute(bool)` in
+  `board_common.h`.
 
 ---
 
@@ -346,6 +500,14 @@ setting.
       `amount` 0.5).
 - [ ] Later (Phase 8): force off when the room has a device with role `bass`.
 
+**Detail:** the prototype's WebAudio `Q` of `20·log10(1/√2)` dB *is* linear
+Q = 1/√2 (WebAudio's LP/HP Q is in dB), so all sections are plain
+Butterworth biquads. The prototype's `oversample='2x'` on `|x|` is not
+needed on the device: the rectifier input is already low-passed twice at
+≤ 150 Hz and the result is band-limited to `4·fc` ≤ 600 Hz, far from
+Nyquist. Cost: 6 extra biquads per output. The host test uses Goertzel at
+50/100/200 Hz.
+
 ---
 
 ## Phase 6 — Boot chime
@@ -362,6 +524,15 @@ setting.
       Fixed level, independent of AirPlay volume.
 - [ ] NVS flag `"chime_on"` (default on) + toggle in the settings page.
 
+**Detail:** the playback task only starts in `start_airplay_services()`, so
+once a network is up. The chime is queued at boot as a pending signal and
+plays as soon as the playback task runs, but only if that happens within
+15 s of power-on; otherwise it is dropped (a chime half a minute later
+would be confusing). `gen_chime.py` takes the sample rate as an argument;
+both `arply_chime_44100.pcm` and `arply_chime_48000.pcm` are committed, and
+CMake embeds the one matching `CONFIG_OUTPUT_SAMPLE_RATE_HZ`. API:
+`GET/POST /api/audio/chime {"on": bool}`, toggle in `index.html`.
+
 ---
 
 ## Phase 7 — Setup hotspot hardening
@@ -376,6 +547,15 @@ itself after repeated STA failures.
 - [ ] Re-enter setup on demand without buttons: power-cycle 3× within 5 s
       (counter in RTC memory / NVS, cleared after 5 s uptime) → AP on.
 - [ ] Never return stored Wi-Fi passwords from any API.
+
+**Detail:** the AP is enabled in `wifi.c` `enable_ap_mode()` (APSTA) and
+dropped back to STA on connect. Auto-off: an `esp_timer` checks
+`esp_wifi_ap_get_sta_list()` every 30 s and switches to STA after 10 min
+with zero stations. The 3× power-cycle counter lives in NVS (RTC memory
+does not survive a power cut): increment at boot, clear after 5 s uptime,
+≥ 3 → force AP. Only `ESP_RST_POWERON` counts. WPA2 decision: **stays
+open by default**, optional `CONFIG_SETUP_AP_PASSWORD` (empty = open),
+because existing setups and printed instructions assume an open AP.
 
 ---
 

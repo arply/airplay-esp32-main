@@ -171,6 +171,7 @@ select{
   text-align:right;font-variant-numeric:tabular-nums;font-weight:500;
 }
 .footer{text-align:center;color:var(--ink-3);font-size:12px;padding:12px 0 0}
+.footer a{color:inherit;text-decoration:underline;text-underline-offset:2px}
 </style></head><body>
 <div class='wrap'>
 
@@ -252,7 +253,7 @@ select{
 <p class='sub'>Measure latency and throughput to this device</p>
 <a href='/speedtest' class='btn btn-secondary'>Open Speedtest</a></div>
 
-<div class='footer'>arply.de</div>
+<div class='footer'><a href='https://arply.de' target='_blank' rel='noopener'>arply.de</a></div>
 </div>
 <script>
 function msg(id,txt,type){var e=document.getElementById(id);if(e){e.innerHTML='<div class="msg '+type+'">'+txt+'</div>';setTimeout(function(){e.innerHTML='';},4000);}}

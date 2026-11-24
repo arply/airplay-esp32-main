@@ -133,6 +133,7 @@ footer{margin-top:40px;padding:24px 0 0;border-top:1px solid var(--line);display
       <progress id="prog" value="0" max="1" hidden></progress>
       <p id="msg"></p>
       <div class="chips" id="meas"></div>
+      <div class="row"><button id="b-clear">Remove all</button></div>
       <p class="small" style="margin-top:8px">arply plays the sweeps itself; the filters are calculated after every measurement. In stereo mode each run measures left, then right. Measure 3–5 positions around the listening spot, phone at ear height, microphone (bottom edge) towards the speaker.</p>
     </section>
 
@@ -151,16 +152,15 @@ footer{margin-top:40px;padding:24px 0 0;border-top:1px solid var(--line);display
       <span class="eyebrow">Step 2</span>
       <h2 id="filt-h">Filters</h2>
       <div id="filters"></div>
-      <div class="row"><button id="b-add">Add filter</button><button id="b-clear">Remove all</button></div>
       <details class="adv">
-        <summary>Advanced: target and range</summary>
+        <summary>Advanced: target, range and manual filters</summary>
       <label class="f">From<input type="range" id="o-fmin" min="20" max="200" step="5"><output id="v-fmin"></output></label>
       <label class="f">To<input type="range" id="o-fmax" min="200" max="2000" step="50"><output id="v-fmax"></output></label>
       <label class="f">Bass in target<input type="range" id="o-tilt" min="0" max="8" step="0.5"><output id="v-tilt"></output></label>
       <label class="f">Smoothing<select id="o-detail"><option value="0.5">Coarse</option><option value="1">Normal</option><option value="2">Fine</option></select><span></span></label>
       <label class="f">Max. filters<input type="range" id="o-maxn" min="1" max="10" step="1"><output id="v-maxn"></output></label>
       <label class="f">Max. cut<input type="range" id="o-cut" min="3" max="18" step="1"><output id="v-cut"></output></label>
-      <div class="row"><button id="b-fit">Recalculate</button><button id="b-undo" disabled>Undo</button></div>
+      <div class="row"><button id="b-fit">Recalculate</button><button id="b-undo" disabled>Undo</button><button id="b-add">Add filter</button></div>
       <p class="small">Smoothing follows frequency: “Normal” uses 1/12 octave in the bass up to 150&nbsp;Hz, getting coarser up to 1/3 octave from 3&nbsp;kHz. “Fine” halves the windows, “Coarse” doubles them.</p>
       <p class="small">Cuts only: room-mode peaks are trimmed, dips are not filled. The iPhone microphone’s roll-off below about 80&nbsp;Hz looks like a dip and is therefore ignored.</p>
       </details>
@@ -194,6 +194,7 @@ footer{margin-top:40px;padding:24px 0 0;border-top:1px solid var(--line);display
   <footer>
     <span class="logo" role="img" aria-label="arply"></span>
     <span class="small">An unofficial, open AirPlay receiver.</span>
+    <a class="small" href="https://arply.de" target="_blank" rel="noopener" style="color:var(--acc)">arply.de</a>
   </footer>
 </div>
 <span class="probe" id="p-meas" style="color:var(--meas)"></span><span class="probe" id="p-mag" style="color:var(--acc)"></span><span class="probe" id="p-ink" style="color:var(--ink)"></span><span class="probe" id="p-mut" style="color:var(--quiet)"></span><span class="probe" id="p-sea" style="color:var(--band)"></span><span class="probe" id="p-line" style="color:var(--line)"></span>
@@ -570,6 +571,8 @@ function makeSample(c, kind) {
   S.ch = S.ch || {};
   if (S.meas) { S.ch.M = { meas: S.meas, filters: S.filters || [] }; delete S.meas; delete S.filters; } // v1 data
   for (const k of ['L', 'R', 'M']) S.ch[k] = S.ch[k] || newCh();
+  // older saved data has no run id: pair measurements by position
+  for (const k of ['L', 'R', 'M']) S.ch[k].meas.forEach((m, i) => { if (m.run === undefined) m.run = 'p' + i; });
   const chans = () => MODES[S.opt.mode] || MODES.stereo;
   const fixView = () => { if (!chans().includes(S.view)) S.view = chans()[0]; };
   fixView();
@@ -659,7 +662,7 @@ function makeSample(c, kind) {
   function updateKpis() {
     const { tg, eq, am, pre } = cache;
     $('#k-pre').textContent = fmtDb(pre);
-    $('#k-n').textContent = cur().meas.length;
+    $('#k-n').textContent = runs().length;
     const f = v => '±' + v.toFixed(1) + ' dB';
     $('#k-before').textContent = am ? f(rms(am.avg, tg)) : '–';
     $('#k-after').textContent = am ? f(rms(am.avg.map((d, i) => d + eq[i]), tg)) : '–';
@@ -806,14 +809,14 @@ function makeSample(c, kind) {
         if (q >= 0 && Math.abs(h[q]) > 0.15 * Math.abs(h[p0])) p0 = q; else break;
       }
     }
-    const ref = Math.abs(h[p0]), out = [];
+    const ref = Math.abs(h[p0]), out = [], run = Date.now();
     ks.forEach((k, i) => {
       const p = i ? DSP.argmaxAbs(h, p0 + i * step - win, p0 + i * step + win) : p0;
       if (p < 0 || Math.abs(h[p]) < 0.05 * ref) { out.push({ warn: true, t: CH_NAME[k] + ': no signal – is the speaker connected?' }); return; }
       const sp = DSP.spectrumAt(h, p, fs, 0.4);
       const db = DSP.normalize(DSP.toGrid(sp.P, sp.M, fs, grid, 24), grid).map(v => Math.round(v * 100) / 100);
       const rel = 20 * Math.log10(Math.abs(h[p]) / ref);
-      S.ch[k].meas.push({ name: 'Pos ' + (S.ch[k].meas.length + 1), db });
+      S.ch[k].meas.push({ run, db });
       out.push({ warn: false, t: CH_NAME[k] + (i ? ' (' + fmtDb(rel) + ' vs ' + CH_NAME[ks[0]] + ')' : '') + ': ok' });
     });
     save(); renderMeas(); draw();
@@ -821,12 +824,17 @@ function makeSample(c, kind) {
     msg('Level ' + lv.toFixed(0) + ' dBFS, delay ' + Math.round(p0 / fs * 1000 - (live ? LEAD * 1000 : 0)) + ' ms' +
       (lv > -1 ? ' – clipping, measure quieter!' : '') + ' · ' + out.map(o => o.t).join(' · ') + (fit ? ' · filters: ' + fit : ''), warn);
   }
+  // one chip per measuring run (left and right together)
+  const runs = () => [...new Set(chans().flatMap(k => S.ch[k].meas.map(m => m.run)))];
   function renderMeas() {
-    const other = chans().filter(k => k !== S.view).map(k => CH_NAME[k] + ': ' + S.ch[k].meas.length).join(', ');
-    $('#meas').innerHTML = cur().meas.map((m, i) => `<span class="chip">${CH_NAME[S.view]} · ${m.name.replace(/[<&]/g, '')}<button aria-label="Delete" data-i="${i}">×</button></span>`).join('')
-      + (other ? `<span class="small" style="align-self:center">${other} measurements</span>` : '');
+    $('#meas').innerHTML = runs().map((r, i) => `<span class="chip">Measurement ${i + 1}<button aria-label="Delete measurement ${i + 1}" data-run="${r}">×</button></span>`).join('');
   }
-  $('#meas').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; cur().meas.splice(+b.dataset.i, 1); save(); renderMeas(); draw(); });
+  $('#meas').addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    for (const k of ['L', 'R', 'M']) S.ch[k].meas = S.ch[k].meas.filter(m => String(m.run) !== b.dataset.run);
+    save(); renderMeas(); draw();
+    const r = fitAll(); msg(r ? 'Measurement removed, filters recalculated: ' + r : 'Measurement removed.');
+  });
   async function progress(sec) {
     const p = $('#prog'); p.hidden = false; const t0 = performance.now();
     while (performance.now() - t0 < sec * 1000) { p.value = (performance.now() - t0) / (sec * 1000); await sleep(100); }
@@ -930,12 +938,7 @@ function makeSample(c, kind) {
         <label class="f">Frequency<input type="range" data-k="f" min="0" max="1000" value="${toSl(f.f)}"><output>${fmtHz(f.f)}</output></label>
         ${f.type === 'hp' || f.type === 'lp' ? '' : `<label class="f">Gain<input type="range" data-k="gain" min="-18" max="6" step="0.1" value="${f.gain}"><output>${fmtDb(f.gain)}</output></label>`}
         ${f.type === 'ls' || f.type === 'hs' ? '' : `<label class="f">Q<input type="range" data-k="q" min="0.3" max="12" step="0.01" value="${f.q}"><output>${f.q.toFixed(2)}</output></label>`}
-      </div>`).join('') : '<p class="small">No filters for this channel yet. Use “Calculate filters” or add one by hand.</p>';
-    if (chans().length > 1 && fl.length) {
-      const o = chans().find(k => k !== S.view);
-      $('#filters').insertAdjacentHTML('beforeend', `<div class="row"><button id="b-copych">Copy to ${CH_NAME[o]}</button></div>`);
-      $('#b-copych').onclick = () => { S.ch[o].filters = JSON.parse(JSON.stringify(fl)); msg('Filters copied to ' + CH_NAME[o] + '.'); changed(true); };
-    }
+      </div>`).join('') : '<p class="small">No filters yet – they are calculated after a measurement.</p>';
   }
   $('#filters').addEventListener('input', e => {
     const box = e.target.closest('.filt'); if (!box) return;
@@ -957,7 +960,12 @@ function makeSample(c, kind) {
     cur().filters.splice(+b.closest('.filt').dataset.i, 1); changed(true);
   });
   $('#b-add').onclick = () => { cur().filters.push({ type: 'peak', on: true, f: 100, gain: -3, q: 2 }); changed(true); };
-  $('#b-clear').onclick = () => { undo = JSON.stringify([[S.view, cur().filters]]); $('#b-undo').disabled = false; cur().filters = []; changed(true); };
+  $('#b-clear').onclick = () => {
+    if (!confirm('Remove all measurements and filters (left and right)?')) return;
+    for (const k of ['L', 'R', 'M']) S.ch[k] = newCh();
+    undo = null; $('#b-undo').disabled = true;
+    renderMeas(); changed(true); msg('All measurements and filters removed.');
+  };
 
   let tmr = null;
   function changed(rebuild) {

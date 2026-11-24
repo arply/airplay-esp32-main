@@ -3,6 +3,7 @@
 #include "esp_err.h"
 #include "sdkconfig.h"
 #include <stdbool.h>
+#include <stddef.h>
 
 /**
  * Persistent settings storage (NVS)
@@ -38,7 +39,6 @@ esp_err_t settings_set_volume(float volume_db);
  * Call once at session disconnect rather than on every change.
  */
 esp_err_t settings_persist_volume(void);
-
 
 // Known WiFi networks are kept as a most-recently-used (MRU) list so a
 // device that has ever connected to a network stays reconnectable to it,
@@ -168,7 +168,31 @@ esp_err_t settings_get_channel_mode(uint8_t *mode);
  */
 esp_err_t settings_set_channel_mode(uint8_t mode);
 
+// ---- DSP profile (main/audio/audio_dsp.c owns the format) ----
+
+/**
+ * Read the stored DSP profile blob.
+ * @param buf Output buffer
+ * @param len In: buffer size. Out: stored size.
+ * @return ESP_OK, or ESP_ERR_NVS_NOT_FOUND if nothing is stored
+ */
+esp_err_t settings_get_dsp_blob(void *buf, size_t *len);
+
+/** Store the DSP profile blob. Writes flash: never call from the audio task. */
+esp_err_t settings_set_dsp_blob(const void *buf, size_t len);
+
+// ---- Boot chime ----
+
+/** Whether the power-on chime plays (default true when never set). */
+esp_err_t settings_get_chime_on(bool *on);
+
+/** Enable or disable the power-on chime. */
+esp_err_t settings_set_chime_on(bool on);
+
+// ---- Setup hotspot ----
+
+/** Quick power cycles counted towards forcing the setup hotspot. */
+esp_err_t settings_get_power_cycles(uint8_t *count);
+esp_err_t settings_set_power_cycles(uint8_t count);
+
 // ---- Sub level offset ----
-
-
-

@@ -6,8 +6,8 @@
 
 static const char *TAG = "settings";
 
-#define NVS_NAMESPACE  "airplay"
-#define NVS_KEY_VOLUME "volume_db"
+#define NVS_NAMESPACE     "airplay"
+#define NVS_KEY_VOLUME    "volume_db"
 #define NVS_KEY_WIFI_SSID "wifi_ssid" // legacy single-slot, migrated on init
 #define NVS_KEY_WIFI_PASSWORD \
   "wifi_pass" // legacy single-slot, migrated on init
@@ -16,6 +16,9 @@ static const char *TAG = "settings";
 #define NVS_KEY_EQ_GAINS       "eq_gains"
 #define NVS_KEY_LED_BRIGHTNESS "led_bright"
 #define NVS_KEY_CHANNEL_MODE   "chan_mode"
+#define NVS_KEY_DSP_PROFILE    "dsp_cfg"
+#define NVS_KEY_CHIME_ON       "chime_on"
+#define NVS_KEY_POWER_CYCLES   "pwr_cycles"
 
 #define MAX_WIFI_SSID_LEN     32
 #define MAX_WIFI_PASSWORD_LEN 64
@@ -24,7 +27,6 @@ static const char *TAG = "settings";
 // Cached values  (defaults = 50 %)
 static float g_volume_db = -15.0f;
 static bool g_volume_loaded = false;
-
 
 static float g_eq_gains[SETTINGS_EQ_BANDS];
 static bool g_eq_loaded = false;
@@ -174,7 +176,6 @@ esp_err_t settings_persist_volume(void) {
 
   return err;
 }
-
 
 esp_err_t settings_get_wifi_networks(
     settings_wifi_network_t networks[SETTINGS_MAX_WIFI_NETWORKS], int *count) {
@@ -551,5 +552,88 @@ esp_err_t settings_set_channel_mode(uint8_t mode) {
   } else {
     ESP_LOGE(TAG, "Failed to save channel mode: %s", esp_err_to_name(err));
   }
+  return err;
+}
+
+esp_err_t settings_get_dsp_blob(void *buf, size_t *len) {
+  nvs_handle_t nvs;
+  esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READONLY, &nvs);
+  if (err != ESP_OK) {
+    return ESP_ERR_NOT_FOUND;
+  }
+  err = nvs_get_blob(nvs, NVS_KEY_DSP_PROFILE, buf, len);
+  nvs_close(nvs);
+  return err;
+}
+
+esp_err_t settings_set_dsp_blob(const void *buf, size_t len) {
+  nvs_handle_t nvs;
+  esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &nvs);
+  if (err != ESP_OK) {
+    ESP_LOGE(TAG, "Failed to open NVS: %s", esp_err_to_name(err));
+    return err;
+  }
+  err = nvs_set_blob(nvs, NVS_KEY_DSP_PROFILE, buf, len);
+  if (err == ESP_OK) {
+    err = nvs_commit(nvs);
+  }
+  nvs_close(nvs);
+  if (err != ESP_OK) {
+    ESP_LOGE(TAG, "Failed to save DSP profile: %s", esp_err_to_name(err));
+  }
+  return err;
+}
+
+esp_err_t settings_get_chime_on(bool *on) {
+  *on = true; // default: chime on
+  nvs_handle_t nvs;
+  if (nvs_open(NVS_NAMESPACE, NVS_READONLY, &nvs) != ESP_OK) {
+    return ESP_ERR_NOT_FOUND;
+  }
+  uint8_t v;
+  esp_err_t err = nvs_get_u8(nvs, NVS_KEY_CHIME_ON, &v);
+  nvs_close(nvs);
+  if (err == ESP_OK) {
+    *on = v != 0;
+  }
+  return err;
+}
+
+esp_err_t settings_set_chime_on(bool on) {
+  nvs_handle_t nvs;
+  esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &nvs);
+  if (err != ESP_OK) {
+    return err;
+  }
+  err = nvs_set_u8(nvs, NVS_KEY_CHIME_ON, on ? 1 : 0);
+  if (err == ESP_OK) {
+    err = nvs_commit(nvs);
+  }
+  nvs_close(nvs);
+  return err;
+}
+
+esp_err_t settings_get_power_cycles(uint8_t *count) {
+  *count = 0;
+  nvs_handle_t nvs;
+  if (nvs_open(NVS_NAMESPACE, NVS_READONLY, &nvs) != ESP_OK) {
+    return ESP_ERR_NOT_FOUND;
+  }
+  esp_err_t err = nvs_get_u8(nvs, NVS_KEY_POWER_CYCLES, count);
+  nvs_close(nvs);
+  return err;
+}
+
+esp_err_t settings_set_power_cycles(uint8_t count) {
+  nvs_handle_t nvs;
+  esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &nvs);
+  if (err != ESP_OK) {
+    return err;
+  }
+  err = nvs_set_u8(nvs, NVS_KEY_POWER_CYCLES, count);
+  if (err == ESP_OK) {
+    err = nvs_commit(nvs);
+  }
+  nvs_close(nvs);
   return err;
 }

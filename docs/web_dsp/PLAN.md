@@ -111,13 +111,13 @@ The calibration page needs the microphone, and Safari only allows it in a
 secure context. Find out *now* whether a self-signed certificate on the ESP is
 enough.
 
-- [ ] Add `esp_https_server` (ESP-IDF component `esp_https_server`) next to the
+- [x] Add `esp_https_server` (ESP-IDF component `esp_https_server`) next to the
       existing HTTP server, port 443, `max_open_sockets = 2`. Keep port 80
       unchanged.
-- [ ] For the spike, embed a self-signed cert/key (EC P-256, CN = device
+- [x] For the spike, embed a self-signed cert/key (EC P-256, CN = device
       hostname, SAN = `<hostname>.local` and `arply.local`) via
       `EMBED_TXTFILES`. Generate with `openssl` and document the command.
-- [ ] Serve a minimal page at `https://<host>.local/mictest` that calls
+- [x] Serve a minimal page at `https://<host>.local/mictest` that calls
       `getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,
       autoGainControl:false}})` and shows a live RMS level.
 - [ ] On an iPhone: open the page, accept the certificate warning, check
@@ -137,17 +137,17 @@ enough.
 
 ### Task 0.2 — CPU budget for float biquads
 
-- [ ] Temporarily add 20 float biquads (10 per channel, DF2T) in
+- [x] Temporarily add 20 float biquads (10 per channel, DF2T) in
       `playback_task()` after resampling, operating on a float copy of the
       frame. Measure with `esp_timer_get_time()` around the block, log
       average and max µs per frame every 5 s.
 - [ ] Do it at 44.1 kHz and with 48 kHz resampling enabled, while streaming
       AAC (AirPlay 2) and ALAC.
-- [ ] Budget: one frame of 352 samples lasts ~8 ms. Target < 0.8 ms (10 %)
+- [x] Budget: one frame of 352 samples lasts ~8 ms. Target < 0.8 ms (10 %)
       for EQ + bass enhancement. If plain C is too slow, use
       `espressif/esp-dsp` (`dsps_biquad_f32`, S3-optimised) on de-interleaved
       buffers.
-- [ ] Record results under “Spike results”. Remove the spike code.
+- [x] Record results under “Spike results”. Remove the spike code.
 
 #### Detail (Phase 0)
 
@@ -159,7 +159,8 @@ enough.
   `32768`.
 - **0.1 cert:** iOS only accepts a user-trusted server cert with
   **validity ≤ 825 days**, a SAN and `extendedKeyUsage = serverAuth`.
-  Command (documented in `main/certs/README.md`):
+  Spike command (the spike certificate is gone again, replaced by the
+  on-device one from task 4.2):
   `openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes
   -days 825 -keyout key.pem -out cert.pem -subj "/CN=<host>.local"
   -addext "subjectAltName=DNS:<host>.local,DNS:arply.local"
@@ -183,7 +184,51 @@ enough.
 
 ### Spike results
 
-_(fill in)_
+Measured 2026-11-24 on the `DUT` board (XIAO ESP32-S3, `arply_v1`, 44.1 kHz).
+
+**0.1 HTTPS** — works on the device: a second httpd instance on 443
+(`ctrl_port` 32769, 2 sockets, 10 KB stack), EC P-256.
+- TLS handshake from a Mac (curl): 1.46 s for the first, 0.28 s after that.
+- RAM per TLS session: ~2.7 KB internal + ~26 KB PSRAM. Starting the
+  server costs ~15 KB internal (task stack). Internal free stays > 175 KB.
+- `/dsp` (69 KB) loads in 0.31 s over HTTP and 0.91 s over HTTPS (incl.
+  handshake).
+- **Pending (needs the user):** iPhone Safari `getUserMedia` on
+  `https://dut.local/mictest` with the accepted warning (and, only if that
+  fails, with the trusted profile); TLS handshakes while AirPlay plays,
+  listening for dropouts. The page reports its result to the serial log
+  (`https: mictest: {...}`). Until then the decision below is open.
+
+**0.2 CPU** — measured on the device with the real `dsp_process()`
+(not the synthetic loop), per 352-sample frame (8 ms):
+
+| Config | avg | max | share |
+|---|---|---|---|
+| flat / bypass (fast path) | 1 µs | 30 µs | 0 % |
+| preamp only (int16↔float, limiter, dither) | 171 µs | 235 µs | 2.1 % |
+| 10 + 10 filters | 547 µs | 582 µs | 6.8 % |
+| 6 + 6 filters + bass enhancement (typical auto-fit) | 659 µs | 730 µs | 8.2 % |
+| 10 + 10 filters + bass enhancement (worst case) | 809 µs | 891 µs | 10.1 % |
+
+- The firmware already builds with `-O2` (`CONFIG_COMPILER_OPTIMIZATION_PERF`).
+  The synthetic 20-biquad loop took 519 µs. Running the L and R filters
+  as interleaved pairs (`dsp_biquad_run2`) cut 18 %: the DF2T dependency
+  chain, not the instruction count, was the limit (~12.8 → ~8 cycles per
+  biquad-sample). One 32-bit random draw per sample for TPDF dither and
+  branch-free rounding took the fixed part from 204 to 171 µs.
+- **Decision:** plain C, no `esp-dsp`. Worst case sits at the 10 % budget,
+  typical configs well below it.
+- 48 kHz (USB DAC env, or 44.1→48 resampling): up to 384 samples per frame,
+  so ×1.09 → worst case ≈ 0.88 ms (11 %). Computed, not measured.
+- Measured on silence frames (per-sample cost does not depend on the data).
+  **Pending:** a run while streaming AAC/ALAC, to see the max under decoder
+  load.
+- Playback task stack: 1.7 KB of 4 KB still free at the high-water mark
+  (incl. the benchmark's own logging). Stays at 4 KB.
+
+**1.4 decision (24-bit output):** not now. The CPU budget is used up at the
+worst case, and with TPDF dither a few dB of preamp cut on a 16-bit
+PCM5102A path is inaudible. Revisit only if someone hears it.
 
 ---
 
@@ -195,51 +240,51 @@ unit-tested on the host.
 
 ### Task 1.1 — Biquad design and processing
 
-- [ ] Port `coeffs()` from the prototype (RBJ cookbook): types `peak`, `ls`,
+- [x] Port `coeffs()` from the prototype (RBJ cookbook): types `peak`, `ls`,
       `hs` (shelves fixed at Q = 1/√2, S = 1), `hp`, `lp`. Compute
       coefficients **on the device** for the actual output rate; ignore any
       coefficients the client sends.
-- [ ] Process with transposed direct form II in `float`, state per channel
+- [x] Process with transposed direct form II in `float`, state per channel
       per filter. Denormal guard (add 1e-20 or flush).
-- [ ] Limits: `DSP_MAX_FILTERS_PER_CH = 10`, f 20–20000 Hz (clamp below
+- [x] Limits: `DSP_MAX_FILTERS_PER_CH = 10`, f 20–20000 Hz (clamp below
       0.45·fs), gain −18…+6 dB, Q 0.3–12.
 
 ### Task 1.2 — Config, double buffering, processing entry point
 
-- [ ] `dsp_config_t`: version, `preamp_db`, `bypass`, per output channel
+- [x] `dsp_config_t`: version, `preamp_db`, `bypass`, per output channel
       (`DSP_CH_L`, `DSP_CH_R`) an array of `dsp_filter_t {type, f, gain_db, q,
       enabled}` + count, bass-enhancement params (Phase 5).
-- [ ] Two prepared runtime states (coefficients + zeroed history). The web task
+- [x] Two prepared runtime states (coefficients + zeroed history). The web task
       prepares the inactive one and swaps a pointer atomically; the audio task
       picks it up at the next frame start. No mutex in the audio path.
-- [ ] On swap, reset filter history only if the filter *structure* changed;
+- [x] On swap, reset filter history only if the filter *structure* changed;
       for parameter-only changes keep history to avoid clicks. Crossfade old →
       new over one frame if clicks are audible.
-- [ ] Entry point:
+- [x] Entry point:
       `void dsp_process(int16_t *buf, size_t frames);` (interleaved stereo,
       in place). Internally: int16 → float, preamp, filters per channel,
       soft limiter (tanh-style knee above −1 dBFS), float → int16 with TPDF
       dither. Keep the work buffer static (no allocation per frame).
-- [ ] `dsp_init(uint32_t sample_rate)`, `dsp_set_config(const dsp_config_t*)`,
+- [x] `dsp_init(uint32_t sample_rate)`, `dsp_set_config(const dsp_config_t*)`,
       `dsp_get_config(dsp_config_t*)`, `dsp_set_bypass(bool)`.
 
 ### Task 1.3 — Hook into the output path
 
-- [ ] In `playback_task()` the new order is:
+- [x] In `playback_task()` the new order is:
       resample → `apply_channel_mode()` → **`dsp_process()`** →
       `apply_volume()` → `led_audio_feed()` → `i2s_channel_write()`.
       Channel mode first, because the filters belong to the *outputs*
       (speakers), not to the source channels. Volume last, so the user's
       volume never changes the EQ's headroom.
-- [ ] Call `dsp_init(OUTPUT_RATE)` from `audio_output_init()`.
-- [ ] Check the 4 KB task stack still fits (`uxTaskGetStackHighWaterMark`);
+- [x] Call `dsp_init(OUTPUT_RATE)` from `audio_output_init()`.
+- [x] Check the 4 KB task stack still fits (`uxTaskGetStackHighWaterMark`);
       raise to 6 KB if needed.
-- [ ] Same hook for `audio_output_spdif.c` / `audio_output_usb.c` only if
+- [x] Same hook for `audio_output_spdif.c` / `audio_output_usb.c` only if
       trivial; otherwise leave a TODO (arply_v1 uses I2S).
 
 ### Task 1.4 — Optional: 24-bit output
 
-- [ ] Evaluate switching I2S to `I2S_DATA_BIT_WIDTH_32BIT` and having
+- [x] Evaluate switching I2S to `I2S_DATA_BIT_WIDTH_32BIT` and having
       `dsp_process()` write int32. Benefit: preamp/cuts don't cost resolution.
       Cost: double DMA bandwidth, `led_audio_feed()` and the silence buffer
       need int16 views. Only do it if Phase 0 left CPU headroom. Record the
@@ -247,7 +292,7 @@ unit-tested on the host.
 
 ### Task 1.5 — Host test
 
-- [ ] `components/dsp/test/host_test.c` (gcc, no IDF): run a 1 kHz sine and
+- [x] `components/dsp/test/host_test.c` (gcc, no IDF): run a 1 kHz sine and
       a log sweep through known filters, compare measured gain with the
       analytic magnitude (`magDb()` from the prototype) at ~20 frequencies,
       tolerance 0.1 dB. Add `scripts/dsp_host_test.sh`. Not wired into CI yet.
@@ -302,6 +347,9 @@ unit-tested on the host.
 
 **Hardware test:** flat config = bit-identical to before (bypass), a −12 dB
 peak at 1 kHz Q 1 audibly removes a 1 kHz test tone, no clicks when toggling.
+Bit-identical flat/bypass, the −12 dB level and a smooth parameter change
+are verified by the host test. **Pending (needs a listener):** the audible
+check on the speakers, and that slider moves on the page do not click.
 
 ---
 
@@ -309,10 +357,10 @@ peak at 1 kHz Q 1 audibly removes a 1 kHz test tone, no clicks when toggling.
 
 ### Task 2.1 — Persistence
 
-- [ ] `settings_get_dsp_config()` / `settings_set_dsp_config()` storing a
+- [x] `settings_get_dsp_config()` / `settings_set_dsp_config()` storing a
       versioned packed struct as an NVS blob, key `"dsp_cfg"`. Unknown
       version → ignore and start flat.
-- [ ] Load in `audio_output_init()` before playback starts.
+- [x] Load in `audio_output_init()` before playback starts.
 
 ### Task 2.2 — JSON API
 
@@ -341,20 +389,43 @@ Mapping to the firmware's channel modes:
 | `left` | LEFT | `L` → both outputs (left source on both jacks) |
 | `right` | RIGHT | `R` → both outputs |
 
-- [ ] `GET /api/dsp` → current saved config + `{"fs": <output rate>,
+- [x] `GET /api/dsp` → current saved config + `{"fs": <output rate>,
       "max_filters": 10, "bypass": false}`.
-- [ ] `POST /api/dsp` → validate, clamp, apply, **save to NVS**, set channel
+- [x] `POST /api/dsp` → validate, clamp, apply, **save to NVS**, set channel
       mode via `audio_output_set_channel_mode()`. Reply with the stored
       config.
-- [ ] `POST /api/dsp/preview` → same validation, apply **without saving**
+- [x] `POST /api/dsp/preview` → same validation, apply **without saving**
       (for live A/B while dragging sliders). Rate-limit: ignore if the last
       preview was < 50 ms ago.
-- [ ] `POST /api/dsp/bypass` `{"on": true}` → bypass without changing the
+- [x] `POST /api/dsp/bypass` `{"on": true}` → bypass without changing the
       config (for A/B).
-- [ ] Body handling: read the full body in a loop up to 4 KB into a heap
+- [x] Body handling: read the full body in a loop up to 4 KB into a heap
       buffer (current handlers use a single `httpd_req_recv` into 512 bytes).
-- [ ] Bump `config.max_uri_handlers` accordingly.
-- [ ] Test with `curl` (document the commands here).
+- [x] Bump `config.max_uri_handlers` accordingly.
+- [x] Test with `curl` (document the commands here).
+
+  ```sh
+  H=http://dut.local; J='Content-Type: application/json'
+  curl $H/api/dsp                                            # saved profile
+  curl -X POST -H "$J" -d '{"mode":"stereo","preamp_db":-1.5,
+    "channels":{"L":[{"type":"peak","f":96.8,"gain_db":-1.9,"q":11.85}],
+                "R":[{"type":"peak","f":234.6,"gain_db":-2.8,"q":5.4}]}}' \
+    $H/api/dsp                                               # apply + save
+  curl -X POST -H "$J" -d '{"mode":"mono","channels":{"M":[]}}' \
+    $H/api/dsp/preview                                       # RAM only
+  curl -X POST $H/api/dsp/revert                             # drop preview
+  curl -X POST -H "$J" -d '{"on":true}' $H/api/dsp/bypass    # A/B
+  curl -X POST -H "$J" -d '{"channels":["L","R"],"gap_ms":2000}' \
+    $H/api/dsp/sweep                                         # 409 if busy
+  curl -X POST -H "$J" -d '{"on":true,"channels":["LR"]}' $H/api/dsp/noise
+  curl -X POST $H/api/dsp/stop
+  ```
+
+  Verified on the device: 400 for invalid JSON, unknown type, > 10 filters
+  and unknown mode; out-of-range values come back clamped (30 kHz → 19845
+  Hz, +20 dB → +6, Q 50 → 12); `b`/`a` arrays ignored; a preview that only
+  sends `M` keeps `L`/`R`; revert restores the saved profile and channel
+  mode; the profile survives a restart.
 
 #### Detail (Phase 2)
 
@@ -378,7 +449,7 @@ Mapping to the firmware's channel modes:
   save, a `POST /api/dsp/revert` (reload the saved profile) or a reboot.
   `GET /api/dsp` returns the saved profile plus `"previewing": true` while
   one is active, so the page can warn about unsaved changes.
-- `max_uri_handlers` 30 → 44 (page, GET/POST dsp, preview, revert, bypass, sweep, noise, stop, mictest page + log, chime GET/POST, with headroom).
+- `max_uri_handlers` 30 → 41 on HTTP (32 + 9 DSP), 11 on HTTPS (page, GET/POST dsp, preview, revert, bypass, sweep, noise, stop, mictest page + log, chime GET/POST, with headroom).
 
 ---
 
@@ -390,34 +461,40 @@ setting.
 
 ### Task 3.1 — Signal source in the output task
 
-- [ ] New `main/audio/test_signal.c/.h`: generators that fill an int16 stereo
+- [x] New `main/audio/test_signal.c/.h`: generators that fill an int16 stereo
       frame **on the fly** (no 4-second buffers):
       - exponential sine sweep 20 Hz–20 kHz, 4 s, amplitude 0.25, 10 ms
         fade-in / 5 ms fade-out — identical to `sweep()` in the prototype
         (phase from the closed form, in `double`);
       - pink noise (Paul Kellet), −15 dBFS RMS, looping;
       - routed to `L`, `R` or both outputs.
-- [ ] In `playback_task()`: while a test signal is active, take samples from
+- [x] In `playback_task()`: while a test signal is active, take samples from
       the generator instead of `audio_receiver_read()`, **skip DSP and
       volume** (raw speaker measurement at fixed level), still feed the LED.
-- [ ] Refuse (HTTP 409) while AirPlay is playing. If a client starts playing
+- [x] Refuse (HTTP 409) while AirPlay is playing. If a client starts playing
       during a test signal, stop the test signal.
 
 ### Task 3.2 — Unmute hook
 
-- [ ] Add `iot_board_set_signal_unmute(bool)` (or a small mute arbiter in
+- [x] Add `iot_board_set_signal_unmute(bool)` (or a small mute arbiter in
       `board.c`): XSMT is released if RTSP is PLAYING **or** a test signal /
       chime is active. Re-mute 100 ms after the signal ends.
 
 ### Task 3.3 — API
 
-- [ ] `POST /api/dsp/sweep` `{"channels": ["L","R"], "gap_ms": 2000}` →
+- [x] `POST /api/dsp/sweep` `{"channels": ["L","R"], "gap_ms": 2000}` →
       plays one sweep per listed output back to back, starting 500 ms after
       the request. Responds immediately with `{"lead_ms":500, "sweep_ms":4000,
       "gap_ms":2000, "fs":44100}` so the page knows the timeline.
-- [ ] `POST /api/dsp/noise` `{"on": true, "channels": ["L","R"]}` → level
+- [x] `POST /api/dsp/noise` `{"on": true, "channels": ["L","R"]}` → level
       check noise; auto-off after 30 s.
-- [ ] `POST /api/dsp/stop` → stop any test signal.
+- [x] `POST /api/dsp/stop` → stop any test signal.
+
+Verified on the device: the L,R sweep runs exactly 12.5 s (0.5 + 2 × (4 + 2));
+a second request while it runs gets 409; noise starts and `stop` ends it
+(5 ms fade). **Pending (needs a listener):** the sweep and noise are
+audible on the right jack at the right time, XSMT unmutes and re-mutes
+without a pop, an AirPlay stream started during a sweep stops it.
 
 #### Detail (Phase 3)
 
@@ -453,52 +530,67 @@ setting.
 
 ### Task 4.1 — Page
 
-- [ ] Copy `calibration-prototype.html` to `data/www/dsp.html`; serve it at
+- [x] Copy `calibration-prototype.html` to `data/www/dsp.html`; serve it at
       `/dsp` (HTTP and, if Phase 0 succeeded, HTTPS).
-- [ ] Remove the Google Fonts `<link>`: the device often has no internet (AP
+- [x] Remove the Google Fonts `<link>`: the device often has no internet (AP
       mode). Use `system-ui` / `ui-monospace` fallbacks. Replace the logo
       placeholder with an inline SVG traced from `docs/arply-logo.jpg`
       (circles + rectangles; keep it < 2 KB).
-- [ ] On load: `GET /api/dsp` and fill the filter lists, mode and bass
+- [x] On load: `GET /api/dsp` and fill the filter lists, mode and bass
       enhancement from the device.
-- [ ] Measuring: replace the WebAudio sweep playback with
+- [x] Measuring: replace the WebAudio sweep playback with
       `POST /api/dsp/sweep`; start recording first, then trigger. Analyse with
       the existing “import” path (it finds the first sweep peak itself and
       walks forward by sweep + gap). Level check: `POST /api/dsp/noise`.
-- [ ] Output modes: “Left only/Right only” now mean the firmware semantics
+- [x] Output modes: “Left only/Right only” now mean the firmware semantics
       (that source channel on both jacks). Update hint texts. The sweep for
       `left`/`right`/`mono` plays on both outputs; stereo measures L then R.
-- [ ] “Send to arply” → `POST /api/dsp`. While dragging a filter slider send
+- [x] “Send to arply” → `POST /api/dsp`. While dragging a filter slider send
       `POST /api/dsp/preview` (throttled), so changes are audible on the
       speakers. The “Listen” panel's built-in samples stay browser-side.
-- [ ] Keep the demo measurement (useful without a microphone).
-- [ ] Link the page from `index.html` (“Room calibration”).
-- [ ] Size check: the page must stay well under the SPIFFS budget and load in
+- [x] Keep the demo measurement (useful without a microphone).
+- [x] Link the page from `index.html` (“Room calibration”).
+- [x] Size check: the page must stay well under the SPIFFS budget and load in
       < 1 s on the device.
 
 ### Task 4.2 — Certificate (only if Phase 0 said yes)
 
-- [ ] On first boot generate an EC P-256 key + self-signed cert with
+- [x] On first boot generate an EC P-256 key + self-signed cert with
       mbedTLS (`mbedtls_x509write_crt`), SAN = `<hostname>.local`, store in
       NVS. Regenerate when the device is renamed.
 - [ ] If Phase 0 showed a trusted profile is required: serve the cert as a
       `.mobileconfig` download on the setup page.
 
+Done ahead of the iPhone result, because every outcome that keeps HTTPS
+needs it and a private key in the repo would be shared by every device:
+`main/network/tls_cert.c` generates EC P-256 via mbedTLS, SAN `<name>.local`
++ `arply.local`, `serverAuth`, CA:TRUE (so iOS can trust it as a profile),
+a fixed 825-day window 2026-01-01 … 2028-04-05 (no clock at first boot),
+kept in NVS, regenerated when the name changes. Generation takes 0.2 s and
+runs in its own 8 KB task: in the main task it overflowed the stack.
+Verified with `openssl s_client` and across a restart (loaded, not
+regenerated). The DNS name follows the DHCP hostname rule (lower case,
+non-alphanumerics → `-`); mDNS still announces the raw device name, so a
+name with spaces gives an unusable `.local` name — pre-existing, Phase 8.
+
 ---
 
 ## Phase 5 — Bass enhancement on the device
 
-- [ ] Port `buildPbe()` from the prototype into `components/dsp/`:
+- [x] Port `buildPbe()` from the prototype into `components/dsp/`:
       main path 2nd-order high-pass at `fc`; harmonic path 2× low-pass at
       `fc` → full-wave rectifier `|x|` → 2× high-pass at `fc` → low-pass at
       `4·fc` → gain `amount × 2.5` → summed back. Butterworth sections.
-- [ ] Runs after the EQ, before the limiter, per output channel.
-- [ ] Params from `pbe` in the JSON (`fc` 60–150 Hz, `amount` 0–1). Off by
+- [x] Runs after the EQ, before the limiter, per output channel.
+- [x] Params from `pbe` in the JSON (`fc` 60–150 Hz, `amount` 0–1). Off by
       default.
-- [ ] Host test: 50 Hz in, `fc` = 100 → 50 Hz ≈ −12 dB, 100 Hz and 200 Hz
+- [x] Host test: 50 Hz in, `fc` = 100 → 50 Hz ≈ −12 dB, 100 Hz and 200 Hz
       harmonics present (the prototype measured −12 / −21 dB at
       `amount` 0.5).
 - [ ] Later (Phase 8): force off when the room has a device with role `bass`.
+
+Host test result: 50 Hz −12.3 dB, 100 Hz −12.1 dB, 200 Hz −20.8 dB
+(prototype: −12 / −21).
 
 **Detail:** the prototype's WebAudio `Q` of `20·log10(1/√2)` dB *is* linear
 Q = 1/√2 (WebAudio's LP/HP Q is in dB), so all sections are plain
@@ -512,17 +604,17 @@ Nyquist. Cost: 6 extra biquads per output. The host test uses Goertzel at
 
 ## Phase 6 — Boot chime
 
-- [ ] Add `chime.c/.h` from this folder to `main/audio/`, embed the PCM with
+- [x] Add `chime.c/.h` from this folder to `main/audio/`, embed the PCM with
       `EMBED_FILES`. Generate it with `gen_chime.py`; if
       `OUTPUT_SAMPLE_RATE_HZ` is 48000, extend the script to also render
       48 kHz and pick the matching file at build time.
-- [ ] Rework `chime_play()` to use the Phase 3 signal source (play from the
+- [x] Rework `chime_play()` to use the Phase 3 signal source (play from the
       embedded PCM) instead of writing to I2S directly, so it shares the
       unmute hook and never collides with the playback task.
-- [ ] Play once after `audio_output_init()` **only on power-on**
+- [x] Play once after `audio_output_init()` **only on power-on**
       (`esp_reset_reason() == ESP_RST_POWERON`), not after OTA/soft reset.
       Fixed level, independent of AirPlay volume.
-- [ ] NVS flag `"chime_on"` (default on) + toggle in the settings page.
+- [x] NVS flag `"chime_on"` (default on) + toggle in the settings page.
 
 **Detail:** the playback task only starts in `start_airplay_services()`, so
 once a network is up. The chime is queued at boot as a pending signal and
@@ -532,6 +624,8 @@ would be confusing). `gen_chime.py` takes the sample rate as an argument;
 both `arply_chime_44100.pcm` and `arply_chime_48000.pcm` are committed, and
 CMake embeds the one matching `CONFIG_OUTPUT_SAMPLE_RATE_HZ`. API:
 `GET/POST /api/audio/chime {"on": bool}`, toggle in `index.html`.
+Verified: a soft restart plays no chime. **Pending:** a real power-on
+(unplug/replug) plays it once, about 5 s after power-on, when Wi-Fi is up.
 
 ---
 
@@ -540,13 +634,13 @@ CMake embeds the one matching `CONFIG_OUTPUT_SAMPLE_RATE_HZ`. API:
 Today the hotspot (`CONFIG_DEFAULT_AP_SSID`, `wifi.c`) is open and re-enables
 itself after repeated STA failures.
 
-- [ ] AP auto-off after 10 min without a connected client (keep it on while a
+- [x] AP auto-off after 10 min without a connected client (keep it on while a
       client is connected). Log it.
-- [ ] Optional WPA2 password for the setup AP (Kconfig + printed label);
+- [x] Optional WPA2 password for the setup AP (Kconfig + printed label);
       default stays open to not break existing setups — decide and record.
-- [ ] Re-enter setup on demand without buttons: power-cycle 3× within 5 s
+- [x] Re-enter setup on demand without buttons: power-cycle 3× within 5 s
       (counter in RTC memory / NVS, cleared after 5 s uptime) → AP on.
-- [ ] Never return stored Wi-Fi passwords from any API.
+- [x] Never return stored Wi-Fi passwords from any API.
 
 **Detail:** the AP is enabled in `wifi.c` `enable_ap_mode()` (APSTA) and
 dropped back to STA on connect. Auto-off: an `esp_timer` checks
@@ -555,7 +649,12 @@ with zero stations. The 3× power-cycle counter lives in NVS (RTC memory
 does not survive a power cut): increment at boot, clear after 5 s uptime,
 ≥ 3 → force AP. Only `ESP_RST_POWERON` counts. WPA2 decision: **stays
 open by default**, optional `CONFIG_SETUP_AP_PASSWORD` (empty = open),
-because existing setups and printed instructions assume an open AP.
+because existing setups and printed instructions assume an open AP. The
+password option already existed as `CONFIG_DEFAULT_AP_PASSWORD` (empty =
+open), so nothing new was needed. No API returns a stored password
+(audited: only `wifi.c` reads them). **Pending:** the 3× power-cycle
+needs real power cycles; the 10-min auto-off needs a device that has
+lost its network.
 
 ---
 

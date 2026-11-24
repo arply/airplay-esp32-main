@@ -21,6 +21,7 @@ hardware):
 | `calibration-prototype.html` | Working calibration page: sweep measurement, level check, stereo/mono/left/right, auto-EQ fit, frequency-dependent smoothing, bass enhancement, built-in listening samples, JSON export. **The DSP maths in its `/*DSP-START*/…/*DSP-END*/` block is the reference implementation** — port it, don't reinvent it. |
 | `design-language.md` | arply.de design tokens (colours, type, components). German. All device UI text is **English**. |
 | `chime.c`, `chime.h`, `gen_chime.py` | Boot chime (“F5 sparkle”, 2.0 s, −18 dBFS) and its generator. |
+| `overview-mock.html` | Static mock of the fleet overview at `arply.local` (sample data, buttons inert, responsive phone/desktop). Target design for Phase 8. |
 
 The real logo was `docs/arply-logo.jpg` (geometric wordmark built from circles
 and straight stems). Commit `bd1e2c6` (“Drop 20 MB of unreferenced binaries”)
@@ -695,7 +696,7 @@ Decided concept (see the project notes):
 - **Joint calibration:** sweeps play device by device inside one room, one
   recording → per-device response + arrival time + level → per-device delay
   and gain alignment.
-- UI: see the overview mock (arply.local, iPhone + desktop) — rooms as cards,
+- UI: see `overview-mock.html` in this folder — rooms as cards,
   device rows linking to `https://<name>.local`, “Calibrate” per room.
 
 ---

@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>arply overview – mock</title>
+<!-- Static export of the "arply Overview – Mock" design (sample data, buttons
+     inert). Responsive: cards stack on a phone. See PLAN.md, Phase 8. -->
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@500&amp;family=Comfortaa:wght@400&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#4e54dc}a:hover{color:#3b40b8}
+</style>
+</head>
+<body>
+<div style="background: #f7f8fb; color: #0b0d14; font-family: Inter, system-ui, sans-serif; min-height: 1180px; box-sizing: border-box">
+
+  <header style="border-bottom: 1px solid #eceef4; padding: 0 24px">
+    <div style="max-width: 1160px; margin: 0 auto; min-height: 68px; display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap">
+      <a href="https://arply.local" aria-label="arply overview" style="font-family: Comfortaa, Inter, sans-serif; font-size: 27px; letter-spacing: 1.5px; color: #191a1e; text-decoration: none; line-height: 1">arply</a>
+      <div style="display: flex; gap: 8px; flex-wrap: wrap">
+        <button type="button" style="font: 600 14px Inter, system-ui, sans-serif; min-height: 44px; padding: 0 18px; border-radius: 999px; border: 1px solid #e3e5ee; background: #ffffff; color: #0b0d14">New room</button>
+        <button type="button" style="font: 600 14px Inter, system-ui, sans-serif; min-height: 44px; padding: 0 18px; border-radius: 999px; border: 0; background: #4e54dc; color: #ffffff">Add device</button>
+      </div>
+    </div>
+  </header>
+
+  <div style="max-width: 1160px; margin: 0 auto; padding: 44px 24px 0; display: flex; flex-direction: column; gap: 28px">
+
+    <div style="display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-end; justify-content: space-between">
+      <div style="display: flex; flex-direction: column; gap: 10px; flex: 1 1 420px; min-width: 0">
+        <span style="font: 500 12px &#39;JetBrains Mono&#39;, ui-monospace, monospace; letter-spacing: 1.5px; text-transform: uppercase; color: #4e54dc">arply.local</span>
+        <h1 style="margin: 0; font-size: 48px; line-height: 1.05; font-weight: 700; letter-spacing: -1px">Your rooms.</h1>
+        <p style="margin: 0; font-size: 17px; line-height: 1.55; color: #4f556a">6 devices in 2 rooms. bassmonster is the hub right now.</p>
+      </div>
+      <section aria-label="Firmware update" style="flex: 0 1 460px; min-width: 0; background: #ffffff; border: 1px solid #eceef4; border-radius: 16px; padding: 18px 20px; display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px">
+        <div style="display: flex; flex-direction: column; gap: 4px; flex: 1 1 220px; min-width: 0">
+          <span style="font: 500 11.5px &#39;JetBrains Mono&#39;, ui-monospace, monospace; letter-spacing: 1.4px; text-transform: uppercase; color: #4e54dc">Update</span>
+          <strong style="font-size: 16px; font-weight: 600">Firmware 1.3.0 is here.</strong>
+          <span style="font-size: 14px; line-height: 1.5; color: #4f556a">For 5 of 6 devices, one at a time, hub last.</span>
+        </div>
+        <button type="button" style="font: 600 15px Inter, system-ui, sans-serif; min-height: 44px; padding: 0 18px; border-radius: 999px; border: 0; background: #4e54dc; color: #ffffff">Update all</button>
+      </section>
+    </div>
+
+    <div style="display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start">
+
+      <main style="flex: 999 1 560px; min-width: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr)); gap: 20px; align-items: start">
+        
+          <section style="background: #ffffff; border: 1px solid #eceef4; border-radius: 16px; overflow: hidden">
+            <div style="padding: 22px 22px 14px; display: flex; flex-direction: column; gap: 6px">
+              <span style="font: 500 11.5px &#39;JetBrains Mono&#39;, ui-monospace, monospace; letter-spacing: 1.4px; text-transform: uppercase; color: #4e54dc">Room</span>
+              <h2 style="margin: 0; font-size: 28px; line-height: 1.15; font-weight: 700; letter-spacing: -0.4px">Living room</h2>
+              <p style="margin: 0; font-size: 15px; line-height: 1.5; color: #4f556a">Stereo with bass · crossover at 80 Hz</p>
+              <div style="display: flex; flex-wrap: wrap; gap: 6px; padding-top: 4px">
+                
+                  <span style="display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 500; padding: 4px 10px; border-radius: 999px; background: #e9eafb; color: #2f34a8">
+                    <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><rect x="1" y="4" width="2" height="7" rx="1" fill="#4e54dc"></rect><rect x="5" y="1" width="2" height="10" rx="1" fill="#4e54dc"></rect><rect x="9" y="6" width="2" height="5" rx="1" fill="#4e54dc"></rect></svg>
+                    Playing · iPhone
+                  </span>
+                
+                
+                  <span style="font-size: 13px; font-weight: 500; padding: 4px 10px; border-radius: 999px; background: #eef0f6; color: #4f556a">Calibrated Nov 21</span>
+                
+                
+                
+              </div>
+            </div>
+
+            <div style="display: flex; align-items: center; gap: 12px; padding: 4px 22px 14px">
+              <label for="dvol-wz" style="font-size: 14px; font-weight: 500; color: #4f556a; flex: none">Volume</label>
+              <input id="dvol-wz" type="range" min="0" max="100" value="62" style="flex: 1 1 auto; min-width: 0; accent-color: #4e54dc; min-height: 32px">
+              <span style="font: 500 13px &#39;JetBrains Mono&#39;, ui-monospace, monospace; color: #4f556a; width: 40px; text-align: right">62%</span>
+            </div>
+
+            <ul style="list-style: none; margin: 0; padding: 0; border-top: 1px solid #eceef4">
+              
+                <li style="border-bottom: 1px solid #f0f1f6">
+                  <a href="https://links-wz.local" style="display: flex; align-items: center; gap: 12px; padding: 12px 22px; min-height: 64px; box-sizing: border-box; text-decoration: none; color: #0b0d14">
+                    <span style="display: flex; flex-direction: column; gap: 3px; flex: 1 1 auto; min-width: 0">
+                      <span style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap">
+                        <strong style="font-size: 16px; font-weight: 600">links-wz</strong>
+                        <span style="font: 500 12.5px &#39;JetBrains Mono&#39;, ui-monospace, monospace; color: #6b6f82">links-wz.local</span>
+                      </span>
+                      <span style="display: flex; align-items: center; gap: 6px; font-size: 13px; color: #4f556a">
+                        
+                          <span aria-hidden="true" style="width: 8px; height: 8px; border-radius: 50%; background: #1f7a4d; flex: none"></span>
+                          <span style="color: #1a6a43; font-weight: 500">Online</span>
+                        
+                        
+                        <span>· Wi-Fi good</span>
+                      </span>
+                    </span>
+                    <span style="display: flex; gap: 6px; flex: none">
+                      <span style="font: 500 11px &#39;JetBrains Mono&#39;, ui-monospace, monospace; letter-spacing: 0.8px; text-transform: uppercase; padding: 3px 7px; border-radius: 6px; background: #e9eafb; color: #2f34a8">Left</span>
+                      
+                    </span>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#9aa0b4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: none"><path d="M9 6l6 6-6 6"></path></svg>
+                  </a>
+                </li>
+              
+                <li style="border-bottom: 1px solid #f0f1f6">
+                  <a href="https://rechts-wz.local" style="display: flex; align-items: center; gap: 12px; padding: 12px 22px; min-height: 64px; box-sizing: border-box; text-decoration: none; color: #0b0d14">
+                    <span style="display: flex; flex-direction: column; gap: 3px; flex: 1 1 auto; min-width: 0">
+                      <span style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap">
+                        <strong style="font-size: 16px; font-weight: 600">rechts-wz</strong>
+                        <span style="font: 500 12.5px &#39;JetBrains Mono&#39;, ui-monospace, monospace; color: #6b6f82">rechts-wz.local</span>
+                      </span>
+                      <span style="display: flex; align-items: center; gap: 6px; font-size: 13px; color: #4f556a">
+                        
+                          <span aria-hidden="true" style="width: 8px; height: 8px; border-radius: 50%; background: #1f7a4d; flex: none"></span>
+                          <span style="color: #1a6a43; font-weight: 500">Online</span>
+                        
+                        
+                        <span>· Wi-Fi good</span>
+                      </span>
+                    </span>
+                    <span style="display: flex; gap: 6px; flex: none">
+                      <span style="font: 500 11px &#39;JetBrains Mono&#39;, ui-monospace, monospace; letter-spacing: 0.8px; text-transform: uppercase; padding: 3px 7px; border-radius: 6px; background: #e9eafb; color: #2f34a8">Right</span>
+                      
+                    </span>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#9aa0b4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: none"><path d="M9 6l6 6-6 6"></path></svg>
+                  </a>
+                </li>
+              
+                <li style="border-bottom: 1px solid #f0f1f6">
+                  <a href="https://bassmonster.local" style="display: flex; align-items: center; gap: 12px; padding: 12px 22px; min-height: 64px; box-sizing: border-box; text-decoration: none; color: #0b0d14">
+                    <span style="display: flex; flex-direction: column; gap: 3px; flex: 1 1 auto; min-width: 0">
+                      <span style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap">
+                        <strong style="font-size: 16px; font-weight: 600">bassmonster</strong>
+                        <span style="font: 500 12.5px &#39;JetBrains Mono&#39;, ui-monospace, monospace; color: #6b6f82">bassmonster.local</span>
+                      </span>
+                      <span style="display: flex; align-items: center; gap: 6px; font-size: 13px; color: #4f556a">
+                        
+                          <span aria-hidden="true" style="width: 8px; height: 8px; border-radius: 50%; background: #1f7a4d; flex: none"></span>
+                          <span style="color: #1a6a43; font-weight: 500">Online</span>
+                        
+                        
+                        <span>· Wi-Fi fair</span>
+                      </span>
+                    </span>
+                    <span style="display: flex; gap: 6px; flex: none">
+                      <span style="font: 500 11px &#39;JetBrains Mono&#39;, ui-monospace, monospace; letter-spacing: 0.8px; text-transform: uppercase; padding: 3px 7px; border-radius: 6px; background: #e9eafb; color: #2f34a8">Bass</span>
+                      
+                        <span style="font: 500 11px &#39;JetBrains Mono&#39;, ui-monospace, monospace; letter-spacing: 0.8px; text-transform: uppercase; padding: 3px 7px; border-radius: 6px; background: #0b0d14; color: #ffffff">Hub</span>
+                      
+                    </span>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#9aa0b4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: none"><path d="M9 6l6 6-6 6"></path></svg>
+                  </a>
+                </li>
+              
+            </ul>
+
+            <div style="display: flex; gap: 8px; padding: 16px 22px 22px; flex-wrap: wrap">
+              <button type="button" style="font: 600 15px Inter, system-ui, sans-serif; min-height: 44px; padding: 0 18px; border-radius: 999px; border: 0; background: #4e54dc; color: #ffffff">Calibrate</button>
+              <button type="button" style="font: 600 15px Inter, system-ui, sans-serif; min-height: 44px; padding: 0 18px; border-radius: 999px; border: 1px solid #e3e5ee; background: #ffffff; color: #0b0d14">Edit</button>
+              <button type="button" style="font: 600 15px Inter, system-ui, sans-serif; min-height: 44px; padding: 0 18px; border-radius: 999px; border: 1px solid #e3e5ee; background: #ffffff; color: #0b0d14">Mute</button>
+            </div>
+          </section>
+        
+          <section style="background: #ffffff; border: 1px solid #eceef4; border-radius: 16px; overflow: hidden">
+            <div style="padding: 22px 22px 14px; display: flex; flex-direction: column; gap: 6px">
+              <span style="font: 500 11.5px &#39;JetBrains Mono&#39;, ui-monospace, monospace; letter-spacing: 1.4px; text-transform: uppercase; color: #4e54dc">Room</span>
+              <h2 style="margin: 0; font-size: 28px; line-height: 1.15; font-weight: 700; letter-spacing: -0.4px">Kitchen</h2>
+              <p style="margin: 0; font-size: 15px; line-height: 1.5; color: #4f556a">Mono · bass enhancement on</p>
+              <div style="display: flex; flex-wrap: wrap; gap: 6px; padding-top: 4px">
+                
+                
+                
+                  <span style="font-size: 13px; font-weight: 500; padding: 4px 10px; border-radius: 999px; background: #f9f3e8; color: #6b4a10">Not calibrated yet</span>
+                
+                
+                  <span style="font-size: 13px; font-weight: 500; padding: 4px 10px; border-radius: 999px; background: #fdecea; color: #a1281c">1 device offline</span>
+                
+              </div>
+            </div>
+
+            <div style="display: flex; align-items: center; gap: 12px; padding: 4px 22px 14px">
+              <label for="dvol-ku" style="font-size: 14px; font-weight: 500; color: #4f556a; flex: none">Volume</label>
+              <input id="dvol-ku" type="range" min="0" max="100" value="40" style="flex: 1 1 auto; min-width: 0; accent-color: #4e54dc; min-height: 32px">
+              <span style="font: 500 13px &#39;JetBrains Mono&#39;, ui-monospace, monospace; color: #4f556a; width: 40px; text-align: right">40%</span>
+            </div>
+
+            <ul style="list-style: none; margin: 0; padding: 0; border-top: 1px solid #eceef4">
+              
+                <li style="border-bottom: 1px solid #f0f1f6">
+                  <a href="https://kueche.local" style="display: flex; align-items: center; gap: 12px; padding: 12px 22px; min-height: 64px; box-sizing: border-box; text-decoration: none; color: #0b0d14">
+                    <span style="display: flex; flex-direction: column; gap: 3px; flex: 1 1 auto; min-width: 0">
+                      <span style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap">
+                        <strong style="font-size: 16px; font-weight: 600">kueche</strong>
+                        <span style="font: 500 12.5px &#39;JetBrains Mono&#39;, ui-monospace, monospace; color: #6b6f82">kueche.local</span>
+                      </span>
+                      <span style="display: flex; align-items: center; gap: 6px; font-size: 13px; color: #4f556a">
+                        
+                          <span aria-hidden="true" style="width: 8px; height: 8px; border-radius: 50%; background: #1f7a4d; flex: none"></span>
+                          <span style="color: #1a6a43; font-weight: 500">Online</span>
+                        
+                        
+                        <span>· Wi-Fi good</span>
+                      </span>
+                    </span>
+                    <span style="display: flex; gap: 6px; flex: none">
+                      <span style="font: 500 11px &#39;JetBrains Mono&#39;, ui-monospace, monospace; letter-spacing: 0.8px; text-transform: uppercase; padding: 3px 7px; border-radius: 6px; background: #e9eafb; color: #2f34a8">Mono</span>
+                      
+                    </span>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#9aa0b4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: none"><path d="M9 6l6 6-6 6"></path></svg>
+                  </a>
+                </li>
+              
+                <li style="border-bottom: 1px solid #f0f1f6">
+                  <a href="https://kueche-decke.local" style="display: flex; align-items: center; gap: 12px; padding: 12px 22px; min-height: 64px; box-sizing: border-box; text-decoration: none; color: #0b0d14">
+                    <span style="display: flex; flex-direction: column; gap: 3px; flex: 1 1 auto; min-width: 0">
+                      <span style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap">
+                        <strong style="font-size: 16px; font-weight: 600">kueche-decke</strong>
+                        <span style="font: 500 12.5px &#39;JetBrains Mono&#39;, ui-monospace, monospace; color: #6b6f82">kueche-decke.local</span>
+                      </span>
+                      <span style="display: flex; align-items: center; gap: 6px; font-size: 13px; color: #4f556a">
+                        
+                        
+                          <span aria-hidden="true" style="width: 8px; height: 8px; border-radius: 50%; border: 2px solid #a1281c; box-sizing: border-box; flex: none"></span>
+                          <span style="color: #a1281c; font-weight: 500">Offline</span>
+                        
+                        <span>· since 14:12</span>
+                      </span>
+                    </span>
+                    <span style="display: flex; gap: 6px; flex: none">
+                      <span style="font: 500 11px &#39;JetBrains Mono&#39;, ui-monospace, monospace; letter-spacing: 0.8px; text-transform: uppercase; padding: 3px 7px; border-radius: 6px; background: #e9eafb; color: #2f34a8">Mono</span>
+                      
+                    </span>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#9aa0b4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: none"><path d="M9 6l6 6-6 6"></path></svg>
+                  </a>
+                </li>
+              
+            </ul>
+
+            <div style="display: flex; gap: 8px; padding: 16px 22px 22px; flex-wrap: wrap">
+              <button type="button" style="font: 600 15px Inter, system-ui, sans-serif; min-height: 44px; padding: 0 18px; border-radius: 999px; border: 0; background: #4e54dc; color: #ffffff">Calibrate</button>
+              <button type="button" style="font: 600 15px Inter, system-ui, sans-serif; min-height: 44px; padding: 0 18px; border-radius: 999px; border: 1px solid #e3e5ee; background: #ffffff; color: #0b0d14">Edit</button>
+              <button type="button" style="font: 600 15px Inter, system-ui, sans-serif; min-height: 44px; padding: 0 18px; border-radius: 999px; border: 1px solid #e3e5ee; background: #ffffff; color: #0b0d14">Mute</button>
+            </div>
+          </section>
+        
+      </main>
+
+      <aside style="flex: 1 1 300px; min-width: 0; display: flex; flex-direction: column; gap: 20px">
+        <section style="background: #ffffff; border: 1px solid #eceef4; border-radius: 16px; padding: 20px 22px; display: flex; flex-direction: column; gap: 10px">
+          <span style="font: 500 11.5px &#39;JetBrains Mono&#39;, ui-monospace, monospace; letter-spacing: 1.4px; text-transform: uppercase; color: #4e54dc">New on the network</span>
+          <h2 style="margin: 0; font-size: 18px; font-weight: 600">arply-3f2a</h2>
+          <p style="margin: 0; font-size: 15px; line-height: 1.55; color: #4f556a">Not in a room yet and not set up.</p>
+          <div style="display: flex; gap: 8px; flex-wrap: wrap; padding-top: 4px">
+            <a href="https://arply-3f2a.local" style="display: inline-flex; align-items: center; font: 600 15px Inter, system-ui, sans-serif; min-height: 44px; padding: 0 18px; border-radius: 999px; background: #4e54dc; color: #ffffff; text-decoration: none">Set up</a>
+            <button type="button" style="font: 600 15px Inter, system-ui, sans-serif; min-height: 44px; padding: 0 18px; border-radius: 999px; border: 1px solid #e3e5ee; background: #ffffff; color: #0b0d14">Assign room</button>
+          </div>
+        </section>
+
+        <section style="background: #ffffff; border: 1px solid #eceef4; border-radius: 16px; padding: 20px 22px; display: flex; flex-direction: column; gap: 12px">
+          <span style="font: 500 11.5px &#39;JetBrains Mono&#39;, ui-monospace, monospace; letter-spacing: 1.4px; text-transform: uppercase; color: #4e54dc">Network</span>
+          <h2 style="margin: 0; font-size: 18px; font-weight: 600">Hub and security</h2>
+          <dl style="margin: 0; display: grid; grid-template-columns: 6.5em minmax(0, 1fr); gap: 10px 12px; font-size: 14.5px; line-height: 1.45">
+            <dt style="color: #6b6f82">Hub</dt>
+            <dd style="margin: 0">bassmonster<br><span style="color: #4f556a">Stand-in: links-wz</span></dd>
+            <dt style="color: #6b6f82">Certificate</dt>
+            <dd style="margin: 0">Fleet profile installed, valid until 11/2028</dd>
+            <dt style="color: #6b6f82">Discovery</dt>
+            <dd style="margin: 0">6 devices via Bonjour, 1 offline</dd>
+          </dl>
+          <div style="display: flex; gap: 8px; flex-wrap: wrap">
+            <button type="button" style="font: 600 15px Inter, system-ui, sans-serif; min-height: 44px; padding: 0 18px; border-radius: 999px; border: 1px solid #e3e5ee; background: #ffffff; color: #0b0d14">Change hub</button>
+            <button type="button" style="font: 600 15px Inter, system-ui, sans-serif; min-height: 44px; padding: 0 18px; border-radius: 999px; border: 1px solid #e3e5ee; background: #ffffff; color: #0b0d14">Get profile</button>
+          </div>
+        </section>
+      </aside>
+    </div>
+  </div>
+
+  <footer style="margin-top: 56px; padding: 28px 24px 36px; border-top: 1px solid #eceef4; display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center">
+    <span style="font-family: Comfortaa, Inter, sans-serif; font-size: 18px; letter-spacing: 1px; color: #191a1e">arply</span>
+    <span style="font-size: 13px; color: #6b6f82">Firmware 1.2.0 on this hub · sample data</span>
+    <nav aria-label="Footer" style="display: flex; gap: 20px; flex-wrap: wrap; justify-content: center; font-size: 14px">
+      <a href="https://arply.de" style="color: #4f556a; text-decoration: none">arply.de</a>
+      <a href="https://arply.de/landing.html" style="color: #4f556a; text-decoration: none">Help</a>
+      <a href="#language" style="color: #4f556a">Deutsch</a>
+    </nav>
+  </footer>
+</div>
+</body>
+</html>

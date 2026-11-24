@@ -8,6 +8,7 @@
 #include "esp_log.h"
 #include "esp_mac.h"
 #include "esp_netif.h"
+#include "esp_system.h"
 #include "esp_timer.h"
 #include "nvs_flash.h"
 
@@ -36,6 +37,19 @@ static esp_timer_handle_t s_retry_timer = NULL;
 
 // Saved AP config from init, used to re-enable AP without duplication
 static wifi_config_t s_ap_config;
+
+// The setup hotspot is open by default, so it should not stay up longer
+// than needed: it switches off after AP_IDLE_OFF_US without any client.
+#define AP_IDLE_OFF_US     (10LL * 60 * 1000 * 1000)
+#define AP_CHECK_PERIOD_US (30LL * 1000 * 1000)
+// Power-cycling this many times, each within SETUP_CYCLE_WINDOW_US of
+// boot, forces the hotspot on even when a known network is in range.
+#define SETUP_POWER_CYCLES    3
+#define SETUP_CYCLE_WINDOW_US (5LL * 1000 * 1000)
+
+static esp_timer_handle_t s_ap_check_timer = NULL;
+static int64_t s_ap_active_since = 0; // last time the AP was on with clients
+static bool s_ap_forced = false;      // setup requested by power cycling
 
 static void wifi_select_best_ap(const char *ssid);
 static bool wifi_select_best_known_network(void);
@@ -108,6 +122,61 @@ static void enable_ap_mode(void) {
     }
     esp_wifi_set_mode(WIFI_MODE_APSTA);
     esp_wifi_set_config(WIFI_IF_AP, &s_ap_config);
+    s_ap_active_since = esp_timer_get_time();
+  }
+}
+
+/* Periodic: switch the setup hotspot off once nobody has used it for
+ * AP_IDLE_OFF_US. A device without any saved network keeps it — that is
+ * its only way in. */
+static void ap_check_cb(void *arg) {
+  (void)arg;
+  wifi_mode_t mode;
+  if (esp_wifi_get_mode(&mode) != ESP_OK || mode != WIFI_MODE_APSTA) {
+    return;
+  }
+  wifi_sta_list_t clients;
+  if (esp_wifi_ap_get_sta_list(&clients) == ESP_OK && clients.num > 0) {
+    s_ap_active_since = esp_timer_get_time();
+    return;
+  }
+  if (!settings_has_wifi_credentials() ||
+      esp_timer_get_time() - s_ap_active_since < AP_IDLE_OFF_US) {
+    return;
+  }
+  ESP_LOGI(TAG, "Setup hotspot off: no client for %lld min",
+           (long long)(AP_IDLE_OFF_US / 60000000));
+  s_ap_forced = false;
+  esp_wifi_set_mode(WIFI_MODE_STA);
+}
+
+static void clear_power_cycles_cb(void *arg) {
+  (void)arg;
+  settings_set_power_cycles(0);
+}
+
+/* Count quick power cycles (only real power-on resets count). The counter
+ * is cleared once the device has been up for SETUP_CYCLE_WINDOW_US. */
+static void check_setup_request(void) {
+  uint8_t cycles = 0;
+  if (esp_reset_reason() == ESP_RST_POWERON) {
+    settings_get_power_cycles(&cycles);
+    cycles++;
+  }
+  if (cycles >= SETUP_POWER_CYCLES) {
+    ESP_LOGW(TAG, "Power-cycled %u times: setup hotspot forced on",
+             (unsigned)cycles);
+    s_ap_forced = true;
+    cycles = 0;
+  }
+  settings_set_power_cycles(cycles);
+  if (cycles > 0) {
+    const esp_timer_create_args_t args = {.callback = clear_power_cycles_cb,
+                                          .name = "pwr_cycles"};
+    esp_timer_handle_t t;
+    if (esp_timer_create(&args, &t) == ESP_OK) {
+      esp_timer_start_once(t, SETUP_CYCLE_WINDOW_US);
+    }
   }
 }
 
@@ -150,9 +219,11 @@ static void event_handler(void *arg, esp_event_base_t event_base,
     s_sta_connected = true;
     xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
 
-    // Disable AP mode when STA connects
+    // Disable AP mode when STA connects (unless setup was requested by
+    // power cycling: then the idle timer turns it off)
     wifi_mode_t mode;
-    if (esp_wifi_get_mode(&mode) == ESP_OK && mode == WIFI_MODE_APSTA) {
+    if (!s_ap_forced && esp_wifi_get_mode(&mode) == ESP_OK &&
+        mode == WIFI_MODE_APSTA) {
       ESP_LOGI(TAG, "STA connected, disabling AP mode");
       esp_wifi_set_mode(WIFI_MODE_STA);
     }
@@ -389,6 +460,7 @@ static void wifi_init_base(void) {
 
 void wifi_init_apsta(const char *ap_ssid, const char *ap_password) {
   wifi_init_base();
+  check_setup_request();
 
   if (!s_sta_netif) {
     s_sta_netif = esp_netif_create_default_wifi_sta();
@@ -443,6 +515,14 @@ void wifi_init_apsta(const char *ap_ssid, const char *ap_password) {
   ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &sta_config));
   ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &s_ap_config));
   ESP_ERROR_CHECK(esp_wifi_start());
+  s_ap_active_since = esp_timer_get_time();
+  if (!s_ap_check_timer) {
+    const esp_timer_create_args_t args = {.callback = ap_check_cb,
+                                          .name = "ap_check"};
+    if (esp_timer_create(&args, &s_ap_check_timer) == ESP_OK) {
+      esp_timer_start_periodic(s_ap_check_timer, AP_CHECK_PERIOD_US);
+    }
+  }
 
   ESP_LOGI(TAG, "AP+STA mode started: AP SSID=%s", default_ssid);
   if (has_credentials) {

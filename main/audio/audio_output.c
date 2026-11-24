@@ -154,9 +154,16 @@ static void playback_task(void *arg) {
       i2s_channel_enable(tx_handle);
     }
     if (test_signal_active()) {
-      // arply's own signal (sweep, noise, chime): no DSP, no volume — the
-      // raw speaker at a fixed level.
-      test_signal_fill(pcm, FRAME_SAMPLES);
+      // arply's own signal: measurement signals follow the volume (as loud
+      // as the user's music) but skip the DSP, listening samples get both,
+      // the chime neither.
+      uint8_t fx = test_signal_fill(pcm, FRAME_SAMPLES);
+      if (fx & TEST_SIGNAL_APPLY_DSP) {
+        audio_output_process(pcm, FRAME_SAMPLES);
+      }
+      if (fx & TEST_SIGNAL_FOLLOW_VOLUME) {
+        apply_volume(pcm, (size_t)FRAME_SAMPLES * 2);
+      }
       led_audio_feed(pcm, FRAME_SAMPLES);
       i2s_channel_write(tx_handle, pcm,
                         (size_t)FRAME_SAMPLES * 2 * sizeof(int16_t), &written,

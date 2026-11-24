@@ -10,6 +10,8 @@
 #include "dsp_signal.h"
 #include "esp_log.h"
 #include "esp_timer.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "rtsp_events.h"
 
 static const char *TAG = "test_signal";
@@ -23,7 +25,14 @@ static const char *TAG = "test_signal";
 // (~46 ms) before the DAC may be muted again.
 #define REMUTE_DELAY_US 150000
 
-typedef enum { SEG_SILENCE, SEG_SWEEP, SEG_NOISE, SEG_PCM } seg_kind_t;
+// SEG_LOOP repeats the plan's PCM until stopped (listening samples).
+typedef enum {
+  SEG_SILENCE,
+  SEG_SWEEP,
+  SEG_NOISE,
+  SEG_PCM,
+  SEG_LOOP
+} seg_kind_t;
 
 typedef struct {
   seg_kind_t kind;
@@ -36,6 +45,9 @@ typedef struct {
   int count;
   const int16_t *pcm;
   float pcm_gain;
+  size_t loop_frames;
+  int loop_channels;
+  uint8_t flags; // TEST_SIGNAL_FOLLOW_VOLUME | TEST_SIGNAL_APPLY_DSP
 } plan_t;
 
 // IDLE -> CLAIMED (a requester is writing s_req) -> REQUESTED -> RUNNING.
@@ -118,6 +130,7 @@ esp_err_t test_signal_sweep(const uint8_t *outs, int count, uint32_t gap_ms) {
     return ESP_ERR_INVALID_ARG;
   }
   plan_t p = {0};
+  p.flags = TEST_SIGNAL_FOLLOW_VOLUME;
   p.seg[p.count++] = silence(TEST_SIGNAL_LEAD_MS);
   dsp_sweep_t probe;
   dsp_sweep_init(&probe, s_fs, TEST_SIGNAL_SWEEP_MS / 1000.0, 20, 20000,
@@ -136,6 +149,7 @@ esp_err_t test_signal_sweep(const uint8_t *outs, int count, uint32_t gap_ms) {
 
 esp_err_t test_signal_noise(uint8_t outs, uint32_t max_ms) {
   plan_t p = {0};
+  p.flags = TEST_SIGNAL_FOLLOW_VOLUME;
   p.seg[p.count++] = silence(100); // XSMT settles before the noise starts
   p.seg[p.count++] =
       (seg_t){.kind = SEG_NOISE, .outs = outs, .frames = ms_to_frames(max_ms)};
@@ -157,6 +171,33 @@ esp_err_t test_signal_pcm(const int16_t *pcm, size_t samples, float gain) {
   p.pcm = pcm;
   p.pcm_gain = fminf(fmaxf(gain, 0.0f), 1.0f) / 32768.0f;
   return submit(&p);
+}
+
+esp_err_t test_signal_listen(const int16_t *pcm, size_t frames, int channels) {
+  if (!pcm || frames == 0 || channels < 1 || channels > 2) {
+    return ESP_ERR_INVALID_ARG;
+  }
+  plan_t p = {0};
+  p.flags = TEST_SIGNAL_FOLLOW_VOLUME | TEST_SIGNAL_APPLY_DSP;
+  p.seg[p.count++] = silence(100);
+  p.seg[p.count++] = (seg_t){
+      .kind = SEG_LOOP, .outs = TEST_SIGNAL_OUT_BOTH, .frames = UINT32_MAX};
+  p.pcm = pcm;
+  p.loop_frames = frames;
+  p.loop_channels = channels;
+  esp_err_t err = submit(&p);
+  if (err == ESP_OK) {
+    ESP_LOGI(TAG, "Listening sample: %u frames, %d ch, looping",
+             (unsigned)frames, channels);
+  }
+  return err;
+}
+
+bool test_signal_wait_idle(uint32_t timeout_ms) {
+  for (uint32_t t = 0; test_signal_active() && t < timeout_ms; t += 10) {
+    vTaskDelay(pdMS_TO_TICKS(10));
+  }
+  return !test_signal_active();
 }
 
 void test_signal_stop(void) {
@@ -195,13 +236,36 @@ static void finish(void) {
   ESP_LOGI(TAG, "Signal finished");
 }
 
+/* Loop the listening sample into @p out (interleaved stereo). Returns true
+ * once a stop fade has reached silence. */
+static bool fill_loop(int16_t *out, size_t n, bool stopping, float fade_step) {
+  const int16_t *pcm = s_run.pcm;
+  const int ch = s_run.loop_channels;
+  for (size_t i = 0; i < n; i++) {
+    const size_t at = s_pos * (size_t)ch;
+    int32_t l = pcm[at];
+    int32_t r = ch == 2 ? pcm[at + 1] : l;
+    if (stopping) {
+      s_fade = s_fade > fade_step ? s_fade - fade_step : 0.0f;
+      l = (int32_t)((float)l * s_fade);
+      r = (int32_t)((float)r * s_fade);
+    }
+    out[2 * i] = (int16_t)l;
+    out[2 * i + 1] = (int16_t)r;
+    if (++s_pos >= s_run.loop_frames) {
+      s_pos = 0;
+    }
+  }
+  return stopping && s_fade <= 0.0f;
+}
+
 static inline int16_t to_s16(float v) {
   float s = v * 32767.0f;
   s = s > 32767.0f ? 32767.0f : (s < -32768.0f ? -32768.0f : s);
   return (int16_t)lrintf(s);
 }
 
-void test_signal_fill(int16_t *buf, size_t frames) {
+uint8_t test_signal_fill(int16_t *buf, size_t frames) {
   if (atomic_load(&s_state) == STATE_REQUESTED) {
     s_run = s_req;
     s_seg = 0;
@@ -211,8 +275,9 @@ void test_signal_fill(int16_t *buf, size_t frames) {
   }
   memset(buf, 0, frames * 2 * sizeof(int16_t));
   if (atomic_load(&s_state) != STATE_RUNNING) {
-    return;
+    return 0;
   }
+  const uint8_t flags = s_run.flags;
 
   const float fade_step = 1000.0f / (STOP_FADE_MS * (float)s_fs);
   size_t done = 0;
@@ -221,6 +286,15 @@ void test_signal_fill(int16_t *buf, size_t frames) {
     size_t n = frames - done;
     if (n > CHUNK) {
       n = CHUNK;
+    }
+    if (seg->kind == SEG_LOOP) {
+      if (fill_loop(&buf[2 * done], n, atomic_load(&s_stop),
+                    1000.0f / (STOP_FADE_MS * (float)s_fs))) {
+        finish();
+        return flags;
+      }
+      done += n;
+      continue;
     }
     if (n > seg->frames - s_pos) {
       n = seg->frames - s_pos;
@@ -257,7 +331,7 @@ void test_signal_fill(int16_t *buf, size_t frames) {
     s_pos += (uint32_t)n;
     if (stopping && s_fade <= 0.0f) {
       finish();
-      return;
+      return flags;
     }
     if (s_pos >= seg->frames || n == 0) {
       s_seg++;
@@ -267,4 +341,5 @@ void test_signal_fill(int16_t *buf, size_t frames) {
   if (s_seg >= s_run.count) {
     finish();
   }
+  return flags;
 }

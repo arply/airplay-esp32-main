@@ -18,7 +18,10 @@
 #include "audio_dsp.h"
 #include "audio_output.h"
 #include "cJSON.h"
+#include "esp_heap_caps.h"
 #include "esp_log.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 #include "esp_timer.h"
 #include "sdkconfig.h"
 #include "test_signal.h"
@@ -32,6 +35,8 @@ static const char *TAG = "web_dsp";
 #define GAP_MS_MIN         500
 #define GAP_MS_MAX         5000
 #define GAP_MS_DEFAULT     2000
+// A listening sample: ~17 s of 44.1 kHz stereo s16, held in PSRAM.
+#define LISTEN_MAX_BYTES (3 * 1024 * 1024)
 
 static const char *const SET_KEYS[AUDIO_DSP_SET_COUNT] = {"L", "R", "M"};
 static const char *const TYPE_NAMES[DSP_FILTER_TYPE_COUNT] = {
@@ -47,6 +52,10 @@ static const char *const MODE_NAMES[] = {
 };
 
 static bool s_bypass;
+
+// The listening sample being played. Two server tasks may upload at once.
+static int16_t *s_listen_buf;
+static SemaphoreHandle_t s_listen_lock;
 
 /* ---- JSON helpers ---------------------------------------------------- */
 
@@ -238,6 +247,9 @@ static esp_err_t read_request(httpd_req_t *req, audio_dsp_profile_t *p,
 /* ---- Handlers -------------------------------------------------------- */
 
 static esp_err_t dsp_page_handler(httpd_req_t *req) {
+  if (web_server_redirect_to_https(req)) {
+    return ESP_OK; // the microphone only works on HTTPS
+  }
   httpd_resp_set_hdr(req, "Cache-Control", "no-cache");
   return web_server_send_file(req, "/spiffs/www/dsp.html", "text/html");
 }
@@ -423,14 +435,85 @@ static esp_err_t noise_handler(httpd_req_t *req) {
   return send_json(req, resp);
 }
 
+/* Free the listening sample once nothing plays it any more. */
+static void release_listen_buffer(void) {
+  if (test_signal_wait_idle(500)) {
+    heap_caps_free(s_listen_buf);
+    s_listen_buf = NULL;
+  }
+}
+
+/* POST raw s16le PCM at the output rate (?channels=1|2, default 2): arply
+ * loops it through its own DSP and volume until /api/dsp/stop. */
+static esp_err_t listen_handler(httpd_req_t *req) {
+  int channels = 2;
+  char query[32];
+  char val[4];
+  if (httpd_req_get_url_query_str(req, query, sizeof(query)) == ESP_OK &&
+      httpd_query_key_value(query, "channels", val, sizeof(val)) == ESP_OK) {
+    channels = atoi(val);
+  }
+  const size_t frame_bytes = (size_t)channels * sizeof(int16_t);
+  const size_t len = req->content_len;
+  if ((channels != 1 && channels != 2) || len == 0 || len > LISTEN_MAX_BYTES ||
+      len % frame_bytes != 0) {
+    return send_error(req, "400 Bad Request",
+                      "expected s16le PCM, whole frames, at most 3 MB");
+  }
+
+  xSemaphoreTake(s_listen_lock, portMAX_DELAY);
+  test_signal_stop();
+  release_listen_buffer();
+  if (s_listen_buf) {
+    xSemaphoreGive(s_listen_lock);
+    return busy_error(req);
+  }
+  s_listen_buf = heap_caps_malloc(len, MALLOC_CAP_SPIRAM);
+  if (!s_listen_buf) {
+    xSemaphoreGive(s_listen_lock);
+    return send_error(req, "500 Internal Server Error", "out of memory");
+  }
+  size_t got = 0;
+  while (got < len) {
+    int r = httpd_req_recv(req, (char *)s_listen_buf + got, len - got);
+    if (r == HTTPD_SOCK_ERR_TIMEOUT) {
+      continue;
+    }
+    if (r <= 0) {
+      heap_caps_free(s_listen_buf);
+      s_listen_buf = NULL;
+      xSemaphoreGive(s_listen_lock);
+      return ESP_FAIL;
+    }
+    got += (size_t)r;
+  }
+  esp_err_t err = test_signal_listen(s_listen_buf, len / frame_bytes, channels);
+  xSemaphoreGive(s_listen_lock);
+  if (err != ESP_OK) {
+    return busy_error(req);
+  }
+  cJSON *resp = cJSON_CreateObject();
+  cJSON_AddBoolToObject(resp, "playing", true);
+  cJSON_AddNumberToObject(resp, "seconds",
+                          (double)(len / frame_bytes) /
+                              CONFIG_OUTPUT_SAMPLE_RATE_HZ);
+  return send_json(req, resp);
+}
+
 static esp_err_t stop_handler(httpd_req_t *req) {
   test_signal_stop();
+  xSemaphoreTake(s_listen_lock, portMAX_DELAY);
+  release_listen_buffer();
+  xSemaphoreGive(s_listen_lock);
   cJSON *resp = cJSON_CreateObject();
   cJSON_AddBoolToObject(resp, "stopped", true);
   return send_json(req, resp);
 }
 
 int web_dsp_register(httpd_handle_t server) {
+  if (!s_listen_lock) {
+    s_listen_lock = xSemaphoreCreateMutex();
+  }
   const httpd_uri_t uris[] = {
       {.uri = "/dsp", .method = HTTP_GET, .handler = dsp_page_handler},
       {.uri = "/api/dsp", .method = HTTP_GET, .handler = dsp_get_handler},
@@ -447,6 +530,9 @@ int web_dsp_register(httpd_handle_t server) {
       {.uri = "/api/dsp/sweep", .method = HTTP_POST, .handler = sweep_handler},
       {.uri = "/api/dsp/noise", .method = HTTP_POST, .handler = noise_handler},
       {.uri = "/api/dsp/stop", .method = HTTP_POST, .handler = stop_handler},
+      {.uri = "/api/dsp/listen",
+       .method = HTTP_POST,
+       .handler = listen_handler},
   };
   int n = 0;
   for (size_t i = 0; i < sizeof(uris) / sizeof(uris[0]); i++) {

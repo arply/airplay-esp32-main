@@ -42,14 +42,31 @@ esp_err_t test_signal_noise(uint8_t outs, uint32_t max_ms);
 /** Mono s16 PCM on both outputs at @p gain (0..1), e.g. the boot chime. */
 esp_err_t test_signal_pcm(const int16_t *pcm, size_t samples, float gain);
 
+/**
+ * Loop @p frames of s16 PCM (@p channels 1 or 2, interleaved, at the output
+ * rate) until stopped, through the channel mode, DSP and volume like
+ * normal playback: for listening to the correction on arply's speakers.
+ * The caller keeps @p pcm valid until test_signal_wait_idle() after a stop.
+ */
+esp_err_t test_signal_listen(const int16_t *pcm, size_t frames, int channels);
+
+/** Wait until no signal is active; false on timeout. */
+bool test_signal_wait_idle(uint32_t timeout_ms);
+
 /** Stop whatever plays (5 ms fade). */
 void test_signal_stop(void);
 
 /** True while a signal is requested or playing. */
 bool test_signal_active(void);
 
+/* What the playback task must still do with a filled frame. */
+#define TEST_SIGNAL_FOLLOW_VOLUME 0x1 // sweeps, noise, listening samples
+#define TEST_SIGNAL_APPLY_DSP     0x2 // listening samples only
+
 /**
  * Audio task only: fill @p frames interleaved stereo frames. Always fills
- * the whole buffer (silence after the end).
+ * the whole buffer (silence after the end). Returns TEST_SIGNAL_* flags.
+ * Measurement signals follow arply's volume (so they are as loud as the
+ * user's music) but skip the DSP; the chime has a fixed level.
  */
-void test_signal_fill(int16_t *buf, size_t frames);
+uint8_t test_signal_fill(int16_t *buf, size_t frames);

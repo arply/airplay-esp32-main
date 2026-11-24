@@ -1,9 +1,11 @@
 #pragma once
 
+#include <stdbool.h>
 #include <stddef.h>
 
 #include "esp_err.h"
 #include "esp_http_server.h"
+#include "web_dsp.h"
 
 /**
  * Web server for control panel
@@ -37,3 +39,19 @@ char *web_server_recv_body(httpd_req_t *req, size_t max_len);
  */
 esp_err_t web_server_send_file(httpd_req_t *req, const char *path,
                                const char *content_type);
+
+/** Handlers web_server_register_shared() adds, for max_uri_handlers. */
+#define WEB_SERVER_SHARED_URI_COUNT (22 + WEB_DSP_URI_COUNT)
+
+/**
+ * Register the pages and APIs that both the HTTP and the HTTPS server
+ * serve (settings page, calibration page, their APIs). Returns the count.
+ */
+int web_server_register_shared(httpd_handle_t server);
+
+/**
+ * For a page request on plain HTTP: redirect to the same URL on HTTPS and
+ * return true. Returns false (nothing sent) on HTTPS, and for clients on the
+ * setup hotspot, which stay on HTTP for the captive portal.
+ */
+bool web_server_redirect_to_https(httpd_req_t *req);

@@ -1,6 +1,10 @@
 #include "web_dsp.h"
 #include "web_server.h"
 
+#include "esp_netif.h"
+#include "lwip/sockets.h"
+#include "tls_cert.h"
+
 #include "esp_log.h"
 #include "esp_http_server.h"
 #include "esp_system.h"
@@ -53,8 +57,101 @@ esp_err_t web_server_send_file(httpd_req_t *req, const char *path,
 }
 
 // API handlers
+/* True if @p req reached us through the setup hotspot (captive portal):
+ * those clients stay on plain HTTP. */
+static bool via_setup_ap(httpd_req_t *req) {
+  struct sockaddr_in local;
+  socklen_t len = sizeof(local);
+  esp_netif_ip_info_t ap;
+  esp_netif_t *ap_netif = esp_netif_get_handle_from_ifkey("WIFI_AP_DEF");
+  if (getsockname(httpd_req_to_sockfd(req), (struct sockaddr *)&local, &len) !=
+          0 ||
+      local.sin_family != AF_INET || !ap_netif ||
+      esp_netif_get_ip_info(ap_netif, &ap) != ESP_OK) {
+    return false;
+  }
+  return local.sin_addr.s_addr == ap.ip.addr;
+}
+
+bool web_server_redirect_to_https(httpd_req_t *req) {
+  if (req->handle != s_server || via_setup_ap(req)) {
+    return false; // already HTTPS, or a captive-portal client
+  }
+  char host[64];
+  if (httpd_req_get_hdr_value_str(req, "Host", host, sizeof(host)) != ESP_OK) {
+    return false;
+  }
+  char *colon = strchr(host, ':');
+  if (colon) {
+    *colon = '\0';
+  }
+  char location[sizeof(host) + 8 + CONFIG_HTTPD_MAX_URI_LEN];
+  snprintf(location, sizeof(location), "https://%s%s", host, req->uri);
+  httpd_resp_set_status(req, "302 Found");
+  httpd_resp_set_hdr(req, "Location", location);
+  httpd_resp_send(req, NULL, 0);
+  return true;
+}
+
 static esp_err_t root_handler(httpd_req_t *req) {
+  if (web_server_redirect_to_https(req)) {
+    return ESP_OK;
+  }
   return web_server_send_file(req, "/spiffs/www/index.html", "text/html");
+}
+
+/* The device certificate, for installing it as trusted on a phone (iOS
+ * offers a profile install for this content type): no more warnings. */
+static esp_err_t cert_handler(httpd_req_t *req) {
+  char name[65];
+  settings_get_device_name(name, sizeof(name));
+  const char *cert;
+  const char *key;
+  if (tls_cert_get(name, &cert, &key) != ESP_OK) {
+    return httpd_resp_send_500(req);
+  }
+  httpd_resp_set_type(req, "application/x-x509-ca-cert");
+  httpd_resp_set_hdr(req, "Content-Disposition",
+                     "attachment; filename=\"arply.crt\"");
+  return httpd_resp_sendstr(req, cert);
+}
+
+static esp_err_t volume_get_handler(httpd_req_t *req) {
+  float db = AUDIO_VOLUME_DEFAULT_DB;
+  settings_get_volume(&db);
+  cJSON *json = cJSON_CreateObject();
+  cJSON_AddNumberToObject(json, "db", db);
+  cJSON_AddNumberToObject(json, "min", AUDIO_VOLUME_MIN_DB);
+  cJSON_AddNumberToObject(json, "max", AUDIO_VOLUME_MAX_DB);
+  char *str = cJSON_PrintUnformatted(json);
+  cJSON_Delete(json);
+  httpd_resp_set_type(req, "application/json");
+  httpd_resp_sendstr(req, str);
+  free(str);
+  return ESP_OK;
+}
+
+/* The one shared volume (AirPlay, USB and arply's own signals). {"db": x}
+ * applies at once; add "persist": true on release, not on every move. */
+static esp_err_t volume_post_handler(httpd_req_t *req) {
+  char *body = web_server_recv_body(req, 128);
+  cJSON *json = body ? cJSON_Parse(body) : NULL;
+  free(body);
+  const cJSON *db = json ? cJSON_GetObjectItem(json, "db") : NULL;
+  if (!cJSON_IsNumber(db)) {
+    cJSON_Delete(json);
+    return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
+                               "Expected {\"db\": number}");
+  }
+  float v = (float)db->valuedouble;
+  v = v < AUDIO_VOLUME_MIN_DB ? AUDIO_VOLUME_MIN_DB : v;
+  v = v > AUDIO_VOLUME_MAX_DB ? AUDIO_VOLUME_MAX_DB : v;
+  settings_set_volume(v);
+  if (cJSON_IsTrue(cJSON_GetObjectItem(json, "persist"))) {
+    settings_persist_volume();
+  }
+  cJSON_Delete(json);
+  return volume_get_handler(req);
 }
 
 static esp_err_t favicon_handler(httpd_req_t *req) {
@@ -649,8 +746,11 @@ static esp_err_t fs_upload_handler(httpd_req_t *req) {
     return ESP_FAIL;
   }
 
-  if (req->content_len == 0 || req->content_len > (size_t)(64 * 1024)) {
-    httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Body required (max 64KB)");
+  // Streams to SPIFFS in small chunks; the cap only guards the partition.
+  // The calibration page alone is ~68 KB.
+  if (req->content_len == 0 || req->content_len > (size_t)(256 * 1024)) {
+    httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
+                        "Body required (max 256KB)");
     return ESP_FAIL;
   }
 
@@ -776,6 +876,127 @@ static esp_err_t fs_list_handler(httpd_req_t *req) {
 /*  EQ Page + API  (only when TAS58xx DAC is configured)               */
 /* ================================================================== */
 
+/* Pages and APIs served on both HTTP and HTTPS. */
+static const httpd_uri_t SHARED_URIS[] = {
+    {.uri = "/", .method = HTTP_GET, .handler = root_handler},
+    {.uri = "/favicon.ico", .method = HTTP_GET, .handler = favicon_handler},
+    {.uri = "/arply.crt", .method = HTTP_GET, .handler = cert_handler},
+    {.uri = "/api/wifi/scan", .method = HTTP_GET, .handler = wifi_scan_handler},
+    {.uri = "/api/wifi/config",
+     .method = HTTP_POST,
+     .handler = wifi_config_handler},
+    {.uri = "/api/device/name",
+     .method = HTTP_POST,
+     .handler = device_name_handler},
+    {.uri = "/api/led/brightness",
+     .method = HTTP_GET,
+     .handler = led_brightness_get_handler},
+    {.uri = "/api/led/brightness",
+     .method = HTTP_POST,
+     .handler = led_brightness_post_handler},
+    {.uri = "/api/audio/channel",
+     .method = HTTP_GET,
+     .handler = channel_mode_get_handler},
+    {.uri = "/api/audio/channel",
+     .method = HTTP_POST,
+     .handler = channel_mode_post_handler},
+    {.uri = "/api/audio/chime",
+     .method = HTTP_GET,
+     .handler = chime_get_handler},
+    {.uri = "/api/audio/chime",
+     .method = HTTP_POST,
+     .handler = chime_post_handler},
+    {.uri = "/api/audio/volume",
+     .method = HTTP_GET,
+     .handler = volume_get_handler},
+    {.uri = "/api/audio/volume",
+     .method = HTTP_POST,
+     .handler = volume_post_handler},
+    {.uri = "/api/ota/update",
+     .method = HTTP_POST,
+     .handler = ota_update_handler},
+    {.uri = "/api/system/info",
+     .method = HTTP_GET,
+     .handler = system_info_handler},
+    {.uri = "/api/system/restart",
+     .method = HTTP_POST,
+     .handler = system_restart_handler},
+    {.uri = "/api/fs/upload",
+     .method = HTTP_POST,
+     .handler = fs_upload_handler},
+    {.uri = "/api/fs/delete",
+     .method = HTTP_POST,
+     .handler = fs_delete_handler},
+    {.uri = "/api/fs/list", .method = HTTP_GET, .handler = fs_list_handler},
+};
+
+/* HTTP only: the log viewer's websocket supports one server, the speedtest
+ * should measure Wi-Fi rather than TLS, and captive-portal probes are plain
+ * HTTP. */
+static const httpd_uri_t HTTP_ONLY_URIS[] = {
+    {.uri = "/logs", .method = HTTP_GET, .handler = logs_page_handler},
+    {.uri = "/speedtest",
+     .method = HTTP_GET,
+     .handler = speedtest_page_handler},
+    {.uri = "/api/speedtest/ping",
+     .method = HTTP_GET,
+     .handler = speedtest_ping_handler},
+    {.uri = "/api/speedtest/download",
+     .method = HTTP_GET,
+     .handler = speedtest_download_handler},
+    {.uri = "/api/speedtest/upload",
+     .method = HTTP_POST,
+     .handler = speedtest_upload_handler},
+    {.uri = "/hotspot-detect.html",
+     .method = HTTP_GET,
+     .handler = captive_apple_handler},
+    {.uri = "/library/test/success.html",
+     .method = HTTP_GET,
+     .handler = captive_apple_handler},
+    {.uri = "/generate_204",
+     .method = HTTP_GET,
+     .handler = captive_android_handler},
+    {.uri = "/connecttest.txt",
+     .method = HTTP_GET,
+     .handler = captive_windows_handler},
+};
+
+/* On HTTPS, send the HTTP-only pages back to plain HTTP. */
+static esp_err_t to_http_handler(httpd_req_t *req) {
+  char host[64];
+  if (httpd_req_get_hdr_value_str(req, "Host", host, sizeof(host)) != ESP_OK) {
+    return httpd_resp_send_404(req);
+  }
+  char *colon = strchr(host, ':');
+  if (colon) {
+    *colon = '\0';
+  }
+  char location[sizeof(host) + 7 + CONFIG_HTTPD_MAX_URI_LEN];
+  snprintf(location, sizeof(location), "http://%s%s", host, req->uri);
+  httpd_resp_set_status(req, "302 Found");
+  httpd_resp_set_hdr(req, "Location", location);
+  return httpd_resp_send(req, NULL, 0);
+}
+
+int web_server_register_shared(httpd_handle_t server) {
+  int n = 0;
+  if (server != s_server) {
+    static const httpd_uri_t to_http[] = {
+        {.uri = "/logs", .method = HTTP_GET, .handler = to_http_handler},
+        {.uri = "/speedtest", .method = HTTP_GET, .handler = to_http_handler},
+    };
+    for (size_t i = 0; i < 2; i++) {
+      httpd_register_uri_handler(server, &to_http[i]);
+    }
+  }
+  for (size_t i = 0; i < sizeof(SHARED_URIS) / sizeof(SHARED_URIS[0]); i++) {
+    if (httpd_register_uri_handler(server, &SHARED_URIS[i]) == ESP_OK) {
+      n++;
+    }
+  }
+  return n + web_dsp_register(server);
+}
+
 esp_err_t web_server_start(uint16_t port) {
   if (s_server) {
     ESP_LOGW(TAG, "Web server already running");
@@ -786,8 +1007,7 @@ esp_err_t web_server_start(uint16_t port) {
   config.server_port = port;
   config.max_open_sockets = 3;    // Limit to save lwIP socket slots for AirPlay
   config.lru_purge_enable = true; // Reclaim stale sockets when all are in use
-  config.max_uri_handlers =
-      32 + WEB_DSP_URI_COUNT; // 28 below (captive portal, log stream) + DSP
+  config.max_uri_handlers = WEB_SERVER_SHARED_URI_COUNT + 11; // + HTTP-only
   config.max_resp_headers = 8;
   config.stack_size = 8192;
   config.uri_match_fn = httpd_uri_match_wildcard;
@@ -798,141 +1018,12 @@ esp_err_t web_server_start(uint16_t port) {
     return err;
   }
 
-  // Register handlers
-  httpd_uri_t root_uri = {
-      .uri = "/", .method = HTTP_GET, .handler = root_handler};
-  httpd_register_uri_handler(s_server, &root_uri);
-
-  httpd_uri_t favicon_uri = {
-      .uri = "/favicon.ico", .method = HTTP_GET, .handler = favicon_handler};
-  httpd_register_uri_handler(s_server, &favicon_uri);
-
-  httpd_uri_t logs_uri = {
-      .uri = "/logs", .method = HTTP_GET, .handler = logs_page_handler};
-  httpd_register_uri_handler(s_server, &logs_uri);
-
-  httpd_uri_t speedtest_page_uri = {.uri = "/speedtest",
-                                    .method = HTTP_GET,
-                                    .handler = speedtest_page_handler};
-  httpd_register_uri_handler(s_server, &speedtest_page_uri);
-
-  httpd_uri_t speedtest_ping_uri = {.uri = "/api/speedtest/ping",
-                                    .method = HTTP_GET,
-                                    .handler = speedtest_ping_handler};
-  httpd_register_uri_handler(s_server, &speedtest_ping_uri);
-
-  httpd_uri_t speedtest_dl_uri = {.uri = "/api/speedtest/download",
-                                  .method = HTTP_GET,
-                                  .handler = speedtest_download_handler};
-  httpd_register_uri_handler(s_server, &speedtest_dl_uri);
-
-  httpd_uri_t speedtest_ul_uri = {.uri = "/api/speedtest/upload",
-                                  .method = HTTP_POST,
-                                  .handler = speedtest_upload_handler};
-  httpd_register_uri_handler(s_server, &speedtest_ul_uri);
-
-  httpd_uri_t wifi_scan_uri = {.uri = "/api/wifi/scan",
-                               .method = HTTP_GET,
-                               .handler = wifi_scan_handler};
-  httpd_register_uri_handler(s_server, &wifi_scan_uri);
-
-  httpd_uri_t wifi_config_uri = {.uri = "/api/wifi/config",
-                                 .method = HTTP_POST,
-                                 .handler = wifi_config_handler};
-  httpd_register_uri_handler(s_server, &wifi_config_uri);
-
-  httpd_uri_t device_name_uri = {.uri = "/api/device/name",
-                                 .method = HTTP_POST,
-                                 .handler = device_name_handler};
-  httpd_register_uri_handler(s_server, &device_name_uri);
-
-  httpd_uri_t led_brightness_get_uri = {.uri = "/api/led/brightness",
-                                        .method = HTTP_GET,
-                                        .handler = led_brightness_get_handler};
-  httpd_register_uri_handler(s_server, &led_brightness_get_uri);
-
-  httpd_uri_t led_brightness_post_uri = {.uri = "/api/led/brightness",
-                                         .method = HTTP_POST,
-                                         .handler =
-                                             led_brightness_post_handler};
-  httpd_register_uri_handler(s_server, &led_brightness_post_uri);
-
-  httpd_uri_t channel_mode_get_uri = {.uri = "/api/audio/channel",
-                                      .method = HTTP_GET,
-                                      .handler = channel_mode_get_handler};
-  httpd_register_uri_handler(s_server, &channel_mode_get_uri);
-
-  httpd_uri_t channel_mode_post_uri = {.uri = "/api/audio/channel",
-                                       .method = HTTP_POST,
-                                       .handler = channel_mode_post_handler};
-  httpd_register_uri_handler(s_server, &channel_mode_post_uri);
-
-  httpd_uri_t chime_get_uri = {.uri = "/api/audio/chime",
-                               .method = HTTP_GET,
-                               .handler = chime_get_handler};
-  httpd_register_uri_handler(s_server, &chime_get_uri);
-
-  httpd_uri_t chime_post_uri = {.uri = "/api/audio/chime",
-                                .method = HTTP_POST,
-                                .handler = chime_post_handler};
-  httpd_register_uri_handler(s_server, &chime_post_uri);
-
-  httpd_uri_t ota_uri = {.uri = "/api/ota/update",
-                         .method = HTTP_POST,
-                         .handler = ota_update_handler};
-  httpd_register_uri_handler(s_server, &ota_uri);
-
-  httpd_uri_t system_info_uri = {.uri = "/api/system/info",
-                                 .method = HTTP_GET,
-                                 .handler = system_info_handler};
-  httpd_register_uri_handler(s_server, &system_info_uri);
-
-  httpd_uri_t system_restart_uri = {.uri = "/api/system/restart",
-                                    .method = HTTP_POST,
-                                    .handler = system_restart_handler};
-  httpd_register_uri_handler(s_server, &system_restart_uri);
-
-  // File management API
-  httpd_uri_t fs_upload_uri = {.uri = "/api/fs/upload",
-                               .method = HTTP_POST,
-                               .handler = fs_upload_handler};
-  httpd_register_uri_handler(s_server, &fs_upload_uri);
-
-  httpd_uri_t fs_delete_uri = {.uri = "/api/fs/delete",
-                               .method = HTTP_POST,
-                               .handler = fs_delete_handler};
-  httpd_register_uri_handler(s_server, &fs_delete_uri);
-
-  httpd_uri_t fs_list_uri = {
-      .uri = "/api/fs/list", .method = HTTP_GET, .handler = fs_list_handler};
-  httpd_register_uri_handler(s_server, &fs_list_uri);
-
-  // Captive portal detection endpoints
-  // Apple iOS/macOS
-  httpd_uri_t apple_captive1 = {.uri = "/hotspot-detect.html",
-                                .method = HTTP_GET,
-                                .handler = captive_apple_handler};
-  httpd_register_uri_handler(s_server, &apple_captive1);
-
-  httpd_uri_t apple_captive2 = {.uri = "/library/test/success.html",
-                                .method = HTTP_GET,
-                                .handler = captive_apple_handler};
-  httpd_register_uri_handler(s_server, &apple_captive2);
-
-  // Android
-  httpd_uri_t android_captive = {.uri = "/generate_204",
-                                 .method = HTTP_GET,
-                                 .handler = captive_android_handler};
-  httpd_register_uri_handler(s_server, &android_captive);
-
-  // Windows
-  httpd_uri_t windows_captive = {.uri = "/connecttest.txt",
-                                 .method = HTTP_GET,
-                                 .handler = captive_windows_handler};
-  httpd_register_uri_handler(s_server, &windows_captive);
-
+  web_server_register_shared(s_server);
+  for (size_t i = 0; i < sizeof(HTTP_ONLY_URIS) / sizeof(HTTP_ONLY_URIS[0]);
+       i++) {
+    httpd_register_uri_handler(s_server, &HTTP_ONLY_URIS[i]);
+  }
   log_stream_register(s_server);
-  web_dsp_register(s_server);
 
   // Must be registered last: with wildcard matching enabled, this only
   // catches requests no more specific handler above already claimed.

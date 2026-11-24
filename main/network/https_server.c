@@ -88,9 +88,9 @@ static esp_err_t start(void) {
 
   httpd_ssl_config_t conf = HTTPD_SSL_CONFIG_DEFAULT();
   conf.httpd.ctrl_port = HTTPS_CTRL_PORT;
-  conf.httpd.max_open_sockets = 2;
+  conf.httpd.max_open_sockets = 3; // a page load opens a few at once
   conf.httpd.lru_purge_enable = true;
-  conf.httpd.max_uri_handlers = 2 + WEB_DSP_URI_COUNT;
+  conf.httpd.max_uri_handlers = 2 + WEB_SERVER_SHARED_URI_COUNT;
   conf.httpd.stack_size = 10240; // TLS handshake needs more than plain HTTP
   // mbedTLS wants the PEM length including the terminating NUL.
   conf.servercert = (const uint8_t *)cert_pem;
@@ -117,7 +117,7 @@ static esp_err_t start(void) {
                                        .handler = mictest_log_handler};
   httpd_register_uri_handler(s_server, &mictest_log_uri);
 
-  web_dsp_register(s_server);
+  web_server_register_shared(s_server);
 
   log_heap("after HTTPS start");
   ESP_LOGI(TAG, "HTTPS server started on port 443");

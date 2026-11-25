@@ -432,6 +432,21 @@ size_t audio_timing_read(audio_timing_t *timing, audio_buffer_t *buffer,
                "unsynchronised until the next pause/resume (buffered=%d)",
                buffered_frames);
     }
+    // AirPlay 2 places the anchor on the PTP clock. The first session after
+    // boot can bring its anchor before PTP has locked (measured: lead
+    // 1889510426 ms, then err -22 ms for ~30 s once it locked). Wait for the
+    // lock as for the anchor; the sender buffers ~7 s ahead.
+    if (timing->anchor_valid && audio_stream_uses_buffer(stream->type) &&
+        !ptp_clock_is_locked()) {
+      int64_t now_us = esp_timer_get_time();
+      if (timing->ready_time_us == 0) {
+        timing->ready_time_us = now_us;
+      }
+      if (now_us - timing->ready_time_us < 2000000) {
+        return 0;
+      }
+      ESP_LOGW(TAG, "Starting playout without PTP lock after 2 s");
+    }
   }
 
   // Determine sync mode: PTP (AirPlay 2), NTP (AirPlay 1), or local fallback
@@ -642,6 +657,11 @@ size_t audio_timing_read(audio_timing_t *timing, audio_buffer_t *buffer,
       }
     }
 
+    // A (re)start whose frame is already late (but inside the threshold)
+    // starts at the sample due now, not at the frame start: played whole,
+    // it left the session up to the threshold late (measured after a seek:
+    // err -22 ms), which the position servo needs ~30 s to take out.
+    int64_t start_late_us = 0;
     if (timing->anchor_valid && format->sample_rate > 0) {
       int64_t early_us = 0;
       if (compute_early_us(timing, format, hdr->rtp_timestamp, sync_mode,
@@ -767,8 +787,17 @@ size_t audio_timing_read(audio_timing_t *timing, audio_buffer_t *buffer,
             audio_buffer_return(buffer, item);
           }
           continue;
+        } else if (early_us < 0 && !continuous &&
+                   (!timing->playout_started || from_pending || dropped_late ||
+                    gap)) {
+          start_late_us = -early_us;
         }
       }
+    }
+    size_t skip =
+        (size_t)((start_late_us * (int64_t)format->sample_rate) / 1000000LL);
+    if (skip >= frame_samples) {
+      skip = frame_samples > 0 ? frame_samples - 1 : 0;
     }
 
     // Frame is on time (or anchor-invalid) — reset counter.
@@ -786,6 +815,10 @@ size_t audio_timing_read(audio_timing_t *timing, audio_buffer_t *buffer,
       int64_t on_time_err_us = 0;
       if (compute_early_us(timing, format, played_rtp_timestamp, sync_mode,
                            &on_time_err_us)) {
+        if (skip > 0) { // measured at the first sample actually played
+          on_time_err_us +=
+              ((int64_t)skip * 1000000LL) / (int64_t)format->sample_rate;
+        }
         //   err      — distance from this frame's scheduled play time
         //              (anchor + stream playout latency).  Should sit near 0.
         //   buffered — frames still queued behind this one.
@@ -862,8 +895,10 @@ size_t audio_timing_read(audio_timing_t *timing, audio_buffer_t *buffer,
     // Stretch: copy the frame then repeat its final sample once.  The
     // stretch stays within the caller's capacity (`samples` frames, which
     // is FRAME_SAMPLES + 1 in every output backend).
-    size_t out_samples = frame_samples;
-    if (sample_adjust < 0 && out_samples > 1) {
+    size_t out_samples = frame_samples - skip;
+    if (skip > 0) {
+      // the start trim replaces this frame's servo trim
+    } else if (sample_adjust < 0 && out_samples > 1) {
       out_samples--;
     } else if (sample_adjust > 0 && out_samples + 1 <= samples) {
       out_samples++;
@@ -876,7 +911,13 @@ size_t audio_timing_read(audio_timing_t *timing, audio_buffer_t *buffer,
     // length-validated above against expected_bytes.
     size_t out_ch =
         channels < AUDIO_OUT_CHANNELS ? channels : AUDIO_OUT_CHANNELS;
-    if (out_samples == frame_samples) {
+    if (skip > 0) {
+      for (size_t i = skip; i < frame_samples; i++) {
+        for (size_t ch = 0; ch < out_ch; ch++) {
+          out[(i - skip) * out_ch + ch] = pcm[i * channels + ch];
+        }
+      }
+    } else if (out_samples == frame_samples) {
       if (out_ch == channels) {
         memcpy(out, pcm, frame_samples * out_ch * sizeof(int16_t));
       } else {
@@ -933,13 +974,15 @@ size_t audio_timing_read(audio_timing_t *timing, audio_buffer_t *buffer,
       timing->playout_started = true;
       bool was_quick = timing->quick_start;
       timing->quick_start = false;
-      ESP_LOGI(TAG, "Playout started%s: rtp=%" PRIu32,
-               was_quick ? " (quick_start)" : "", played_rtp_timestamp);
+      ESP_LOGI(TAG, "Playout started%s: rtp=%" PRIu32 " late_trim=%u",
+               was_quick ? " (quick_start)" : "", played_rtp_timestamp,
+               (unsigned)skip);
     }
 
     if (timing->late_drop_active) {
-      ESP_LOGW(TAG, "Late-frame drain complete: dropped=%" PRIu32,
-               timing->late_drop_count);
+      ESP_LOGW(TAG,
+               "Late-frame drain complete: dropped=%" PRIu32 " late_trim=%u",
+               timing->late_drop_count, (unsigned)skip);
       timing->late_drop_count = 0;
       timing->late_drop_active = false;
     }

@@ -219,7 +219,8 @@ select{
 
 <div class='card'><h2>Room &amp; other arply devices</h2>
 <p class='sub'>Devices in the same room belong together. One arply also answers as <b>arply.local</b>.</p>
-<div class='form-group'><label for='fl-room'>Room</label><input type='text' id='fl-room' maxlength='32' placeholder='Living room'></div>
+<div class='form-group'><label for='fl-room-sel'>Room</label><select id='fl-room-sel' onchange='roomSel()'><option value=''>No room</option></select>
+<input type='text' id='fl-room' maxlength='32' placeholder='Name of the new room' aria-label='Name of the new room' style='display:none;margin-top:8px'></div>
 <div class='form-group'><label for='fl-role'>Role</label><select id='fl-role'><option value='main'>Speaker</option><option value='bass'>Subwoofer</option></select></div>
 <button class='btn btn-primary' onclick='saveFleet()'>Save Room</button>
 <div id='fleet-msg'></div>
@@ -330,7 +331,12 @@ async function saveChime(){
 function esc(t){return String(t).replace(/[&<>"']/g,function(c){return'&#'+c.charCodeAt(0)+';';});}
 async function loadFleet(){
   try{var r=await fetch('/api/fleet');var d=await r.json();
-    var room=document.getElementById('fl-room');if(document.activeElement!==room){room.value=d.self.room;}
+    // rooms other arply devices already use, so a room is named only once
+    var sel=document.getElementById('fl-room-sel'),inp=document.getElementById('fl-room');
+    if(document.activeElement!==sel&&document.activeElement!==inp&&sel.value!=='__new'){
+      var rooms=[d.self.room].concat(d.peers.map(function(p){return p.room;})).filter(function(r,i,a){return r&&a.indexOf(r)===i;}).sort();
+      sel.innerHTML='<option value="">No room</option>'+rooms.map(function(r){return '<option>'+esc(r)+'</option>';}).join('')+'<option value="__new">New room…</option>';
+      sel.value=d.self.room;roomSel();}
     document.getElementById('fl-role').value=d.self.role;
     var hub=d.hub===d.self.id?d.self:d.peers.find(function(p){return p.id===d.hub;});
     document.getElementById('fl-hub').innerHTML=d.is_hub?'This device is <b>arply.local</b>.':
@@ -343,10 +349,16 @@ async function loadFleet(){
     document.getElementById('fl-peers').innerHTML=rows.length?'<label>Other arply devices</label>'+rows.join(''):
       '<p class="sub" style="margin:0">No other arply found on this network yet.</p>';}
   catch(e){console.warn('Could not load fleet',e);}}
+function roomSel(){var n=document.getElementById('fl-room-sel').value==='__new',inp=document.getElementById('fl-room');
+  inp.style.display=n?'':'none';if(n){inp.value='';inp.focus();}}
 async function saveFleet(){
-  var body={room:document.getElementById('fl-room').value.trim(),role:document.getElementById('fl-role').value};
+  var sel=document.getElementById('fl-room-sel'),room=sel.value==='__new'?document.getElementById('fl-room').value.trim():sel.value;
+  if(sel.value==='__new'&&!room){msg('fleet-msg','Enter a name for the new room','err');return;}
+  var body={room:room,role:document.getElementById('fl-role').value};
   try{var r=await fetch('/api/fleet/self',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-    if(r.ok){msg('fleet-msg','Saved!','ok');loadFleet();}else{msg('fleet-msg',await r.text(),'err');}}
+    if(r.ok){msg('fleet-msg','Saved!','ok');var inp=document.getElementById('fl-room');inp.blur();
+      if(room&&![].some.call(sel.options,function(o){return o.value===room;})){sel.add(new Option(room,room),sel.options.length-1);}
+      sel.value=room;roomSel();loadFleet();}else{msg('fleet-msg',await r.text(),'err');}}
   catch(e){msg('fleet-msg','Error','err');}}
 async function makeHub(){
   try{var r=await fetch('/api/fleet/self',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({hub:true})});

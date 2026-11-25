@@ -61,9 +61,15 @@ not start before the mock is in `docs/web_dsp/`.
     **Open research question first:** arrival times need a common time
     base between devices (NTP is too coarse; PTP only runs during AirPlay
     sessions). Spike before planning.
-  - **F7 Fleet CA:** one CA for all devices so the phone trusts all of them
-    with one profile. Open question: where the CA key lives and how it
-    survives the loss of that device.
+  - ~~**F7 Fleet CA:**~~ **dropped (2026-11-25, Till).** One CA for all
+    devices would spare one certificate profile per device, but a CA the
+    phone trusts is trusted for every website, and its key would sit on
+    devices that take firmware updates over Wi-Fi without any check, so
+    anything on the network could read it out. Name constraints
+    (`.local` only) would limit that, but iOS enforcing them for
+    user-installed roots is not documented. Too much risk for little
+    benefit; per-device certificates stay. Revisit only after signed
+    OTA updates.
 
 ---
 

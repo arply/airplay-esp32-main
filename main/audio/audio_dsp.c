@@ -63,9 +63,13 @@ static float s_room_hp; // a subwoofer in this room plays below this, Hz
 
 #define NVS_KEY_SAVED_AT "dsp_saved_at"
 
+/* Nothing calibrated: no filters, no bass block, and the subwoofer settings
+ * (set by a joint measurement even when it finds no room mode to cut) at
+ * their defaults. */
 static bool is_flat(const audio_dsp_profile_t *p) {
   return p->count[AUDIO_DSP_SET_L] == 0 && p->count[AUDIO_DSP_SET_R] == 0 &&
-         p->count[AUDIO_DSP_SET_M] == 0 && !p->bass.on;
+         p->count[AUDIO_DSP_SET_M] == 0 && !p->bass.on &&
+         p->sub.gain_db == 0.0f && p->sub.delay_ms == 0.0f && !p->sub.invert;
 }
 
 uint32_t audio_dsp_calibrated_at(void) {

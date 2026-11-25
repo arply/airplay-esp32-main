@@ -32,8 +32,12 @@ CONFIG_MDNS_MEMORY_ALLOC_SPIRAM=y
 # when internal DRAM is tight (audio task stacks pre-allocated there).
 CONFIG_MBEDTLS_DEFAULT_MEM_ALLOC=y
 
-# LWIP - increase socket limits for AirPlay
-CONFIG_LWIP_MAX_SOCKETS=16
+# LWIP sockets. AirPlay needs about 9 (RTSP, event, data, control, PTP),
+# HTTP + HTTPS up to 2 x 4, plus mDNS, DNS, the fleet clock (UDP 7123) and
+# short-lived clients. 16 ran out (2026-11-25: "Event port accept error:
+# 23" = ENFILE, AirPlay could not start while the log and test connections
+# were open).
+CONFIG_LWIP_MAX_SOCKETS=24
 
 # Enable SO_RCVBUF so the buffered-audio socket can use a small receive
 # buffer.  We do our own jitter buffering in audio_buffer; the kernel

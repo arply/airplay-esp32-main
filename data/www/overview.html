@@ -17,6 +17,7 @@
 --logo:url(data:image/png;base64,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);
 --errbg:light-dark(#fdecea,#3a1d1a);--errtx:light-dark(#a1281c,#ff8a80);--ok:light-dark(#1f7a4d,#5fd39a);--oktx:light-dark(#1a6a43,#5fd39a)}
 *{box-sizing:border-box;min-width:0}
+[hidden]{display:none!important} /* .panel/.fw/.row set display, which would beat the attribute */
 body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 Inter,system-ui,-apple-system,sans-serif}
 a{color:var(--acc)}
 .mono{font:500 12.5px ui-monospace,SFMono-Regular,Menlo,monospace}
@@ -170,12 +171,13 @@ function roomCard(name, devs, hubId) {
     ? `<a class="btn pri" href="${url(online[0])}dsp">Calibrate</a>`
     : `<p class="note">Calibrate each speaker from its own page; calibrating the whole room in one go comes later.</p>`) +
     `<button class="btn" data-act="rename" data-room="${esc(name)}">Rename room</button>`;
-  const vol = online.length ? `<label class="vol">Volume<input type="range" min="-30" max="0" step="0.5" data-room="${esc(name)}"><output>–</output></label>` : '';
+  const v = VOL[name], vol = online.length ? `<label class="vol">Volume<input type="range" min="-30" max="0" step="0.5" data-room="${esc(name)}"${v == null ? '' : ` value="${v}"`}><output>${v == null ? '–' : pct(v)}</output></label>` : '';
   return `<section class="panel room"><div class="head"><span class="eyebrow">Room</span><h2>${esc(name)}</h2><p class="sub">${esc(summary(devs))}</p>` +
     `<div class="chips">${chips.join('')}</div>${vol}</div><ul>${devs.map(d => row(d, hubId, devs.find(x => x.role === 'bass'))).join('')}</ul><div class="acts">${acts}</div></section>`;
 }
 
 let F = null, byId = {}, quietUntil = 0;
+const VOL = {}; // last known volume per room
 const pct = db => Math.round((db + 30) / 30 * 100) + ' %';
 const say = t => { $('#msg').textContent = t; };
 const soon = () => { quietUntil = 0; setTimeout(load, 1500); setTimeout(load, 6000); };
@@ -218,7 +220,7 @@ async function load() {
   $('#hubsel').innerHTML = others.map(d => `<option value="${esc(d.id)}">${esc(d.name)}</option>`).join('');
   for (const s of document.querySelectorAll('input[type=range][data-room]')) {
     const d = roomDevs(s.dataset.room).find(x => x.online);
-    if (d) call(d, 'volume').then(v => { if (Date.now() >= quietUntil) { s.value = v.db; s.nextElementSibling.textContent = pct(v.db); } }).catch(() => {});
+    if (d) call(d, 'volume').then(v => { VOL[s.dataset.room] = v.db; if (Date.now() >= quietUntil) { s.value = v.db; s.nextElementSibling.textContent = pct(v.db); } }).catch(() => {});
   }
   $('#n-hub').innerHTML = hub ? esc(hub.name) + (stand ? '<br><span>Stand-in: ' + esc(stand.name) + '</span>' : '') : '–';
   const off = devs.filter(d => !d.online).length;
@@ -234,12 +236,14 @@ const older = (a, b) => { const x = String(a).split('.').map(Number), y = String
 function renderFw() {
   const p = $('#fw'), devs = Object.values(byId);
   if (UPD) { p.hidden = false; p.innerHTML = `<div><span class="eyebrow">Update</span><strong>${esc(UPD.title)}</strong><span>${esc(UPD.text)}</span></div>`; return; }
-  const todo = LATEST ? devs.filter(d => d.online && older(d.fw, LATEST)) : [], fws = [...new Set(devs.map(d => d.fw))];
-  p.hidden = !todo.length && fws.length < 2;
+  const todo = LATEST ? devs.filter(d => d.online && older(d.fw, LATEST)) : [], fws = [...new Set(devs.map(d => d.fw).filter(Boolean))];
+  p.hidden = !devs.length;
   if (todo.length) p.innerHTML = `<div><span class="eyebrow">Update</span><strong>Firmware ${esc(LATEST)} is here.</strong>` +
     `<span>For ${todo.length} of ${plural(devs.length, 'device')}, one at a time, hub last.</span></div><button class="btn pri" data-act="update">Update all</button>`;
   else if (fws.length > 1) p.innerHTML = '<div><span class="eyebrow">Firmware</span><strong>' + fws.length + ' firmware versions in use.</strong><span>' +
     fws.map(v => esc(v) + ': ' + devs.filter(d => d.fw === v).map(d => esc(d.name)).join(', ')).join(' · ') + '</span></div>';
+  else p.innerHTML = `<div><span class="eyebrow">Firmware</span><strong>${esc(fws[0] || '–')}</strong>` +
+    `<span>${LATEST ? (devs.length > 1 ? 'All devices are up to date.' : 'Up to date.') : 'Checking arply.de for updates …'}</span></div>`;
 }
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 // one device: start, follow its download, wait until it is back with the new version
@@ -267,7 +271,7 @@ async function setRoomVol(room, db, persist) {
 let volT = null;
 document.addEventListener('input', e => {
   const s = e.target.closest('input[type=range][data-room]'); if (!s) return;
-  quietUntil = Date.now() + 4000; s.nextElementSibling.textContent = pct(+s.value);
+  quietUntil = Date.now() + 4000; s.nextElementSibling.textContent = pct(+s.value); VOL[s.dataset.room] = +s.value;
   clearTimeout(volT); volT = setTimeout(() => setRoomVol(s.dataset.room, +s.value, false), 120);
 });
 document.addEventListener('change', e => {

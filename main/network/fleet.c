@@ -846,6 +846,28 @@ static esp_err_t self_post_handler(httpd_req_t *req) {
         "Expected {room: string (max 32), role: main|bass, hub: true}");
   }
   xSemaphoreTake(s_lock, portMAX_DELAY);
+  // One subwoofer per room; a known one counts while it is offline too,
+  // or the room has two once it is back.
+  const char *new_room = room ? room->valuestring : s_room;
+  const bool new_bass =
+      role ? strcmp(role->valuestring, "bass") == 0 : s_role == FLEET_ROLE_BASS;
+  const fleet_peer_t *other = NULL;
+  for (int i = 0; i < s_peer_count && new_bass && new_room[0]; i++) {
+    if (s_peers[i].role == FLEET_ROLE_BASS &&
+        strcasecmp(s_peers[i].room, new_room) == 0) {
+      other = &s_peers[i];
+    }
+  }
+  if (other) {
+    char msg[FLEET_ROOM_MAX + 64 + 48];
+    snprintf(msg, sizeof(msg), "The room \"%s\" already has a subwoofer: %s",
+             new_room, other->name);
+    xSemaphoreGive(s_lock);
+    cJSON_Delete(json);
+    httpd_resp_set_status(req, "409 Conflict");
+    httpd_resp_set_type(req, "text/plain");
+    return httpd_resp_sendstr(req, msg);
+  }
   if (room) {
     strlcpy(s_room, room->valuestring, sizeof(s_room));
   }

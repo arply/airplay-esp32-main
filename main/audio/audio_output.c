@@ -185,10 +185,36 @@ static void apply_channel_mode(int16_t *buf, size_t frames) {
   }
 }
 
+/* Wall time spent in the output processing against the audio it covers
+ * (read and reset by audio_output_dsp_load()). */
+static int64_t s_load_us, s_load_audio_us;
+static int32_t s_load_max_us;
+static uint32_t s_load_max_frames;
+
 bool audio_output_process(int16_t *buf, size_t frames) {
+  const int64_t t0 = esp_timer_get_time();
   dsp_set_output_gain((float)audio_output_volume_q15() / 32768.0f);
   apply_channel_mode(buf, frames);
-  return dsp_process(buf, frames);
+  const bool done = dsp_process(buf, frames);
+  const int32_t dt = (int32_t)(esp_timer_get_time() - t0);
+  s_load_us += dt;
+  s_load_audio_us += (int64_t)frames * 1000000 / OUTPUT_RATE;
+  if (dt > s_load_max_us) {
+    s_load_max_us = dt;
+    s_load_max_frames = (uint32_t)frames;
+  }
+  return done;
+}
+
+void audio_output_dsp_load(float *avg_pct, int32_t *max_us,
+                           uint32_t *max_frames) {
+  *avg_pct = s_load_audio_us
+                 ? 100.0f * (float)s_load_us / (float)s_load_audio_us
+                 : 0.0f;
+  *max_us = s_load_max_us;
+  *max_frames = s_load_max_frames;
+  s_load_us = s_load_audio_us = 0; // racy against the audio task; stats only
+  s_load_max_us = 0;
 }
 
 /* ---- Debug probe ------------------------------------------------------

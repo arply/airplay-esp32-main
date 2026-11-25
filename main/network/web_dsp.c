@@ -221,7 +221,7 @@ static const char *parse_profile(const cJSON *json, audio_dsp_profile_t *p,
 
 /* Read and parse a request body on top of the saved profile. */
 static esp_err_t read_request(httpd_req_t *req, audio_dsp_profile_t *p,
-                              audio_channel_mode_t *mode) {
+                              audio_channel_mode_t *mode, uint32_t *saved_at) {
   char *body = web_server_recv_body(req, DSP_BODY_MAX);
   if (!body) {
     send_error(req, "400 Bad Request", "body missing or larger than 8 KB");
@@ -236,6 +236,10 @@ static esp_err_t read_request(httpd_req_t *req, audio_dsp_profile_t *p,
   audio_dsp_get_saved(p);
   *mode = audio_output_get_channel_mode();
   const char *err = parse_profile(json, p, mode);
+  const cJSON *at = cJSON_GetObjectItemCaseSensitive(json, "saved_at");
+  if (saved_at && cJSON_IsNumber(at) && at->valuedouble > 0) {
+    *saved_at = (uint32_t)at->valuedouble;
+  }
   cJSON_Delete(json);
   if (err) {
     send_error(req, "400 Bad Request", err);
@@ -263,10 +267,11 @@ static esp_err_t dsp_get_handler(httpd_req_t *req) {
 static esp_err_t dsp_post_handler(httpd_req_t *req) {
   audio_dsp_profile_t p;
   audio_channel_mode_t mode;
-  if (read_request(req, &p, &mode) != ESP_OK) {
+  uint32_t saved_at = 0;
+  if (read_request(req, &p, &mode, &saved_at) != ESP_OK) {
     return ESP_OK; // error already sent
   }
-  esp_err_t err = audio_dsp_save(&p, mode);
+  esp_err_t err = audio_dsp_save(&p, mode, saved_at);
   if (err != ESP_OK) {
     return send_error(req, "500 Internal Server Error", "saving failed");
   }
@@ -281,7 +286,7 @@ static esp_err_t dsp_preview_handler(httpd_req_t *req) {
   audio_dsp_profile_t p;
   int64_t now = esp_timer_get_time();
   audio_channel_mode_t mode;
-  if (read_request(req, &p, &mode) != ESP_OK) {
+  if (read_request(req, &p, &mode, NULL) != ESP_OK) {
     return ESP_OK;
   }
   cJSON *json = cJSON_CreateObject();

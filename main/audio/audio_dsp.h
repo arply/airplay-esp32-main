@@ -46,9 +46,21 @@ void audio_dsp_profile_clamp(audio_dsp_profile_t *p);
 /** The saved profile (not a running preview). */
 void audio_dsp_get_saved(audio_dsp_profile_t *p);
 
-/** Apply and persist, and switch to @p mode (persisted too). */
+/**
+ * Apply and persist, and switch to @p mode (persisted too). @p saved_at is
+ * the Unix time from the client (the device has no clock), 0 if unknown.
+ */
 esp_err_t audio_dsp_save(const audio_dsp_profile_t *p,
-                         audio_channel_mode_t mode);
+                         audio_channel_mode_t mode, uint32_t saved_at);
+
+/**
+ * When the saved profile was made: Unix time, 1 if it is not flat but the
+ * time is unknown, 0 if it is flat (nothing calibrated).
+ */
+uint32_t audio_dsp_calibrated_at(void);
+
+/** Bass enhancement on in the saved profile. */
+bool audio_dsp_saved_pbe(void);
 
 /** Apply without persisting; @p mode is applied but not persisted either. */
 void audio_dsp_preview(const audio_dsp_profile_t *p, audio_channel_mode_t mode);

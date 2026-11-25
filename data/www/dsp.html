@@ -992,7 +992,7 @@ function makeSample(c, kind) {
   $('#b-send').onclick = async () => {
     $('#sendmsg').textContent = 'Saving …';
     clearTimeout(pvTimer);
-    try { await api('/api/dsp', payload()); previewing = false; showSaved(); }
+    try { await api('/api/dsp', { ...payload(), saved_at: Math.floor(Date.now() / 1000) }); previewing = false; showSaved(); }
     catch (e) { $('#sendmsg').textContent = 'Saving failed: ' + e.message; }
   };
   $('#b-revert').onclick = async () => {

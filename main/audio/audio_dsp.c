@@ -3,6 +3,7 @@
 #include <string.h>
 
 #include "esp_log.h"
+#include "nvs.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "settings.h"
@@ -23,6 +24,25 @@ static SemaphoreHandle_t s_lock;
 static audio_dsp_profile_t s_saved;
 static audio_dsp_profile_t s_running; // == s_saved unless previewing
 static bool s_previewing;
+static uint32_t s_saved_at;
+
+#define NVS_KEY_SAVED_AT "dsp_saved_at"
+
+static bool is_flat(const audio_dsp_profile_t *p) {
+  return p->count[AUDIO_DSP_SET_L] == 0 && p->count[AUDIO_DSP_SET_R] == 0 &&
+         p->count[AUDIO_DSP_SET_M] == 0 && !p->pbe.on;
+}
+
+uint32_t audio_dsp_calibrated_at(void) {
+  if (!s_lock || is_flat(&s_saved)) {
+    return 0;
+  }
+  return s_saved_at ? s_saved_at : 1;
+}
+
+bool audio_dsp_saved_pbe(void) {
+  return s_saved.pbe.on;
+}
 
 void audio_dsp_profile_flat(audio_dsp_profile_t *p) {
   memset(p, 0, sizeof(*p));
@@ -98,6 +118,11 @@ void audio_dsp_init(uint32_t sample_rate) {
   } else {
     ESP_LOGI(TAG, "No stored DSP profile, starting flat");
   }
+  nvs_handle_t nvs;
+  if (nvs_open("airplay", NVS_READONLY, &nvs) == ESP_OK) {
+    nvs_get_u32(nvs, NVS_KEY_SAVED_AT, &s_saved_at);
+    nvs_close(nvs);
+  }
   s_running = s_saved;
   s_previewing = false;
   resolve(&s_running, audio_output_get_channel_mode());
@@ -114,7 +139,7 @@ bool audio_dsp_previewing(void) {
 }
 
 esp_err_t audio_dsp_save(const audio_dsp_profile_t *p,
-                         audio_channel_mode_t mode) {
+                         audio_channel_mode_t mode, uint32_t saved_at) {
   static stored_profile_t stored;
   xSemaphoreTake(s_lock, portMAX_DELAY);
   s_saved = *p;
@@ -125,6 +150,13 @@ esp_err_t audio_dsp_save(const audio_dsp_profile_t *p,
   stored.size = sizeof(stored.profile);
   stored.profile = s_saved;
   esp_err_t err = settings_set_dsp_blob(&stored, sizeof(stored));
+  s_saved_at = saved_at;
+  nvs_handle_t nvs;
+  if (nvs_open("airplay", NVS_READWRITE, &nvs) == ESP_OK) {
+    nvs_set_u32(nvs, NVS_KEY_SAVED_AT, s_saved_at);
+    nvs_commit(nvs);
+    nvs_close(nvs);
+  }
   xSemaphoreGive(s_lock);
 
   // Outside the lock: this calls back into audio_dsp_on_channel_mode(),

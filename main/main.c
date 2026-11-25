@@ -24,6 +24,8 @@
 
 #include "iot_board.h"
 #include "esp_heap_caps.h"
+#include "esp_ota_ops.h"
+#include "esp_timer.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -194,7 +196,15 @@ void app_main(void) {
 
   buttons_init();
 
+  // An image installed over the air boots "pending verify": if it crashes
+  // before this point, the bootloader goes back to the previous firmware.
+  // A minute of uptime counts as healthy.
+  bool confirmed = false;
   while (1) {
     vTaskDelay(pdMS_TO_TICKS(10000));
+    if (!confirmed && esp_timer_get_time() > 60LL * 1000 * 1000) {
+      esp_ota_mark_app_valid_cancel_rollback();
+      confirmed = true;
+    }
   }
 }

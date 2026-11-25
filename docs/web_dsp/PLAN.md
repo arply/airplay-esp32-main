@@ -616,6 +616,39 @@ board: bass enhancement alone 509 µs/frame, 6 + 6 filters + it 737 µs
 (9.2 %), worst case 10 + 10 + it 886 µs (11 %, old 809 µs). Host tests:
 50 Hz −12.4, 100 Hz −13.7, 150 Hz −13.3, 200 Hz −17.0 dB.
 
+**Bass block (2026-11-25, after "sounds like a tin can, better without"):**
+cutting all real bass below the cutoff and replacing it by harmonics is
+only right for drivers that play nothing there. Now one block of four parts
+(`dsp_bass_t`: `f_low`, `boost`, `harmonics`), defaults for very small
+drivers (f_low 120 Hz, +6 dB, harmonics 30 %):
+- **Extension:** RBJ low shelf at `f_low`, up to +12 dB, coefficients
+  recomputed per chunk from the dynamic gain (S = 1: only two square roots
+  depend on it). A parallel x + (g−1)·LP(x) form dipped −1.5 dB above
+  `f_low`; the shelf rises +0.7 dB at 200 Hz instead.
+- **Dynamics:** the boost falls at once when the boosted bass band at the
+  DAC would exceed −18 dBFS peak, comes back over 0.3 s.
+- **Loudness:** +0.3 dB per dB of volume cut, at most +6 dB.
+- **Subsonic + harmonics:** high-pass at `f_low`/2; what lies below it goes
+  through the Chebyshev harmonics (gain ×0.5 while the boost is free, up to
+  ×2 while the dynamics hold it back).
+- **Volume moved into the DSP** (at the input of the float chain) while it
+  is active: EQ, bass and limiter now work at the level that reaches the
+  DAC, so a boost at low volume has headroom instead of hitting the limiter.
+  `dsp_process()` returns whether it applied the volume; flat/bypass keeps
+  the old int16 path, bit-identical. The USB host mute is honoured either
+  way.
+- Profiles are version 2; version 1 (`pbe`) is converted on load
+  (`f_low` = 2 × old cutoff). `/api/dsp` speaks `bass`, still accepts `pbe`.
+- Host tests: quiet 80 Hz +3.8 dB, loud held back to ≈ 0 dB, at −26 dB
+  volume +8.5 dB, no dip above the limit.
+- CPU (board, silence frames): bass alone 639 µs, 6+6 filters + bass
+  866 µs (10.8 %), 10+10 + bass 1016 µs (12.7 %) — over the 10 % budget.
+  Found on the way: `fmaxf`/`fminf`/`powf` are library calls here; a
+  per-sample `fmaxf` cost ~160 µs/frame.
+- **Measurement** (same day): the level check now rates the margin over the
+  room noise (20 dB is enough) instead of absolute dBFS, which asked for
+  painful volume with an AGC-free phone microphone.
+
 **Detail:** the prototype's WebAudio `Q` of `20·log10(1/√2)` dB *is* linear
 Q = 1/√2 (WebAudio's LP/HP Q is in dB), so all sections are plain
 Butterworth biquads. The prototype's `oversample='2x'` on `|x|` is not

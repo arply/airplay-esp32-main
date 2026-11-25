@@ -132,7 +132,7 @@ function summary(devs) {
   const ch = devs.filter(d => d.role !== 'bass').map(d => d.ch), bass = devs.some(d => d.role === 'bass');
   let s = ch.includes('left') && ch.includes('right') ? 'Stereo pair' : [...new Set(ch.map(c => CH[c] || 'Stereo'))].join(' + ') || 'Subwoofer';
   if (bass && ch.length) s += ' with bass';
-  if (devs.some(d => d.pbe)) s += ' · bass enhancement on';
+  if (devs.some(d => d.bass)) s += ' · bass boost on';
   return s;
 }
 function roomCard(name, devs, hubId) {

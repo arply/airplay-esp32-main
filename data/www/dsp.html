@@ -139,11 +139,12 @@ footer{margin-top:40px;padding:24px 0 0;border-top:1px solid var(--line);display
 
     <section class="panel">
       <span class="eyebrow">Optional</span>
-      <h2>Bass enhancement</h2>
-      <p class="small">Psychoacoustic: bass below the cutoff that the speaker can’t reproduce is replaced by harmonics – your ear fills in the fundamental. Useful for small speakers, not with a subwoofer.</p>
-      <label class="chk"><input type="checkbox" id="o-pbe"> Bass enhancement on</label>
-      <label class="f">Cutoff<input type="range" id="o-pbefc" min="60" max="150" step="5"><output id="v-pbefc"></output></label>
-      <label class="f">Intensity<input type="range" id="o-pbeamt" min="0" max="100" step="5"><output id="v-pbeamt"></output></label>
+      <h2>Bass</h2>
+      <p class="small">For small speakers. Real bass down to the speaker’s limit, held back automatically when it would get too loud for the driver, a little more at low volume. Below half the limit the driver only moves without making sound: that part is cut and replaced by harmonics, from which your ear fills in the note.</p>
+      <label class="chk"><input type="checkbox" id="o-pbe"> Bass on</label>
+      <label class="f">Speaker limit<input type="range" id="o-pbefc" min="40" max="200" step="5"><output id="v-pbefc"></output></label>
+      <label class="f">Bass boost<input type="range" id="o-pbeboost" min="0" max="100" step="5"><output id="v-pbeboost"></output></label>
+      <label class="f">Harmonics<input type="range" id="o-pbeamt" min="0" max="100" step="5"><output id="v-pbeamt"></output></label>
       <div class="row"><button id="b-pbesug">Suggest from measurement</button></div>
       <p class="small" id="pbemsg"></p>
     </section>
@@ -558,7 +559,7 @@ function makeSample(c, kind) {
     left: 'The left source channel plays on both outputs – one filter set, measured on both outputs together.',
     right: 'The right source channel plays on both outputs – one filter set, measured on both outputs together.'
   };
-  const DEF_OPT = { fmin: 40, fmax: 500, tilt: 2, detail: 1, maxN: 6, maxCut: 12, tail: false, mode: 'stereo', pbe: { on: false, fc: 100, amt: 50 } };
+  const DEF_OPT = { fmin: 40, fmax: 500, tilt: 2, detail: 1, maxN: 6, maxCut: 12, tail: false, mode: 'stereo', bass: { on: false, f: 120, boost: 50, harm: 30 } };
   const LEAD = 0.5;
   const newCh = () => ({ meas: [], filters: [] });
 
@@ -566,7 +567,7 @@ function makeSample(c, kind) {
   try { S = JSON.parse(localStorage.getItem('arply-eq')); } catch (e) {}
   if (!S || typeof S !== 'object') S = {};
   S.opt = { ...DEF_OPT, ...(S.opt || {}) }; delete S.opt.frac;
-  S.opt.pbe = { ...DEF_OPT.pbe, ...(S.opt.pbe || {}) };
+  S.opt.bass = { ...DEF_OPT.bass, ...(S.opt.bass || {}) }; delete S.opt.pbe;
   if (![0.5, 1, 2].includes(S.opt.detail)) S.opt.detail = 1;
   S.ch = S.ch || {};
   if (S.meas) { S.ch.M = { meas: S.meas, filters: S.filters || [] }; delete S.meas; delete S.filters; } // v1 data
@@ -632,10 +633,12 @@ function makeSample(c, kind) {
     cache = { tg, eq, am, pre };
     line(eq.map(e => e + pre), C.mag, 2);
     if (pbeActive()) {
-      const x = X(S.opt.pbe.fc); g.strokeStyle = C.mag; g.lineWidth = 1.5; g.setLineDash([3, 3]);
+      // the bass block at full boost (quiet passages); loud ones get less
+      line(bassCurve().map((b, i) => b + eq[i] + pre), C.mag, 1.5, [3, 3]);
+      const x = X(S.opt.bass.f); g.strokeStyle = C.mag; g.lineWidth = 1; g.setLineDash([2, 4]);
       g.beginPath(); g.moveTo(x, pt); g.lineTo(x, H - pb); g.stroke(); g.setLineDash([]);
       g.fillStyle = C.mag; g.textAlign = 'left'; g.font = '12px Inter, system-ui, sans-serif';
-      g.fillText('Bass enh.', x + 4, Y(13));
+      g.fillText('Speaker limit', x + 4, Y(13));
     }
     if (am) {
       g.globalAlpha = 0.35; am.each.forEach(d => line(d, C.brown, 1)); g.globalAlpha = 1;
@@ -900,29 +903,36 @@ function makeSample(c, kind) {
   };
 
   // ---------- bass enhancement ----------
-  const pbeActive = () => S.opt.pbe.on && S.opt.mode !== 'bass';
-  const pbeOpt = () => ({ fc: S.opt.pbe.fc, amount: S.opt.pbe.amt / 100 });
+  const pbeActive = () => S.opt.bass.on && S.opt.mode !== 'bass';
+  // the bass block at full boost: low shelf at the limit, subsonic high-pass at half of it
+  function bassCurve() {
+    const b = S.opt.bass, sh = DSP.coeffs('ls', b.f, b.boost / 100 * 12, 0, FS), hp = DSP.coeffs('hp', b.f / 2, 0, Math.SQRT1_2, FS);
+    return grid.map(f => DSP.magDb(sh, f, FS) + DSP.magDb(hp, f, FS));
+  }
   function renderPbe() {
-    $('#o-pbe').checked = S.opt.pbe.on;
-    $('#o-pbefc').value = S.opt.pbe.fc; $('#v-pbefc').textContent = fmtHz(S.opt.pbe.fc);
-    $('#o-pbeamt').value = S.opt.pbe.amt; $('#v-pbeamt').textContent = S.opt.pbe.amt + ' %';
-    for (const id of ['#o-pbefc', '#o-pbeamt']) $(id).disabled = !S.opt.pbe.on;
+    const b = S.opt.bass;
+    $('#o-pbe').checked = b.on;
+    $('#o-pbefc').value = b.f; $('#v-pbefc').textContent = fmtHz(b.f);
+    $('#o-pbeboost').value = b.boost; $('#v-pbeboost').textContent = '+' + (b.boost / 100 * 12).toFixed(0) + ' dB';
+    $('#o-pbeamt').value = b.harm; $('#v-pbeamt').textContent = b.harm + ' %';
+    for (const id of ['#o-pbefc', '#o-pbeboost', '#o-pbeamt']) $(id).disabled = !b.on;
   }
   const pbeChanged = () => { renderPbe(); save(); draw(); renderJson(); preview(); };
-  $('#o-pbe').onchange = e => { S.opt.pbe.on = e.target.checked; pbeChanged(); };
-  $('#o-pbefc').oninput = e => { S.opt.pbe.fc = +e.target.value; pbeChanged(); };
-  $('#o-pbeamt').oninput = e => { S.opt.pbe.amt = +e.target.value; pbeChanged(); };
+  $('#o-pbe').onchange = e => { S.opt.bass.on = e.target.checked; pbeChanged(); };
+  $('#o-pbefc').oninput = e => { S.opt.bass.f = +e.target.value; pbeChanged(); };
+  $('#o-pbeboost').oninput = e => { S.opt.bass.boost = +e.target.value; pbeChanged(); };
+  $('#o-pbeamt').oninput = e => { S.opt.bass.harm = +e.target.value; pbeChanged(); };
   $('#b-pbesug').onclick = () => {
     const lims = chans().map(k => [k, avgMeas(k)]).filter(([, a]) => a).map(([k, a]) => [k, DSP.bassLimit(a.avg, grid)]);
     if (!lims.length) { $('#pbemsg').textContent = 'Measure first.'; return; }
-    if (lims.some(([, f]) => f === null)) { $('#pbemsg').textContent = 'No bass roll-off found up to 300 Hz – bass enhancement is probably unnecessary.'; return; }
+    if (lims.some(([, f]) => f === null)) { $('#pbemsg').textContent = 'No bass roll-off found up to 300 Hz – this speaker probably needs no bass help.'; return; }
     const f6 = Math.max(...lims.map(([, f]) => f)), txt = lims.map(([k, f]) => CH_NAME[k] + ' ' + fmtHz(f)).join(', ');
     if (f6 < 85) {
-      $('#pbemsg').textContent = '−6 dB roll-off at ' + txt + '. That is where the iPhone microphone rolls off itself – the speaker probably goes deeper. Bass enhancement is likely not needed.';
+      $('#pbemsg').textContent = '−6 dB roll-off at ' + txt + '. That is where the iPhone microphone rolls off itself – the speaker probably goes deeper. Set the limit by ear.';
       return;
     }
-    S.opt.pbe.fc = Math.max(60, Math.min(150, Math.round(f6 / 5) * 5));
-    $('#pbemsg').textContent = '−6 dB roll-off at ' + txt + ' → cutoff set to ' + fmtHz(S.opt.pbe.fc) + '.';
+    S.opt.bass.f = Math.max(40, Math.min(200, Math.round(f6 / 5) * 5));
+    $('#pbemsg').textContent = '−6 dB roll-off at ' + txt + ' → speaker limit set to ' + fmtHz(S.opt.bass.f) + '. Phone microphones are weak in the deep bass, so trust your ears too.';
     pbeChanged();
   };
 
@@ -983,7 +993,7 @@ function makeSample(c, kind) {
         b: [r6(c.b0), r6(c.b1), r6(c.b2)], a: [r6(c.a1), r6(c.a2)] };
     });
     return { version: 2, fs: FS, mode: S.opt.mode, preamp_db: preampAll(), channels,
-      pbe: { on: pbeActive(), fc: S.opt.pbe.fc, amount: S.opt.pbe.amt / 100 } };
+      bass: { on: pbeActive(), f_low: S.opt.bass.f, boost: S.opt.bass.boost / 100, harmonics: S.opt.bass.harm / 100 } };
   }
   const renderJson = () => { $('#json').textContent = JSON.stringify(payload(), null, 1); };
   $('#b-copy').onclick = async () => {
@@ -1066,7 +1076,7 @@ function makeSample(c, kind) {
     FS = j.fs || FS;
     for (const k of ['L', 'R', 'M']) S.ch[k].filters = ((j.channels || {})[k] || []).map(f => ({ type: f.type, on: f.enabled !== false, f: f.f, gain: f.gain_db || 0, q: f.q }));
     if (MODES[j.mode]) S.opt.mode = j.mode;
-    if (j.pbe) S.opt.pbe = { on: !!j.pbe.on, fc: j.pbe.fc, amt: Math.round(j.pbe.amount * 100) };
+    if (j.bass) S.opt.bass = { on: !!j.bass.on, f: j.bass.f_low, boost: Math.round(j.bass.boost * 100), harm: Math.round(j.bass.harmonics * 100) };
     fixView(); save(); $('#o-mode').value = S.opt.mode;
   }
   const host = location.hostname;

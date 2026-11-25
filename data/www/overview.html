@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>arply</title>
+<!-- Fleet overview at arply.local (docs/web_dsp/overview-mock.html is the
+     design). Read-only for now: room actions arrive with FLEET_PLAN F3/F4. -->
+<style>
+:root{color-scheme:light dark;
+--bg:light-dark(#f7f8fb,#0e1016);--card:light-dark(#ffffff,#161922);--ink:light-dark(#0b0d14,#eef0f6);
+--mut:light-dark(#4f556a,#a9aec0);--quiet:light-dark(#6b6f82,#8e93a6);--line:light-dark(#eceef4,#262a36);
+--line2:light-dark(#f0f1f6,#20232e);--btnline:light-dark(#e3e5ee,#30354a);--acc:light-dark(#4e54dc,#8b90f0);
+--accbg:light-dark(#e9eafb,#23264a);--acctx:light-dark(#2f34a8,#c3c6fa);--chip:light-dark(#eef0f6,#20232e);
+--warnbg:light-dark(#f9f3e8,#2d2618);--warntx:light-dark(#6b4a10,#e8c98e);
+--logo:url(data:image/png;base64,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);
+--errbg:light-dark(#fdecea,#3a1d1a);--errtx:light-dark(#a1281c,#ff8a80);--ok:light-dark(#1f7a4d,#5fd39a);--oktx:light-dark(#1a6a43,#5fd39a)}
+*{box-sizing:border-box;min-width:0}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 Inter,system-ui,-apple-system,sans-serif}
+a{color:var(--acc)}
+.mono{font:500 12.5px ui-monospace,SFMono-Regular,Menlo,monospace}
+.eyebrow{font:500 11.5px ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:1.4px;text-transform:uppercase;color:var(--acc)}
+header{border-bottom:1px solid var(--line);padding:0 24px}
+header .in{max-width:1160px;margin:0 auto;min-height:68px;display:flex;align-items:center}
+.logo{display:inline-block;width:89px;height:27px;background:var(--ink);-webkit-mask:var(--logo) center/contain no-repeat;mask:var(--logo) center/contain no-repeat}
+.wrap{max-width:1160px;margin:0 auto;padding:44px 24px 0;display:flex;flex-direction:column;gap:28px}
+.intro{display:flex;flex-wrap:wrap;gap:24px;align-items:flex-end;justify-content:space-between}
+.intro .t{display:flex;flex-direction:column;gap:10px;flex:1 1 420px}
+h1{margin:0;font-size:clamp(36px,6vw,48px);line-height:1.05;font-weight:700;letter-spacing:-1px}
+.lead{margin:0;font-size:17px;color:var(--mut)}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:16px}
+.fw{flex:0 1 460px;padding:18px 20px;display:flex;flex-direction:column;gap:4px}
+.fw span:last-child{font-size:14px;color:var(--mut)}
+.cols{display:flex;flex-wrap:wrap;gap:24px;align-items:flex-start}
+main{flex:999 1 560px;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,380px),1fr));gap:20px;align-items:start}
+aside{flex:1 1 300px;display:flex;flex-direction:column;gap:20px}
+.room{overflow:hidden}
+.room .head{padding:22px 22px 14px;display:flex;flex-direction:column;gap:6px}
+h2{margin:0;font-size:28px;line-height:1.15;font-weight:700;letter-spacing:-.4px}
+aside h2{font-size:18px;font-weight:600;letter-spacing:0}
+.sub{margin:0;font-size:15px;color:var(--mut)}
+.chips{display:flex;flex-wrap:wrap;gap:6px;padding-top:4px}
+.chip{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:500;padding:4px 10px;border-radius:999px;background:var(--chip);color:var(--mut)}
+.chip.play{background:var(--accbg);color:var(--acctx)}.chip.warn{background:var(--warnbg);color:var(--warntx)}.chip.err{background:var(--errbg);color:var(--errtx)}
+ul{list-style:none;margin:0;padding:0;border-top:1px solid var(--line)}
+li{border-bottom:1px solid var(--line2)}
+.dev{display:flex;align-items:center;gap:12px;padding:12px 22px;min-height:64px;text-decoration:none;color:var(--ink)}
+.dev .n{display:flex;flex-direction:column;gap:3px;flex:1 1 auto}
+.dev .n>span{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.dev strong{font-size:16px;font-weight:600}.dev .mono{color:var(--quiet)}
+.st{font-size:13px;color:var(--mut)}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--ok);flex:none}.dot.off{background:none;border:2px solid var(--errtx)}
+.on{color:var(--oktx);font-weight:500}.off-t{color:var(--errtx);font-weight:500}
+.tags{display:flex;gap:6px;flex:none}
+.tag{font:500 11px ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.8px;text-transform:uppercase;padding:3px 7px;border-radius:6px;background:var(--accbg);color:var(--acctx)}
+.tag.hub{background:var(--ink);color:var(--bg)}
+.chev{flex:none;stroke:var(--quiet)}
+.acts{display:flex;gap:8px;align-items:center;padding:16px 22px 22px;flex-wrap:wrap}
+.btn{display:inline-flex;align-items:center;font:600 15px Inter,system-ui,sans-serif;min-height:44px;padding:0 18px;border-radius:999px;border:1px solid var(--btnline);background:var(--card);color:var(--ink);text-decoration:none}
+.btn.pri{background:var(--acc);border-color:var(--acc);color:#fff}
+.note{font-size:13.5px;color:var(--quiet);margin:0}
+.side{padding:20px 22px;display:flex;flex-direction:column;gap:10px}
+.newdev+.newdev{border-top:1px solid var(--line);padding-top:12px}
+dl{margin:0;display:grid;grid-template-columns:6.5em minmax(0,1fr);gap:10px 12px;font-size:14.5px;line-height:1.45}
+dt{color:var(--quiet)}dd{margin:0}dd span{color:var(--mut)}
+.empty{padding:22px}
+footer{margin-top:56px;padding:28px 24px 36px;border-top:1px solid var(--line);display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center}
+footer .logo{width:59px;height:18px}footer .s{font-size:13px;color:var(--quiet)}
+footer nav{display:flex;gap:20px;font-size:14px}footer nav a{color:var(--mut);text-decoration:none}
+@media(max-width:600px){.wrap{padding-top:28px}.dev{padding:12px 16px}.room .head,.acts{padding-left:16px;padding-right:16px}}
+</style>
+</head>
+<body>
+<header><div class="in"><a class="logo" href="/" aria-label="arply overview"></a></div></header>
+<div class="wrap">
+  <div class="intro">
+    <div class="t">
+      <span class="eyebrow">arply.local</span>
+      <h1>Your rooms.</h1>
+      <p class="lead" id="lead">Looking for arply devices …</p>
+    </div>
+    <section class="panel fw" id="fw" hidden aria-label="Firmware"></section>
+  </div>
+  <div class="cols">
+    <main id="rooms"></main>
+    <aside>
+      <section class="panel side" id="new" hidden>
+        <span class="eyebrow">New on the network</span>
+        <div id="newlist"></div>
+      </section>
+      <section class="panel side">
+        <span class="eyebrow">Network</span>
+        <h2>Hub and security</h2>
+        <dl>
+          <dt>Hub</dt><dd id="n-hub">–</dd>
+          <dt>Certificate</dt><dd>Each arply has its own. <a href="/arply.crt">Get this one</a> to trust it on your phone.</dd>
+          <dt>Discovery</dt><dd id="n-disc">–</dd>
+        </dl>
+        <p class="note">To change the hub, open a device and choose “Use this device for arply.local”.</p>
+      </section>
+    </aside>
+  </div>
+</div>
+<footer>
+  <span class="logo" role="img" aria-label="arply"></span>
+  <span class="s" id="foot"></span>
+  <nav aria-label="Footer"><a href="https://arply.de" target="_blank" rel="noopener">arply.de</a><a href="https://arply.de/landing.html" target="_blank" rel="noopener">Help</a></nav>
+</footer>
+<script>
+const $ = s => document.querySelector(s);
+const esc = t => String(t).replace(/[&<>"']/g, c => '&#' + c.charCodeAt(0) + ';');
+const CH = { stereo: 'Stereo', left: 'Left', right: 'Right', mono: 'Mono' };
+const ORDER = { left: 0, right: 1, stereo: 2, mono: 3 };
+const plural = (n, w) => n + ' ' + w + (n === 1 ? '' : 's');
+const hhmm = d => d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+const day = d => d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+const bars = '<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><rect x="1" y="4" width="2" height="7" rx="1" fill="currentColor"/><rect x="5" y="1" width="2" height="10" rx="1" fill="currentColor"/><rect x="9" y="6" width="2" height="5" rx="1" fill="currentColor"/></svg>';
+const chev = '<svg class="chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>';
+const url = d => 'https://' + encodeURIComponent(d.host) + '.local/';
+
+function status(d) {
+  if (d.online) return '<span class="dot" aria-hidden="true"></span><span class="on">Online</span>' + (d.wifi && d.wifi !== 'unknown' ? '<span>· Wi-Fi ' + d.wifi + '</span>' : '');
+  const since = d.age_s == null ? 'not seen since restart' : (d.age_s > 86400 ? 'since ' + day(new Date(Date.now() - d.age_s * 1000)) : 'since ' + hhmm(new Date(Date.now() - d.age_s * 1000)));
+  return '<span class="dot off" aria-hidden="true"></span><span class="off-t">Offline</span><span>· ' + since + '</span>';
+}
+function row(d, hubId) {
+  const tag = d.role === 'bass' ? 'Bass' : CH[d.ch] || 'Stereo';
+  return `<li><a class="dev" href="${url(d)}"><span class="n"><span><strong>${esc(d.name)}</strong><span class="mono">${esc(d.host)}.local</span></span>` +
+    `<span class="st">${status(d)}</span></span><span class="tags"><span class="tag">${tag}</span>${d.id === hubId ? '<span class="tag hub">Hub</span>' : ''}</span>${chev}</a></li>`;
+}
+function summary(devs) {
+  const ch = devs.filter(d => d.role !== 'bass').map(d => d.ch), bass = devs.some(d => d.role === 'bass');
+  let s = ch.includes('left') && ch.includes('right') ? 'Stereo pair' : [...new Set(ch.map(c => CH[c] || 'Stereo'))].join(' + ') || 'Subwoofer';
+  if (bass && ch.length) s += ' with bass';
+  if (devs.some(d => d.pbe)) s += ' · bass enhancement on';
+  return s;
+}
+function roomCard(name, devs, hubId) {
+  devs.sort((a, b) => (a.role === 'bass') - (b.role === 'bass') || (ORDER[a.ch] ?? 9) - (ORDER[b.ch] ?? 9) || a.name.localeCompare(b.name));
+  const chips = [], off = devs.filter(d => !d.online).length, cal = devs.map(d => d.calibrated);
+  if (devs.some(d => d.online && d.playing)) chips.push(`<span class="chip play">${bars}Playing</span>`);
+  if (cal.every(c => c > 0)) {
+    const t = Math.min(...cal.filter(c => c > 1));
+    chips.push(`<span class="chip">Calibrated${isFinite(t) ? ' ' + day(new Date(t * 1000)) : ''}</span>`);
+  } else chips.push(`<span class="chip warn">${cal.some(c => c > 0) ? 'Partly calibrated' : 'Not calibrated yet'}</span>`);
+  if (off) chips.push(`<span class="chip err">${plural(off, 'device')} offline</span>`);
+  const online = devs.filter(d => d.online);
+  const acts = online.length === 1
+    ? `<a class="btn pri" href="${url(online[0])}dsp">Calibrate</a>`
+    : `<p class="note">Calibrate each speaker from its own page; calibrating the whole room in one go comes later.</p>`;
+  return `<section class="panel room"><div class="head"><span class="eyebrow">Room</span><h2>${esc(name)}</h2><p class="sub">${esc(summary(devs))}</p>` +
+    `<div class="chips">${chips.join('')}</div></div><ul>${devs.map(d => row(d, hubId)).join('')}</ul><div class="acts">${acts}</div></section>`;
+}
+
+async function load() {
+  let f;
+  try { const r = await fetch('/api/fleet', { cache: 'no-store' }); f = await r.json(); }
+  catch (e) { $('#lead').textContent = 'This arply did not answer – trying again …'; return; }
+  const devs = [{ ...f.self, online: true, age_s: 0 }, ...f.peers];
+  const byId = Object.fromEntries(devs.map(d => [d.id, d]));
+  const rooms = {}, fresh = [];
+  for (const d of devs) (d.room ? (rooms[d.room] = rooms[d.room] || []) : fresh).push(d);
+  const names = Object.keys(rooms).sort((a, b) => a.localeCompare(b));
+  const hub = byId[f.hub], stand = byId[f.stand_in];
+  $('#lead').textContent = plural(devs.length, 'device') + ' in ' + plural(names.length, 'room') + '.' + (hub ? ' ' + hub.name + ' is the hub right now.' : '');
+  $('#rooms').innerHTML = names.map(n => roomCard(n, rooms[n], f.hub)).join('') ||
+    '<section class="panel empty"><h2>No rooms yet</h2><p class="sub">Open a device and give it a room – it shows up here.</p></section>';
+  $('#new').hidden = !fresh.length;
+  $('#newlist').innerHTML = fresh.map(d => `<div class="newdev"><h2>${esc(d.name)}</h2><p class="sub">${d.online ? 'Not in a room yet.' : 'Offline, not in a room.'}</p>` +
+    `<p style="margin:10px 0 0"><a class="btn pri" href="${url(d)}">Set up</a></p></div>`).join('');
+  $('#n-hub').innerHTML = hub ? esc(hub.name) + (stand ? '<br><span>Stand-in: ' + esc(stand.name) + '</span>' : '') : '–';
+  const off = devs.filter(d => !d.online).length;
+  $('#n-disc').textContent = plural(devs.length, 'device') + ' via Bonjour' + (off ? ', ' + off + ' offline' : '');
+  const fws = [...new Set(devs.map(d => d.fw))];
+  $('#fw').hidden = fws.length < 2;
+  if (fws.length > 1) $('#fw').innerHTML = '<span class="eyebrow">Firmware</span><strong>' + fws.length + ' firmware versions in use.</strong><span>' +
+    fws.map(v => esc(v) + ': ' + devs.filter(d => d.fw === v).map(d => esc(d.name)).join(', ')).join(' · ') + '</span>';
+  $('#foot').textContent = 'Firmware ' + f.self.fw + ' on ' + f.self.name;
+}
+load(); setInterval(load, 10000);
+</script>
+</body>
+</html>

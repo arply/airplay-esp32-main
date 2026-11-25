@@ -148,10 +148,45 @@ room/role changes show up on the other board within one round.
 
 ---
 
-## F2 — Overview at arply.local (waits for the mock)
+## F2 — Overview at arply.local
 
-Outline: `data/www/overview.html` in the arply.de design (mock), served by
-the hub for `Host: arply.local` (a non-hub device redirects such requests
-to the hub, covering stale mDNS caches after a hub change); rooms as cards, device rows linking to
-`https://<host>.local/`, data from `GET /api/fleet` of the hub, refreshed
-every 10 s. To be detailed when the mock is in the repo.
+Design: `overview-mock.html` (cherry-picked from the remote branch).
+Built 2026-11-25 as `data/www/overview.html`.
+
+- [x] Every device serves the overview for `Host: arply.local` (not only
+      the hub): each one knows the whole fleet, and a phone whose mDNS cache
+      still points at a former hub gets the same page. This replaces the
+      planned redirect.
+- [x] More state in the TXT record, updated each round only when it
+      changes: `ch` (channel mode), `cal` (time of the saved EQ; the page
+      sends `saved_at` on save, the device has no clock), `pbe`, `play`,
+      `wifi` (good ≥ −60 dBm, fair ≥ −72, else poor).
+- [x] Peers that stop answering stay in the table as offline (the page
+      shows "offline since" from `age_s`); the NVS cache keeps host, room,
+      role and channel, so devices offline at boot still appear.
+- [x] `stand_in`: the device that would take over the hub.
+- [x] Page per the mock: rooms as cards (summary, Playing / Calibrated /
+      offline chips, device rows with Left/Right/Mono/Stereo/Bass and Hub
+      tags, link to each device), "New on the network" for devices without a
+      room, Network panel (hub, stand-in, discovery, certificate download),
+      firmware panel only when versions differ. Real logo, system fonts,
+      dark mode. "Calibrate" opens a single device's calibration page.
+- **Left out until the writes exist (F3/F4):** room volume, Mute, Edit, New
+  room, Add device, Assign room, Change hub, Update all, language switch.
+  The mock's buttons for those are not shown rather than shown inert.
+
+**Incident (2026-11-25):** the first F2 build put the larger peer cache on
+the 4 KB stack of the fleet task (`update_cache`, ~2.5 KB plus an NVS
+write). Both boards crashed ~12 s after every boot, too early for OTA, and
+had to be recovered over USB (BOOT+RESET). Fixed: the array is static, the
+task has 8 KB. **App rollback is now enabled**
+(`CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE`): an OTA image is confirmed after
+60 s of uptime, an image that crashes earlier is rolled back by the
+bootloader. Verified: after an OTA DUT boots from `ota_1`, and after a later
+restart again from `ota_1` (confirmed, no rollback).
+
+**Tested on both boards:** each serves the overview for `arply.local`;
+`/api/fleet` carries the new fields; a calibration saved on DUT shows on
+Arply with its date within one round; a restart with cached peers works.
+**Pending:** "offline since" with a board unplugged for a minute; playing
+state while streaming; the page on the iPhone.

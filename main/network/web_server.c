@@ -12,6 +12,7 @@
 #include "cJSON.h"
 #include <stdio.h>
 #include <string.h>
+#include <strings.h>
 #include <stdlib.h>
 #include <sys/stat.h>
 #include <dirent.h>
@@ -94,9 +95,28 @@ bool web_server_redirect_to_https(httpd_req_t *req) {
   return true;
 }
 
+/* arply.local is the fleet overview. Every device knows the whole fleet, so
+ * every device serves it: a phone whose mDNS cache still points at a former
+ * hub gets the same page. */
+static bool asked_for_overview(httpd_req_t *req) {
+  char host[64];
+  if (httpd_req_get_hdr_value_str(req, "Host", host, sizeof(host)) != ESP_OK) {
+    return false;
+  }
+  char *colon = strchr(host, ':');
+  if (colon) {
+    *colon = '\0';
+  }
+  return strcasecmp(host, SETTINGS_HUB_HOST_NAME ".local") == 0;
+}
+
 static esp_err_t root_handler(httpd_req_t *req) {
   if (web_server_redirect_to_https(req)) {
     return ESP_OK;
+  }
+  if (asked_for_overview(req)) {
+    httpd_resp_set_hdr(req, "Cache-Control", "no-cache");
+    return web_server_send_file(req, "/spiffs/www/overview.html", "text/html");
   }
   return web_server_send_file(req, "/spiffs/www/index.html", "text/html");
 }

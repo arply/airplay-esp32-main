@@ -33,9 +33,22 @@ typedef struct {
   uint8_t role; // fleet_role_t
   char fw[32];
   uint32_t hub;         // pick sequence number, 0 = never picked
-  int64_t last_seen_us; // esp_timer time of the last answer
+  uint8_t channel;      // audio_channel_mode_t of the device
+  uint32_t calibrated;  // Unix time of the saved EQ, 1 = date unknown, 0 = flat
+  bool pbe;             // bass enhancement on in the saved profile
+  bool playing;         // a stream is playing right now
+  uint8_t wifi;         // fleet_wifi_t
+  bool online;          // answered within the last EXPIRE_ROUNDS rounds
+  int64_t last_seen_us; // esp_timer time of the last answer, 0 = not this boot
   bool via_cache;       // last seen through the cached-IP probe
 } fleet_peer_t;
+
+typedef enum {
+  FLEET_WIFI_UNKNOWN = 0,
+  FLEET_WIFI_POOR,
+  FLEET_WIFI_FAIR,
+  FLEET_WIFI_GOOD,
+} fleet_wifi_t;
 
 /** Announce this device and start browsing. Call once mDNS is up. */
 void fleet_start(void);

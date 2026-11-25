@@ -22,12 +22,16 @@
 #include <strings.h>
 
 #include "cJSON.h"
+#include "audio_dsp.h"
+#include "audio_output.h"
+#include "audio_receiver.h"
 #include "esp_app_desc.h"
 #include "esp_http_client.h"
 #include "esp_log.h"
 #include "esp_mac.h"
 #include "esp_netif.h"
 #include "esp_timer.h"
+#include "esp_wifi.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
@@ -42,7 +46,7 @@ static const char *TAG = "fleet";
 #define PROTO         "_tcp"
 #define ROUND_MS      10000
 #define QUERY_MS      2000
-#define EXPIRE_ROUNDS 3 // a peer missing this many rounds is dropped
+#define EXPIRE_ROUNDS 3 // a peer missing this many rounds counts as offline
 #define CLAIM_ROUNDS  3 // scheduled wins in a row before taking arply.local
 #define PROBE_MS      800
 #define PROBES_ROUND  4
@@ -53,10 +57,17 @@ static const char *TAG = "fleet";
 #define NVS_KEY_HUB   "hub_seq"
 #define NVS_KEY_CACHE "fleet_peers"
 
+/* What survives a reboot about a peer, so the overview can show devices
+ * that are offline right now. A blob of another size (older firmware) is
+ * ignored. */
 typedef struct {
   char id[13];
   uint32_t ip;
   char name[65];
+  char host[33];
+  char room[FLEET_ROOM_MAX + 1];
+  uint8_t role;
+  uint8_t channel;
 } cached_peer_t;
 
 static SemaphoreHandle_t s_lock;
@@ -75,11 +86,44 @@ static char s_hub_id[13];
 static bool s_is_hub;
 static int s_win_rounds;
 static uint32_t s_delegated_ip;
+static char s_stand_in_id[13];
+static fleet_peer_t s_announced; // what the TXT record currently says
 
 /* ---- helpers --------------------------------------------------------- */
 
 static const char *role_name(uint8_t role) {
   return role == FLEET_ROLE_BASS ? "bass" : "main";
+}
+
+static const char *const CHANNEL_NAMES[] = {"stereo", "left", "right", "mono"};
+static const char *const WIFI_NAMES[] = {"unknown", "poor", "fair", "good"};
+
+static uint8_t channel_from(const char *v) {
+  for (uint8_t i = 0; i < 4; i++) {
+    if (strcmp(v, CHANNEL_NAMES[i]) == 0) {
+      return i;
+    }
+  }
+  return 0;
+}
+
+static uint8_t wifi_from(const char *v) {
+  for (uint8_t i = 0; i < 4; i++) {
+    if (strcmp(v, WIFI_NAMES[i]) == 0) {
+      return i;
+    }
+  }
+  return FLEET_WIFI_UNKNOWN;
+}
+
+static uint8_t wifi_quality(void) {
+  wifi_ap_record_t ap;
+  if (esp_wifi_sta_get_ap_info(&ap) != ESP_OK) {
+    return FLEET_WIFI_UNKNOWN;
+  }
+  return ap.rssi >= -60   ? FLEET_WIFI_GOOD
+         : ap.rssi >= -72 ? FLEET_WIFI_FAIR
+                          : FLEET_WIFI_POOR;
 }
 
 static uint32_t own_ip(void) {
@@ -101,6 +145,12 @@ static void build_self(fleet_peer_t *me) {
   me->role = s_role;
   strlcpy(me->fw, esp_app_get_description()->version, sizeof(me->fw));
   me->hub = s_hub_seq;
+  me->channel = (uint8_t)audio_output_get_channel_mode();
+  me->calibrated = audio_dsp_calibrated_at();
+  me->pbe = audio_dsp_saved_pbe();
+  me->playing = audio_receiver_is_playing() && audio_receiver_has_data();
+  me->wifi = wifi_quality();
+  me->online = true;
   me->last_seen_us = esp_timer_get_time();
 }
 
@@ -116,7 +166,8 @@ static void load_settings(void) {
   nvs_get_u8(nvs, NVS_KEY_ROLE, &s_role);
   nvs_get_u32(nvs, NVS_KEY_HUB, &s_hub_seq);
   len = sizeof(s_cache);
-  if (nvs_get_blob(nvs, NVS_KEY_CACHE, s_cache, &len) == ESP_OK) {
+  if (nvs_get_blob(nvs, NVS_KEY_CACHE, s_cache, &len) == ESP_OK &&
+      len % sizeof(cached_peer_t) == 0) {
     s_cache_count = (int)(len / sizeof(cached_peer_t));
   }
   nvs_close(nvs);
@@ -134,12 +185,40 @@ static void save_settings(void) {
   nvs_close(nvs);
 }
 
+/* Update the TXT items whose value changed since the last announcement;
+ * called every round, so playing/Wi-Fi state is at most a round old. */
 static void announce(void) {
-  char hub[12];
-  snprintf(hub, sizeof(hub), "%u", (unsigned)s_hub_seq);
-  mdns_service_txt_item_set(SERVICE, PROTO, "room", s_room);
-  mdns_service_txt_item_set(SERVICE, PROTO, "role", role_name(s_role));
-  mdns_service_txt_item_set(SERVICE, PROTO, "hub", hub);
+  fleet_peer_t me;
+  build_self(&me);
+  fleet_peer_t *a = &s_announced;
+  char num[12];
+  if (strcmp(me.room, a->room) != 0) {
+    mdns_service_txt_item_set(SERVICE, PROTO, "room", me.room);
+  }
+  if (me.role != a->role) {
+    mdns_service_txt_item_set(SERVICE, PROTO, "role", role_name(me.role));
+  }
+  if (me.hub != a->hub) {
+    snprintf(num, sizeof(num), "%u", (unsigned)me.hub);
+    mdns_service_txt_item_set(SERVICE, PROTO, "hub", num);
+  }
+  if (me.channel != a->channel) {
+    mdns_service_txt_item_set(SERVICE, PROTO, "ch", CHANNEL_NAMES[me.channel]);
+  }
+  if (me.calibrated != a->calibrated) {
+    snprintf(num, sizeof(num), "%u", (unsigned)me.calibrated);
+    mdns_service_txt_item_set(SERVICE, PROTO, "cal", num);
+  }
+  if (me.pbe != a->pbe) {
+    mdns_service_txt_item_set(SERVICE, PROTO, "pbe", me.pbe ? "1" : "0");
+  }
+  if (me.playing != a->playing) {
+    mdns_service_txt_item_set(SERVICE, PROTO, "play", me.playing ? "1" : "0");
+  }
+  if (me.wifi != a->wifi) {
+    mdns_service_txt_item_set(SERVICE, PROTO, "wifi", WIFI_NAMES[me.wifi]);
+  }
+  *a = me;
 }
 
 /* ---- peer table (caller holds s_lock) --------------------------------- */
@@ -153,28 +232,38 @@ static fleet_peer_t *find_peer(const char *id) {
   return NULL;
 }
 
+/* A full table makes room by dropping the offline peer seen longest ago. */
 static fleet_peer_t *upsert_peer(const char *id) {
   fleet_peer_t *p = find_peer(id);
   if (!p && s_peer_count < FLEET_MAX_PEERS) {
     p = &s_peers[s_peer_count++];
+  } else if (!p) {
+    for (int i = 0; i < s_peer_count; i++) {
+      if (!s_peers[i].online &&
+          (!p || s_peers[i].last_seen_us < p->last_seen_us)) {
+        p = &s_peers[i];
+      }
+    }
+  }
+  if (p && strcmp(p->id, id) != 0) {
     memset(p, 0, sizeof(*p));
     strlcpy(p->id, id, sizeof(p->id));
   }
   return p;
 }
 
+/* Peers that stopped answering stay in the table as offline, so the
+ * overview can still show them. */
 static void expire_peers(void) {
   const int64_t limit = (int64_t)EXPIRE_ROUNDS * ROUND_MS * 1000;
   const int64_t now = esp_timer_get_time();
-  int j = 0;
   for (int i = 0; i < s_peer_count; i++) {
-    if (now - s_peers[i].last_seen_us <= limit) {
-      s_peers[j++] = s_peers[i];
-    } else {
-      ESP_LOGI(TAG, "Lost %s (%s)", s_peers[i].name, s_peers[i].id);
+    fleet_peer_t *p = &s_peers[i];
+    if (p->online && now - p->last_seen_us > limit) {
+      p->online = false;
+      ESP_LOGI(TAG, "Lost %s (%s)", p->name, p->id);
     }
   }
-  s_peer_count = j;
 }
 
 /* ---- discovery -------------------------------------------------------- */
@@ -211,7 +300,7 @@ static void browse(void) {
     if (!p) {
       continue;
     }
-    if (p->last_seen_us == 0) {
+    if (!p->online) {
       ESP_LOGI(TAG, "Found %s", txt_get(r, "name") ? txt_get(r, "name") : id);
     }
     const char *v;
@@ -236,7 +325,23 @@ static void browse(void) {
     if ((v = txt_get(r, "hub")) != NULL) {
       p->hub = (uint32_t)strtoul(v, NULL, 10);
     }
+    if ((v = txt_get(r, "ch")) != NULL) {
+      p->channel = channel_from(v);
+    }
+    if ((v = txt_get(r, "cal")) != NULL) {
+      p->calibrated = (uint32_t)strtoul(v, NULL, 10);
+    }
+    if ((v = txt_get(r, "pbe")) != NULL) {
+      p->pbe = strcmp(v, "1") == 0;
+    }
+    if ((v = txt_get(r, "play")) != NULL) {
+      p->playing = strcmp(v, "1") == 0;
+    }
+    if ((v = txt_get(r, "wifi")) != NULL) {
+      p->wifi = wifi_from(v);
+    }
     p->last_seen_us = now;
+    p->online = true;
     p->via_cache = false;
   }
   xSemaphoreGive(s_lock);
@@ -287,6 +392,17 @@ static bool probe(const cached_peer_t *c, fleet_peer_t *out) {
         if (cJSON_IsNumber(v = cJSON_GetObjectItem(j, "hub"))) {
           out->hub = (uint32_t)v->valuedouble;
         }
+        if (cJSON_IsString(v = cJSON_GetObjectItem(j, "ch"))) {
+          out->channel = channel_from(v->valuestring);
+        }
+        if (cJSON_IsNumber(v = cJSON_GetObjectItem(j, "calibrated"))) {
+          out->calibrated = (uint32_t)v->valuedouble;
+        }
+        out->pbe = cJSON_IsTrue(cJSON_GetObjectItem(j, "pbe"));
+        out->playing = cJSON_IsTrue(cJSON_GetObjectItem(j, "playing"));
+        if (cJSON_IsString(v = cJSON_GetObjectItem(j, "wifi"))) {
+          out->wifi = wifi_from(v->valuestring);
+        }
         out->ip = c->ip;
         ok = true;
       }
@@ -317,6 +433,7 @@ static void probe_cached(void) {
     fleet_peer_t *q = upsert_peer(found.id);
     if (q) {
       found.last_seen_us = esp_timer_get_time();
+      found.online = true;
       found.via_cache = true;
       *q = found;
     }
@@ -326,17 +443,24 @@ static void probe_cached(void) {
 
 /* Remember the addresses of the peers seen; write NVS only on a change. */
 static void update_cache(void) {
-  cached_peer_t next[FLEET_MAX_PEERS];
+  // ~2.5 KB: static, not on the task stack (it overflowed there). Only the
+  // fleet task calls this.
+  static cached_peer_t next[FLEET_MAX_PEERS];
   int n = 0;
   xSemaphoreTake(s_lock, portMAX_DELAY);
   for (int i = 0; i < s_peer_count; i++) {
     if (s_peers[i].ip == 0) {
       continue;
     }
+    const fleet_peer_t *p = &s_peers[i];
     memset(&next[n], 0, sizeof(next[n]));
-    strlcpy(next[n].id, s_peers[i].id, sizeof(next[n].id));
-    next[n].ip = s_peers[i].ip;
-    strlcpy(next[n].name, s_peers[i].name, sizeof(next[n].name));
+    strlcpy(next[n].id, p->id, sizeof(next[n].id));
+    next[n].ip = p->ip;
+    strlcpy(next[n].name, p->name, sizeof(next[n].name));
+    strlcpy(next[n].host, p->host, sizeof(next[n].host));
+    strlcpy(next[n].room, p->room, sizeof(next[n].room));
+    next[n].role = p->role;
+    next[n].channel = p->channel;
     n++;
   }
   xSemaphoreGive(s_lock);
@@ -391,18 +515,36 @@ static void set_hub(bool on) {
 }
 
 /* @p scheduled: a regular round (counts towards taking the hub role). */
+/* Election order: higher pick number first, then lower id. */
+static bool ranks_before(uint32_t hub_a, const char *id_a, uint32_t hub_b,
+                         const char *id_b) {
+  return hub_a > hub_b || (hub_a == hub_b && strcmp(id_a, id_b) < 0);
+}
+
 static void elect(bool scheduled) {
   xSemaphoreTake(s_lock, portMAX_DELAY);
   const char *best_id = s_id;
   uint32_t best_hub = s_hub_seq;
+  const char *second_id = NULL;
+  uint32_t second_hub = 0;
   for (int i = 0; i < s_peer_count; i++) {
     const fleet_peer_t *p = &s_peers[i];
-    if (p->hub > best_hub ||
-        (p->hub == best_hub && strcmp(p->id, best_id) < 0)) {
+    if (!p->online) {
+      continue;
+    }
+    if (ranks_before(p->hub, p->id, best_hub, best_id)) {
+      second_id = best_id;
+      second_hub = best_hub;
       best_id = p->id;
       best_hub = p->hub;
+    } else if (!second_id ||
+               ranks_before(p->hub, p->id, second_hub, second_id)) {
+      second_id = p->id;
+      second_hub = p->hub;
     }
   }
+  // The stand-in takes over when the hub disappears.
+  strlcpy(s_stand_in_id, second_id ? second_id : "", sizeof(s_stand_in_id));
   const bool me = best_id == s_id;
   if (strcmp(s_hub_id, best_id) != 0) {
     ESP_LOGI(TAG, "Hub is %s%s", best_id, me ? " (this device)" : "");
@@ -439,6 +581,7 @@ static void fleet_task(void *arg) {
     xSemaphoreGive(s_lock);
     update_cache();
     elect(!woken);
+    announce();
   }
 }
 
@@ -453,10 +596,26 @@ void fleet_start(void) {
            mac[2], mac[3], mac[4], mac[5]);
   load_settings();
 
+  // Known from earlier boots, offline until they answer.
+  for (int i = 0; i < s_cache_count && i < FLEET_MAX_PEERS; i++) {
+    fleet_peer_t *p = &s_peers[s_peer_count++];
+    memset(p, 0, sizeof(*p));
+    strlcpy(p->id, s_cache[i].id, sizeof(p->id));
+    strlcpy(p->name, s_cache[i].name, sizeof(p->name));
+    strlcpy(p->host, s_cache[i].host, sizeof(p->host));
+    strlcpy(p->room, s_cache[i].room, sizeof(p->room));
+    p->ip = s_cache[i].ip;
+    p->role = s_cache[i].role;
+    p->channel = s_cache[i].channel;
+  }
+
   fleet_peer_t me;
   build_self(&me);
+  s_announced = me;
   char hub[12];
+  char cal[12];
   snprintf(hub, sizeof(hub), "%u", (unsigned)s_hub_seq);
+  snprintf(cal, sizeof(cal), "%u", (unsigned)me.calibrated);
   mdns_txt_item_t txt[] = {
       {"v", "1"},
       {"id", s_id},
@@ -465,6 +624,11 @@ void fleet_start(void) {
       {"role", role_name(s_role)},
       {"fw", me.fw},
       {"hub", hub},
+      {"ch", CHANNEL_NAMES[me.channel]},
+      {"cal", cal},
+      {"pbe", me.pbe ? "1" : "0"},
+      {"play", me.playing ? "1" : "0"},
+      {"wifi", WIFI_NAMES[me.wifi]},
   };
   esp_err_t err = mdns_service_add(me.name, SERVICE, PROTO, 80, txt,
                                    sizeof(txt) / sizeof(txt[0]));
@@ -473,7 +637,8 @@ void fleet_start(void) {
              esp_err_to_name(err));
   }
   strlcpy(s_hub_id, s_id, sizeof(s_hub_id));
-  xTaskCreate(fleet_task, "fleet", 4096, NULL, 2, &s_task);
+  // mDNS query, HTTP probe with JSON parsing and NVS writes share this stack.
+  xTaskCreate(fleet_task, "fleet", 8192, NULL, 2, &s_task);
   ESP_LOGI(TAG, "Fleet discovery started (id %s, room '%s', %s)", s_id, s_room,
            role_name(s_role));
 }
@@ -505,10 +670,20 @@ static cJSON *peer_json(const fleet_peer_t *p, bool with_age) {
   cJSON_AddStringToObject(o, "role", role_name(p->role));
   cJSON_AddStringToObject(o, "fw", p->fw);
   cJSON_AddNumberToObject(o, "hub", p->hub);
+  cJSON_AddStringToObject(o, "ch", CHANNEL_NAMES[p->channel & 3]);
+  cJSON_AddNumberToObject(o, "calibrated", p->calibrated);
+  cJSON_AddBoolToObject(o, "pbe", p->pbe);
+  cJSON_AddBoolToObject(o, "playing", p->playing);
+  cJSON_AddStringToObject(o, "wifi", WIFI_NAMES[p->wifi & 3]);
   if (with_age) {
-    cJSON_AddNumberToObject(
-        o, "age_s",
-        (double)((esp_timer_get_time() - p->last_seen_us) / 1000000));
+    cJSON_AddBoolToObject(o, "online", p->online);
+    if (p->last_seen_us) {
+      cJSON_AddNumberToObject(
+          o, "age_s",
+          (double)((esp_timer_get_time() - p->last_seen_us) / 1000000));
+    } else {
+      cJSON_AddNullToObject(o, "age_s"); // not seen since this boot
+    }
     cJSON_AddStringToObject(o, "via", p->via_cache ? "cache" : "mdns");
   }
   return o;
@@ -544,6 +719,7 @@ static esp_err_t fleet_get_handler(httpd_req_t *req) {
     cJSON_AddItemToArray(peers, peer_json(&s_peers[i], true));
   }
   cJSON_AddStringToObject(json, "hub", s_hub_id);
+  cJSON_AddStringToObject(json, "stand_in", s_stand_in_id);
   xSemaphoreGive(s_lock);
   cJSON_AddBoolToObject(json, "is_hub", s_is_hub);
   return send_json(req, json);
@@ -590,7 +766,6 @@ static esp_err_t self_post_handler(httpd_req_t *req) {
   xSemaphoreGive(s_lock);
   cJSON_Delete(json);
   save_settings();
-  announce();
   if (s_task) {
     xTaskNotifyGive(s_task);
   }

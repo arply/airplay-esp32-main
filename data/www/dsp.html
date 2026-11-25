@@ -74,7 +74,7 @@ summary{cursor:pointer;font-weight:600;min-height:44px;display:flex;align-items:
 .tabs button[aria-pressed=true]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
 .tabs .one{font:500 12px 'JetBrains Mono',ui-monospace,monospace;letter-spacing:1px;text-transform:uppercase;color:var(--mut);padding:0 4px}
 .mbar{position:relative;height:16px;border-radius:999px;background:var(--bg);border:1px solid var(--line);overflow:hidden;margin:8px 0 4px}
-.mzone{position:absolute;top:0;bottom:0;left:41.7%;width:38.3%;background:var(--accbg)}
+.mzone{position:absolute;top:0;bottom:0;left:33.3%;right:0;background:var(--accbg)}
 #mfill{position:absolute;top:0;bottom:0;left:0;width:0;background:var(--acc);transition:width .08s linear}
 .mscale{display:flex;justify-content:space-between;font:500 11.5px 'JetBrains Mono',ui-monospace,monospace;color:var(--quiet)}
 #mtext{font-size:14.5px;margin:4px 0 0;min-height:1.4em}
@@ -125,7 +125,7 @@ footer{margin-top:40px;padding:24px 0 0;border-top:1px solid var(--line);display
       <div class="row"><button id="b-level">1. Check level</button></div>
       <div id="meter" hidden>
         <div class="mbar"><div class="mzone"></div><div id="mfill"></div></div>
-        <div class="mscale"><span>−60</span><span>−40</span><span>−20</span><span>0 dBFS</span></div>
+        <div class="mscale"><span>0</span><span>20</span><span>40</span><span>60 dB above background</span></div>
         <p id="mtext"></p>
       </div>
       <div class="row"><button class="pri" id="b-live">2. Measure</button></div>
@@ -775,18 +775,19 @@ function makeSample(c, kind) {
       } else {
         sm = sm < -80 ? db : 0.85 * sm + 0.15 * db;
         peakHold = Math.max(pdb, peakHold - 0.5);
-        $('#mfill').style.width = Math.max(0, Math.min(100, (sm + 60) / 60 * 100)) + '%';
+        // What the sweep needs is distance to the room's background noise, not
+        // a high absolute level: deconvolving the 4 s sweep adds ~30 dB on top.
+        // A phone microphone without AGC reads low (often -50 dBFS at normal
+        // listening level), so absolute dBFS thresholds asked for painful volume.
         const snr = sm - floor;
+        $('#mfill').style.width = Math.max(0, Math.min(100, snr / 60 * 100)) + '%';
         let v;
         if (sm < -100) v = '<b>The microphone delivers silence</b> – reload the page and allow the microphone.';
-        else if (peakHold > -2) v = '<b>Clipping</b> – lower the volume, or move the phone away.';
-        else if (sm > -12) v = '<b>Too loud</b> – lower the volume a little.';
-        else if (sm < -50) v = '<b>Far too quiet</b> – raise the volume a lot.';
-        else if (sm < -35) v = '<b>A bit quiet</b> – raise the volume.';
-        else v = '<b>Good</b> – measure like this.';
-        let n = ' Level ' + sm.toFixed(0) + ' dBFS · background ' + floor.toFixed(0) + ' dBFS · margin ' + snr.toFixed(0) + ' dB';
-        if (snr < 25 && sm >= -35 && sm <= -12) n += ' – room too noisy, or raise the volume.';
-        $('#mtext').innerHTML = v + n;
+        else if (peakHold > -3) v = '<b>Clipping</b> – lower the volume, or move the phone away.';
+        else if (snr < 12) v = '<b>Too quiet for this room</b> – raise the volume, or make the room quieter.';
+        else if (snr < 20) v = '<b>A bit quiet</b> – raise the volume a little.';
+        else v = '<b>Good</b> – measure like this. Louder is not needed.';
+        $('#mtext').innerHTML = v + ' ' + snr.toFixed(0) + ' dB above the background noise (20 dB are enough) · level ' + sm.toFixed(0) + ' dBFS';
       }
       lvl.raf = requestAnimationFrame(tick);
     };
@@ -798,7 +799,7 @@ function makeSample(c, kind) {
   function analyzeRec(rec, fs, ks, live) {
     let pk = 0; for (let i = 0; i < rec.length; i++) pk = Math.max(pk, Math.abs(rec[i]));
     const lv = 20 * Math.log10(pk + 1e-12);
-    if (lv < -50) { msg('Recording too quiet (' + lv.toFixed(0) + ' dBFS). Check the level first, then try again.', true); return; }
+    if (lv < -75) { msg('The recording is almost silent (' + lv.toFixed(0) + ' dBFS). Check the level first, then try again.', true); return; }
     const sw = DSP.sweep(fs), h = DSP.impulse(rec, sw, fs), step = Math.round((sw.T + gap()) * fs), win = Math.round(0.05 * fs);
     let p0;
     if (live) p0 = DSP.argmaxAbs(h, 0, Math.round(LEAD * fs) + step);

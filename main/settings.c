@@ -1,7 +1,10 @@
 #include "settings.h"
 
 #include "esp_log.h"
+#include "esp_mac.h"
 #include "nvs.h"
+#include <ctype.h>
+#include <stdio.h>
 #include <string.h>
 
 static const char *TAG = "settings";
@@ -636,4 +639,34 @@ esp_err_t settings_set_power_cycles(uint8_t count) {
   }
   nvs_close(nvs);
   return err;
+}
+
+void settings_host_name_from(const char *name, char *out, size_t out_len) {
+  size_t j = 0;
+  for (size_t i = 0; name && name[i] && j < out_len - 1; i++) {
+    unsigned char c = (unsigned char)name[i];
+    if (isalnum(c)) {
+      out[j++] = (char)tolower(c);
+    } else if (j > 0 && out[j - 1] != '-') {
+      out[j++] = '-';
+    }
+  }
+  while (j > 0 && out[j - 1] == '-') {
+    j--;
+  }
+  out[j] = '\0';
+  // "arply" belongs to the hub (arply.local); the factory name ARPLY must
+  // not take it, so such devices get a MAC suffix.
+  if (j == 0 || strcmp(out, SETTINGS_HUB_HOST_NAME) == 0) {
+    uint8_t mac[6] = {0};
+    esp_read_mac(mac, ESP_MAC_WIFI_STA);
+    snprintf(out, out_len, "%s-%02x%02x", SETTINGS_HUB_HOST_NAME, mac[4],
+             mac[5]);
+  }
+}
+
+void settings_get_host_name(char *out, size_t out_len) {
+  char name[65];
+  settings_get_device_name(name, sizeof(name));
+  settings_host_name_from(name, out, out_len);
 }

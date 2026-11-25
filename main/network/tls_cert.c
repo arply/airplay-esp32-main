@@ -10,7 +10,6 @@
 
 #include "tls_cert.h"
 
-#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -23,6 +22,7 @@
 #include "mbedtls/pk.h"
 #include "mbedtls/x509_crt.h"
 #include "nvs.h"
+#include "settings.h"
 
 static const char *TAG = "tls_cert";
 
@@ -45,28 +45,6 @@ static int rng(void *ctx, unsigned char *buf, size_t len) {
   (void)ctx;
   esp_fill_random(buf, len);
   return 0;
-}
-
-/* Same rule as the DHCP hostname in wifi.c, lower-cased: the name users
- * type in the address bar. */
-static void dns_name(const char *device_name, char *out, size_t out_len) {
-  size_t j = 0;
-  for (size_t i = 0; device_name[i] && j < out_len - 1; i++) {
-    unsigned char c = (unsigned char)device_name[i];
-    if (isalnum(c)) {
-      out[j++] = (char)tolower(c);
-    } else if (j > 0 && out[j - 1] != '-') {
-      out[j++] = '-';
-    }
-  }
-  while (j > 0 && out[j - 1] == '-') {
-    j--;
-  }
-  if (j == 0) {
-    strlcpy(out, "arply", out_len);
-    return;
-  }
-  out[j] = '\0';
 }
 
 static esp_err_t load(const char *host) {
@@ -215,7 +193,7 @@ esp_err_t tls_cert_get(const char *device_name, const char **cert_pem,
                        const char **key_pem) {
   if (!s_cert) {
     char host[HOST_MAX];
-    dns_name(device_name, host, sizeof(host));
+    settings_host_name_from(device_name, host, sizeof(host));
     if (load(host) == ESP_OK) {
       ESP_LOGI(TAG, "Using stored certificate for %s.local", host);
     } else {

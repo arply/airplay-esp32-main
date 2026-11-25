@@ -90,8 +90,11 @@ void mdns_airplay_init(void) {
   // Initialize mDNS
   ESP_ERROR_CHECK(mdns_init());
 
-  // Set hostname
-  ESP_ERROR_CHECK(mdns_hostname_set(device_name));
+  // Host name: a valid DNS label derived from the display name (which may
+  // contain spaces); the AirPlay instance names below keep the display name.
+  char host_name[33];
+  settings_get_host_name(host_name, sizeof(host_name));
+  ESP_ERROR_CHECK(mdns_hostname_set(host_name));
 
 #ifndef CONFIG_AIRPLAY_FORCE_V1
   // ========================================

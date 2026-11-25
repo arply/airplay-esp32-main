@@ -113,6 +113,20 @@ esp_err_t settings_get_device_name(char *name, size_t len);
  */
 esp_err_t settings_set_device_name(const char *name);
 
+/** The hub's host name: arply.local always reaches the fleet overview. */
+#define SETTINGS_HUB_HOST_NAME "arply"
+
+/**
+ * The .local host name for a display name: lower case, anything but letters
+ * and digits becomes '-'. A name mapping to "arply" (the factory default
+ * ARPLY) becomes "arply-<last 4 MAC hex>", because arply.local is the hub.
+ * Used for mDNS, DHCP and the TLS certificate.
+ */
+void settings_host_name_from(const char *name, char *out, size_t out_len);
+
+/** settings_host_name_from() for this device's name. */
+void settings_get_host_name(char *out, size_t out_len);
+
 // ---- LED settings ----
 
 /**

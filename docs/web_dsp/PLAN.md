@@ -667,10 +667,26 @@ Harmonics 50 % still add +2…+4 dB in 300–1000 Hz, so they stay opt-in.
 deconvolution with room noise):** the exponential sweep's deconvolution is
 already the "band-pass that follows the sweep"; with 10 dB margin the
 response error stays < 1 dB, so the level check now asks for 10 dB, not
-20. Averaging an up and a down sweep gains little and the down sweep is
-worse (its distortion lands after the impulse response, not before it).
-The start time is found exactly from the deconvolved peak, so acoustic
-markers add nothing.
+20. A down sweep is worse than a second up sweep (its distortion lands
+after the impulse response, not before it). The start time is found
+exactly from the deconvolved peak, so acoustic markers add nothing.
+
+**Three sweeps per channel, averaged (same day, "dann sweepe einfach
+mehrfach"):** averaging power spectra barely helps (it lowers the
+variance, not the noise floor), but averaging the impulse responses
+aligned on their own peaks lowers the noise by 10·log10(N) dB and is
+immune to the phone/arply clock drift (50 ppm simulated). Bass error
+(40–300 Hz, mean of 6 runs): 1 sweep 0.87 dB at 5 dB margin, 3 sweeps
+0.52 dB, about what one sweep gives at 10 dB. A long sweep gains the
+same per second as more short ones; several sweeps were chosen because
+they need no new sweep length on both sides. The pause between sweeps
+drops from 2 s to 0.5 s: impulse responses lie 4.5 s apart in the
+deconvolved recording, so reverb and the next sweep's distortion stay
+clear of the 0.4 s window; the "longer pause" option is gone. Stereo
+measurement: 6 sweeps, 28 s (was 13 s). Level check: Good from 5 dB
+margin. Checked in jsdom on a simulated recording (6 sweeps, noise,
+drift): channels assigned correctly, bass error 0.6–0.9 dB at 5 dB margin,
+0.2 dB at 20 dB.
 
 **Detail:** the prototype's WebAudio `Q` of `20·log10(1/√2)` dB *is* linear
 Q = 1/√2 (WebAudio's LP/HP Q is in dB), so all sections are plain

@@ -74,7 +74,7 @@ summary{cursor:pointer;font-weight:600;min-height:44px;display:flex;align-items:
 .tabs button[aria-pressed=true]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
 .tabs .one{font:500 12px 'JetBrains Mono',ui-monospace,monospace;letter-spacing:1px;text-transform:uppercase;color:var(--mut);padding:0 4px}
 .mbar{position:relative;height:16px;border-radius:999px;background:var(--bg);border:1px solid var(--line);overflow:hidden;margin:8px 0 4px}
-.mzone{position:absolute;top:0;bottom:0;left:16.7%;right:0;background:var(--accbg)}
+.mzone{position:absolute;top:0;bottom:0;left:8.3%;right:0;background:var(--accbg)}
 #mfill{position:absolute;top:0;bottom:0;left:0;width:0;background:var(--acc);transition:width .08s linear}
 .mscale{display:flex;justify-content:space-between;font:500 11.5px 'JetBrains Mono',ui-monospace,monospace;color:var(--quiet)}
 #mtext{font-size:14.5px;margin:4px 0 0;min-height:1.4em}
@@ -129,12 +129,11 @@ footer{margin-top:40px;padding:24px 0 0;border-top:1px solid var(--line);display
         <p id="mtext"></p>
       </div>
       <div class="row"><button class="pri" id="b-live">2. Measure</button></div>
-      <label class="chk"><input type="checkbox" id="o-tail"> Longer pause between sweeps (large or echoey room)</label>
       <progress id="prog" value="0" max="1" hidden></progress>
       <p id="msg"></p>
       <div class="chips" id="meas"></div>
       <div class="row"><button id="b-clear">Remove all</button></div>
-      <p class="small" style="margin-top:8px">arply plays the sweeps itself; the filters are calculated after every measurement. In stereo mode each run measures left, then right. Measure 3–5 positions around the listening spot, phone at ear height, microphone (bottom edge) towards the speaker.</p>
+      <p class="small" style="margin-top:8px">arply plays the sweeps itself; the filters are calculated after every measurement. Each run plays three sweeps per channel (in stereo: left, right, left, …) and averages them. Measure 3–5 positions around the listening spot, phone at ear height, microphone (bottom edge) towards the speaker.</p>
     </section>
 
     <section class="panel">
@@ -559,7 +558,7 @@ function makeSample(c, kind) {
     left: 'The left source channel plays on both outputs – one filter set, measured on both outputs together.',
     right: 'The right source channel plays on both outputs – one filter set, measured on both outputs together.'
   };
-  const DEF_OPT = { fmin: 40, fmax: 500, tilt: 2, detail: 1, maxN: 6, maxCut: 12, tail: false, mode: 'stereo', bass: { on: false, f: 120, boost: 50, harm: 0 } };
+  const DEF_OPT = { fmin: 40, fmax: 500, tilt: 2, detail: 1, maxN: 6, maxCut: 12, mode: 'stereo', bass: { on: false, f: 120, boost: 50, harm: 0 } };
   const LEAD = 0.5;
   const newCh = () => ({ meas: [], filters: [] });
 
@@ -582,7 +581,11 @@ function makeSample(c, kind) {
   let undo = null, ctx = null, busy = false;
   const getCtx = () => (ctx = ctx || new (window.AudioContext || window.webkitAudioContext)());
   const msg = (t, warn) => { const m = $('#msg'); m.textContent = t; m.className = warn ? 'warn' : ''; };
-  const gap = () => (S.opt.tail ? 4 : 2);
+  // Impulse responses of consecutive sweeps lie SWEEP_T + GAP apart in the
+  // deconvolved recording, so the room's reverb and the next sweep's
+  // distortion stay clear of the 0.4 s window even with a short pause.
+  // REPEAT sweeps averaged: as accurate at 5 dB margin as one at 10 dB (simulated).
+  const GAP = 0.5, REPEAT = 3;
   const sleep = ms => new Promise(r => setTimeout(r, ms));
   const micOk = () => !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.isSecureContext);
   async function getMic() {
@@ -701,7 +704,7 @@ function makeSample(c, kind) {
   const sweepOuts = ks => S.opt.mode === 'stereo' ? ks.map(k => SWEEP_OUT[k]) : ['LR'];
   const busyMsg = e => e.status === 409 ? 'arply is busy – stop AirPlay playback first.' : 'arply did not answer (' + e.message + ').';
   async function deviceSweeps(ks) {
-    return api('/api/dsp/sweep', { channels: sweepOuts(ks), gap_ms: gap() * 1000 });
+    return api('/api/dsp/sweep', { channels: Array(REPEAT).fill(sweepOuts(ks)).flat(), gap_ms: GAP * 1000 });
   }
   let devOk = false, previewing = false, pvTimer = null, pvLast = 0;
   // throttled live preview on the speakers: at most every 150 ms, always ending on the latest state
@@ -787,11 +790,11 @@ function makeSample(c, kind) {
         let v;
         if (sm < -100) v = '<b>The microphone delivers silence</b> – reload the page and allow the microphone.';
         else if (peakHold > -3) v = '<b>Clipping</b> – lower the volume, or move the phone away.';
-        // Simulated with this page's analysis: 10 dB margin -> < 1 dB error.
-        else if (snr < 5) v = '<b>Too quiet for this room</b> – raise the volume, or make the room quieter.';
-        else if (snr < 10) v = '<b>A bit quiet</b> – raise the volume a little.';
+        // Simulated with this page's analysis and REPEAT sweeps: 5 dB margin -> ~0.5 dB error.
+        else if (snr < 0) v = '<b>Too quiet for this room</b> – raise the volume, or make the room quieter.';
+        else if (snr < 5) v = '<b>A bit quiet</b> – raise the volume a little.';
         else v = '<b>Good</b> – measure like this. Louder is not needed.';
-        $('#mtext').innerHTML = v + ' ' + snr.toFixed(0) + ' dB above the background noise (10 dB are enough) · level ' + sm.toFixed(0) + ' dBFS';
+        $('#mtext').innerHTML = v + ' ' + snr.toFixed(0) + ' dB above the background noise (5 dB are enough) · level ' + sm.toFixed(0) + ' dBFS';
       }
       lvl.raf = requestAnimationFrame(tick);
     };
@@ -804,21 +807,26 @@ function makeSample(c, kind) {
     let pk = 0; for (let i = 0; i < rec.length; i++) pk = Math.max(pk, Math.abs(rec[i]));
     const lv = 20 * Math.log10(pk + 1e-12);
     if (lv < -75) { msg('The recording is almost silent (' + lv.toFixed(0) + ' dBFS). Check the level first, then try again.', true); return; }
-    const sw = DSP.sweep(fs), h = DSP.impulse(rec, sw, fs), step = Math.round((sw.T + gap()) * fs), win = Math.round(0.05 * fs);
+    const sw = DSP.sweep(fs), h = DSP.impulse(rec, sw, fs), step = Math.round((sw.T + GAP) * fs), win = Math.round(0.05 * fs);
     let p0;
     if (live) p0 = DSP.argmaxAbs(h, 0, Math.round(LEAD * fs) + step);
     else {
       p0 = DSP.argmaxAbs(h, 0, h.length);
-      for (let n = 0; n < ks.length; n++) { // walk back to the first sweep in the file
+      for (let n = 0; n < ks.length * REPEAT; n++) { // walk back to the first sweep in the file
         const q = DSP.argmaxAbs(h, p0 - step - win, p0 - step + win);
         if (q >= 0 && Math.abs(h[q]) > 0.15 * Math.abs(h[p0])) p0 = q; else break;
       }
     }
     const ref = Math.abs(h[p0]), out = [], run = Date.now();
+    const peaks = Array.from({ length: ks.length * REPEAT }, (_, i) => i ? DSP.argmaxAbs(h, p0 + i * step - win, p0 + i * step + win) : p0);
+    const pre = Math.round(0.01 * fs), len = pre + Math.round(0.4 * fs);
     ks.forEach((k, i) => {
-      const p = i ? DSP.argmaxAbs(h, p0 + i * step - win, p0 + i * step + win) : p0;
-      if (p < 0 || Math.abs(h[p]) < 0.05 * ref) { out.push({ warn: true, t: CH_NAME[k] + ': no signal – is the speaker connected?' }); return; }
-      const sp = DSP.spectrumAt(h, p, fs, 0.4);
+      const ps = peaks.filter((_, j) => j % ks.length === i), p = ps[0];
+      if (ps.some(q => q < 0 || Math.abs(h[q]) < 0.05 * ref)) { out.push({ warn: true, t: CH_NAME[k] + ': no signal – is the speaker connected?' }); return; }
+      // this channel's sweeps, aligned on their own peaks (clock drift) and averaged
+      const avg = new Float64Array(len);
+      for (const q of ps) for (let j = 0; j < len; j++) avg[j] += (h[q - pre + j] || 0) / ps.length;
+      const sp = DSP.spectrumAt(avg, pre, fs, 0.4);
       const db = DSP.normalize(DSP.toGrid(sp.P, sp.M, fs, grid, 24), grid).map(v => Math.round(v * 100) / 100);
       const rel = 20 * Math.log10(Math.abs(h[p]) / ref);
       S.ch[k].meas.push({ run, db });
@@ -859,7 +867,7 @@ function makeSample(c, kind) {
     // recording runs first; arply starts the sweeps lead_ms after the request
     let t;
     try { t = await deviceSweeps(ks); } catch (e) { finish(); busy = false; msg(busyMsg(e), true); return; }
-    msg('Measuring (' + ks.map(k => CH_NAME[k]).join(', then ') + ') – please stay quiet …');
+    msg('Measuring ' + REPEAT + '× (' + ks.map(k => CH_NAME[k]).join(', ') + ') – please stay quiet …');
     await progress((t.lead_ms + t.count * (t.sweep_ms + t.gap_ms)) / 1000 + 0.5);
     finish();
     const n = chunks.reduce((s, a) => s + a.length, 0), rec = new Float32Array(n); let o = 0;
@@ -867,7 +875,6 @@ function makeSample(c, kind) {
     // network delay is unknown, so the analysis finds the first sweep in the recording itself
     analyzeRec(rec, fs, ks, false); busy = false;
   };
-  $('#o-tail').checked = S.opt.tail; $('#o-tail').onchange = e => { S.opt.tail = e.target.checked; save(); };
 
   // ---------- options ----------
   const opts = [['fmin', v => fmtHz(v)], ['fmax', v => fmtHz(v)], ['tilt', v => '+' + String(v) + ' dB'], ['maxn', v => v], ['cut', v => '−' + v + ' dB']];

@@ -405,7 +405,7 @@ static esp_err_t sweep_handler(httpd_req_t *req) {
   if (n < 1 || !gap_ok) {
     return send_error(req, "400 Bad Request",
                       "expected {\"channels\": [\"L\"|\"R\"|\"LR\", ...] "
-                      "(1-4), \"gap_ms\": number}");
+                      "(1-8), \"gap_ms\": number}");
   }
   const uint32_t gap_ms = (uint32_t)fminf(fmaxf(gap, GAP_MS_MIN), GAP_MS_MAX);
   if (test_signal_sweep(outs, n, gap_ms) != ESP_OK) {

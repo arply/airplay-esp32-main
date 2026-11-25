@@ -347,6 +347,19 @@ On the subwoofer's calibration page (Subwoofer panel):
   better, that the subwoofer stands too far away.
 - The result goes into the Subwoofer panel as a live preview; "Save to
   arply" keeps it.
+- **One run for both (Till, same day):** on a subwoofer, step 1's
+  "Measure" is this joint run; there is no separate align button. Each
+  measurement stores the subwoofer's response (levelled on 30 Hz…xo) and
+  the alignment spectra (20–400 Hz, `alignSpectra`), so: level, delay
+  and polarity come from all positions together (`alignRuns` sums the
+  energy over them), the room-mode cuts from their average, range 20 Hz
+  to 2× the crossover, cuts only, and a new crossover re-aligns and
+  re-fits without measuring again. The Advanced section (target, range,
+  manual filters) and the filter editor are hidden; step 2 is "Room
+  modes", a list of the cuts. jsdom with the three real Mac recordings:
+  three measurements accumulate to +6.5 dB, 1.4 ms, inverted (the
+  devices' volumes were -5.5 and -20.9 dB and are corrected), 6 cuts;
+  crossover 200 → 120 Hz re-aligns to 0.9 ms and re-fits 20–240 Hz.
 - Tests: synthetic responses (flat, sub 2 ms earlier, inverted, -6 dB →
   2.0 ms, inverted, +6.2 dB, sum perfect; speaker roll-offs → sum within
   0.1 dB). On the boards with the Mac microphone (Arply as subwoofer at

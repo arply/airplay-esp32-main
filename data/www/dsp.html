@@ -782,9 +782,10 @@ function makeSample(c, kind) {
   }
 
   // ---------- level ----------
-  // 10 dB above the background: three averaged sweeps measure to ~0.3 dB
-  // there (simulated), and the distortion check sees a driver that distorts.
-  const LEVEL_MARGIN = 10, VOL_MIN = -30;
+  // 15 dB above the background: three averaged sweeps measure to < 0.3 dB
+  // there (simulated), and the distortion check has room to see a driver
+  // that distorts (10 dB was often too quiet to tell in a quiet room).
+  const LEVEL_MARGIN = 15, VOL_MIN = -30;
   let lvl = null;
   async function stopLevel() { if (lvl) { lvl.stop = true; await lvl.done; } }
   $('#b-level').onclick = async () => {

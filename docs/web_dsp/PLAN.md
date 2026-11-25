@@ -726,9 +726,10 @@ Step 3"):**
   noise, red near clipping. iOS ends the track in the background; the next
   action opens it again.
 - "1. Set level": 1 s of background, then arply's noise from volume −30 dB
-  upwards in 2 dB steps every 0.4 s until 10 dB above the background
-  (three averaged sweeps measure to ~0.3 dB there and the distortion check
-  sees a distorting driver), the microphone nears clipping, or full volume.
+  upwards in 2 dB steps every 0.4 s until 15 dB above the background
+  (Till's choice; 10 dB measured the response well but left the distortion
+  check "too quiet to tell" in a quiet room), the microphone nears
+  clipping, or full volume.
   The volume is saved. Noise and sweep have the same RMS (−15 dBFS), so the
   margin holds for the sweeps. The Step 1 volume slider is gone.
 - Turning the noise off now waits until arply is idle, so a sweep requested

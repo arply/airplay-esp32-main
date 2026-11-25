@@ -121,14 +121,19 @@ enough.
 - [x] Serve a minimal page at `https://<host>.local/mictest` that calls
       `getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,
       autoGainControl:false}})` and shows a live RMS level.
-- [ ] On an iPhone: open the page, accept the certificate warning, check
+- [x] On an iPhone: open the page, accept the certificate warning, check
       whether the mic prompt appears and levels move. Also test once with the
       certificate installed as a trusted profile (Settings → General → About
-      → Certificate Trust Settings).
+      → Certificate Trust Settings). **Done in use (2026-11-24/25):** Till
+      measured on the iPhone over HTTPS with the accepted warning many times;
+      the trusted-profile variant was not needed.
 - [ ] Log free internal RAM / PSRAM before and after a TLS handshake while
       AirPlay is playing (`heap_caps_get_free_size`). Check for audio dropouts
       during the handshake.
-- [ ] Write the result into this file under “Spike results”. **Decision:**
+- [x] Write the result into this file under “Spike results”. **Decision
+      (from use):** works with the accepted warning, so per-device
+      self-signed certificates (Phase 4.2) stay; the fleet CA was dropped
+      (FLEET_PLAN F7). **Decision:**
       - works with accepted warning → Phase 4 uses a per-device self-signed
         cert generated on first boot;
       - works only with trusted profile → Phase 4 needs the profile download
@@ -567,8 +572,9 @@ without a pop, an AirPlay stream started during a sweep stops it.
 - [x] On first boot generate an EC P-256 key + self-signed cert with
       mbedTLS (`mbedtls_x509write_crt`), SAN = `<hostname>.local`, store in
       NVS. Regenerate when the device is renamed.
-- [ ] If Phase 0 showed a trusted profile is required: serve the cert as a
-      `.mobileconfig` download on the setup page.
+- [x] If Phase 0 showed a trusted profile is required: serve the cert as a
+      `.mobileconfig` download on the setup page. **Not required:** the
+      accepted warning works; `/arply.crt` is offered for those who want it.
 
 Done ahead of the iPhone result, because every outcome that keeps HTTPS
 needs it and a private key in the repo would be shared by every device:

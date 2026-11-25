@@ -224,9 +224,23 @@ together with locking those APIs, which needs a PIN for the user too.
   own device direct, peer via proxy); on the boards via DUT as proxy: GET
   over HTTP and HTTPS, 400/404, Arply's room changed and back, visible on
   DUT after 2 s.
-- [ ] **Update all:** needs a firmware source per build (arply_v1 vs
-      usbdac; app image and web pages separately, not the merged 8 MB
-      flasher image) — decision pending.
+- [x] **Update all from arply.de** (Till chose the website as source):
+      `assets/firmware/ota/manifest.json` names the version, the pages and
+      the app image per build; the files live in `ota/<version>/`.
+      `GET /api/update` reports current/latest (background check at most
+      every 10 min), `POST /api/update {"install": true}` downloads the app
+      into the free slot, then the pages as `.new`, swaps them only when
+      all arrived and reboots (failure: old firmware and pages stay;
+      crash of the new image: rollback). Refuses while playing. The
+      overview offers "Update all": one device at a time through the
+      proxy, followed until it is back with the new version, hub last;
+      devices without the endpoint are reported for the web flasher.
+      Release: bump `version.txt`, `scripts/publish_ota.sh`, commit and
+      push the website's `ota` folder. The web flasher's merged image is
+      separate (stays 0.2.0 until it is updated on purpose).
+      Tested: DUT updated itself from arply.de to 0.2.1 in ~45 s (app
+      26 s, pages 13 s, restart) and stayed on it past the rollback window;
+      jsdom: order (hub last), progress, an old device reported.
 - [ ] Mute, copy calibration: not built (iOS mutes AirPlay groups itself;
       copying only helps for identical speakers in similar places).
 

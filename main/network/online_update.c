@@ -187,6 +187,7 @@ static void drop_new_pages(const cJSON *www) {
 
 static bool download_pages(const char *base, const cJSON *www) {
   s_state = ST_PAGES;
+  s_progress = 0;
   const int n = cJSON_GetArraySize(www);
   int i = 0;
   const cJSON *p;

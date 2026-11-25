@@ -57,7 +57,8 @@ void fleet_start(void);
 /** True if a device other than this one uses @p host (case-insensitive). */
 bool fleet_host_in_use(const char *host);
 
-/** Register /api/fleet and /api/fleet/self. Returns the handler count. */
+/** Register /api/fleet, /api/fleet/self and /api/fleet/proxy. Returns the
+ * handler count. */
 int fleet_register_handlers(httpd_handle_t server);
 
-#define FLEET_URI_COUNT 3
+#define FLEET_URI_COUNT 5

@@ -5,7 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>arply</title>
 <!-- Fleet overview at arply.local (docs/web_dsp/overview-mock.html is the
-     design). Read-only for now: room actions arrive with FLEET_PLAN F3/F4. -->
+     design). Changes to other devices go through the hub's
+     /api/fleet/proxy (FLEET_PLAN F3/F4). -->
 <style>
 :root{color-scheme:light dark;
 --bg:light-dark(#f7f8fb,#0e1016);--card:light-dark(#ffffff,#161922);--ink:light-dark(#0b0d14,#eef0f6);
@@ -67,6 +68,13 @@ dt{color:var(--quiet)}dd{margin:0}dd span{color:var(--mut)}
 footer{margin-top:56px;padding:28px 24px 36px;border-top:1px solid var(--line);display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center}
 footer .logo{width:59px;height:18px}footer .s{font-size:13px;color:var(--quiet)}
 footer nav{display:flex;gap:20px;font-size:14px}footer nav a{color:var(--mut);text-decoration:none}
+.vol{display:flex;align-items:center;gap:12px;font-size:14px;color:var(--mut);padding-top:8px}
+.vol input{flex:1;accent-color:var(--acc);min-height:32px}
+.vol output{font:500 12.5px ui-monospace,SFMono-Regular,Menlo,monospace;min-width:3.4em;text-align:right}
+.field{font:15px Inter,system-ui,sans-serif;min-height:44px;padding:0 14px;border-radius:12px;border:1px solid var(--btnline);background:var(--card);color:var(--ink);flex:1 1 140px}
+.row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.msg{margin:0;font-size:14.5px;color:var(--mut);min-height:1.4em}
+button.btn{cursor:pointer}button.btn:disabled{opacity:.5}
 @media(max-width:600px){.wrap{padding-top:28px}.dev{padding:12px 16px}.room .head,.acts{padding-left:16px;padding-right:16px}}
 </style>
 </head>
@@ -78,6 +86,7 @@ footer nav{display:flex;gap:20px;font-size:14px}footer nav a{color:var(--mut);te
       <span class="eyebrow">arply.local</span>
       <h1>Your rooms.</h1>
       <p class="lead" id="lead">Looking for arply devices …</p>
+      <p class="msg" id="msg" role="status"></p>
     </div>
     <section class="panel fw" id="fw" hidden aria-label="Firmware"></section>
   </div>
@@ -96,7 +105,7 @@ footer nav{display:flex;gap:20px;font-size:14px}footer nav a{color:var(--mut);te
           <dt>Certificate</dt><dd>Each arply has its own. <a href="/arply.crt">Get this one</a> to trust it on your phone.</dd>
           <dt>Discovery</dt><dd id="n-disc">–</dd>
         </dl>
-        <p class="note">To change the hub, open a device and choose “Use this device for arply.local”.</p>
+        <div class="row" id="hubrow" hidden><select class="field" id="hubsel" aria-label="Device to become the hub"></select><button class="btn" data-act="hub">Make hub</button></div>
       </section>
     </aside>
   </div>
@@ -145,19 +154,40 @@ function roomCard(name, devs, hubId) {
   } else chips.push(`<span class="chip warn">${cal.some(c => c > 0) ? 'Partly calibrated' : 'Not calibrated yet'}</span>`);
   if (off) chips.push(`<span class="chip err">${plural(off, 'device')} offline</span>`);
   const online = devs.filter(d => d.online);
-  const acts = online.length === 1
+  const acts = (online.length === 1
     ? `<a class="btn pri" href="${url(online[0])}dsp">Calibrate</a>`
-    : `<p class="note">Calibrate each speaker from its own page; calibrating the whole room in one go comes later.</p>`;
+    : `<p class="note">Calibrate each speaker from its own page; calibrating the whole room in one go comes later.</p>`) +
+    `<button class="btn" data-act="rename" data-room="${esc(name)}">Rename room</button>`;
+  const vol = online.length ? `<label class="vol">Volume<input type="range" min="-30" max="0" step="0.5" data-room="${esc(name)}"><output>–</output></label>` : '';
   return `<section class="panel room"><div class="head"><span class="eyebrow">Room</span><h2>${esc(name)}</h2><p class="sub">${esc(summary(devs))}</p>` +
-    `<div class="chips">${chips.join('')}</div></div><ul>${devs.map(d => row(d, hubId)).join('')}</ul><div class="acts">${acts}</div></section>`;
+    `<div class="chips">${chips.join('')}</div>${vol}</div><ul>${devs.map(d => row(d, hubId)).join('')}</ul><div class="acts">${acts}</div></section>`;
+}
+
+let F = null, byId = {}, quietUntil = 0;
+const pct = db => Math.round((db + 30) / 30 * 100) + ' %';
+const say = t => { $('#msg').textContent = t; };
+const soon = () => { quietUntil = 0; setTimeout(load, 1500); setTimeout(load, 6000); };
+const roomDevs = n => Object.values(byId).filter(d => d.room === n);
+// This device's own API directly; the others through the hub's proxy.
+const PATH = { self: '/api/fleet/self', volume: '/api/audio/volume' };
+async function call(d, to, body) {
+  const u = d.id === F.self.id ? PATH[to] : '/api/fleet/proxy?id=' + encodeURIComponent(d.id) + '&to=' + to;
+  const r = await fetch(u, body === undefined ? { cache: 'no-store' }
+    : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  if (!r.ok) throw new Error((await r.text()).trim() || 'HTTP ' + r.status);
+  return r.json();
 }
 
 async function load() {
+  // no redraw under the user's hands (slider, typing a room name)
+  const a = document.activeElement;
+  if (Date.now() < quietUntil || (a && a.matches('input.field,select'))) return;
   let f;
   try { const r = await fetch('/api/fleet', { cache: 'no-store' }); f = await r.json(); }
   catch (e) { $('#lead').textContent = 'This arply did not answer – trying again …'; return; }
+  F = f;
   const devs = [{ ...f.self, online: true, age_s: 0 }, ...f.peers];
-  const byId = Object.fromEntries(devs.map(d => [d.id, d]));
+  byId = Object.fromEntries(devs.map(d => [d.id, d]));
   const rooms = {}, fresh = [];
   for (const d of devs) (d.room ? (rooms[d.room] = rooms[d.room] || []) : fresh).push(d);
   const names = Object.keys(rooms).sort((a, b) => a.localeCompare(b));
@@ -167,7 +197,17 @@ async function load() {
     '<section class="panel empty"><h2>No rooms yet</h2><p class="sub">Open a device and give it a room – it shows up here.</p></section>';
   $('#new').hidden = !fresh.length;
   $('#newlist').innerHTML = fresh.map(d => `<div class="newdev"><h2>${esc(d.name)}</h2><p class="sub">${d.online ? 'Not in a room yet.' : 'Offline, not in a room.'}</p>` +
-    `<p style="margin:10px 0 0"><a class="btn pri" href="${url(d)}">Set up</a></p></div>`).join('');
+    (d.online ? `<div class="row"><input class="field" list="roomnames" placeholder="Room" maxlength="32" aria-label="Room for ${esc(d.name)}">` +
+      `<button class="btn pri" data-act="assign" data-id="${esc(d.id)}">Assign room</button></div>` : '') +
+    `<p style="margin:10px 0 0"><a class="btn" href="${url(d)}">Set up</a></p></div>`).join('') +
+    `<datalist id="roomnames">${names.map(n => `<option value="${esc(n)}">`).join('')}</datalist>`;
+  const others = devs.filter(d => d.online && d.id !== f.hub);
+  $('#hubrow').hidden = !others.length;
+  $('#hubsel').innerHTML = others.map(d => `<option value="${esc(d.id)}">${esc(d.name)}</option>`).join('');
+  for (const s of document.querySelectorAll('input[type=range][data-room]')) {
+    const d = roomDevs(s.dataset.room).find(x => x.online);
+    if (d) call(d, 'volume').then(v => { if (Date.now() >= quietUntil) { s.value = v.db; s.nextElementSibling.textContent = pct(v.db); } }).catch(() => {});
+  }
   $('#n-hub').innerHTML = hub ? esc(hub.name) + (stand ? '<br><span>Stand-in: ' + esc(stand.name) + '</span>' : '') : '–';
   const off = devs.filter(d => !d.online).length;
   $('#n-disc').textContent = plural(devs.length, 'device') + ' via Bonjour' + (off ? ', ' + off + ' offline' : '');
@@ -177,6 +217,52 @@ async function load() {
     fws.map(v => esc(v) + ': ' + devs.filter(d => d.fw === v).map(d => esc(d.name)).join(', ')).join(' · ') + '</span>';
   $('#foot').textContent = 'Firmware ' + f.self.fw + ' on ' + f.self.name;
 }
+// ---- changes ----
+async function setRoomVol(room, db, persist) {
+  for (const d of roomDevs(room).filter(x => x.online)) await call(d, 'volume', { db, persist }).catch(() => {});
+}
+let volT = null;
+document.addEventListener('input', e => {
+  const s = e.target.closest('input[type=range][data-room]'); if (!s) return;
+  quietUntil = Date.now() + 4000; s.nextElementSibling.textContent = pct(+s.value);
+  clearTimeout(volT); volT = setTimeout(() => setRoomVol(s.dataset.room, +s.value, false), 120);
+});
+document.addEventListener('change', e => {
+  const s = e.target.closest('input[type=range][data-room]'); if (!s) return;
+  clearTimeout(volT); quietUntil = Date.now() + 4000; setRoomVol(s.dataset.room, +s.value, true);
+});
+async function sequence(devs, body) { // one after another: the hub forwards one request at a time
+  let bad = 0;
+  for (const d of devs) await call(d, 'self', body).catch(() => bad++);
+  return bad;
+}
+const ACTS = {
+  async rename(b) {
+    const room = b.dataset.room, to = (prompt('New name for “' + room + '”', room) || '').trim();
+    if (!to || to === room) return;
+    const devs = roomDevs(room), on = devs.filter(d => d.online), bad = await sequence(on, { room: to });
+    const off = devs.length - on.length;
+    say('Renamed to ' + to + (bad ? ' – ' + plural(bad, 'device') + ' did not answer' : '') +
+      (off ? ' – ' + plural(off, 'offline device') + ' keep the old name until renamed again' : '') + '.');
+  },
+  async assign(b) {
+    const d = byId[b.dataset.id], room = b.parentElement.querySelector('input').value.trim();
+    if (!room) { say('Type or pick a room first.'); return; }
+    await call(d, 'self', { room });
+    say(d.name + ' is now in ' + room + '.');
+  },
+  async hub() {
+    const d = byId[$('#hubsel').value]; if (!d) return;
+    await call(d, 'self', { hub: true });
+    say('arply.local moves to ' + d.name + ' within about half a minute.');
+  },
+};
+document.addEventListener('click', async e => {
+  const b = e.target.closest('button[data-act]'); if (!b || !F) return;
+  b.disabled = true;
+  try { await ACTS[b.dataset.act](b); soon(); } catch (err) { say('That did not work: ' + err.message); }
+  b.disabled = false;
+});
 load(); setInterval(load, 10000);
 </script>
 </body>

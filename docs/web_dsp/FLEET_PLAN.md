@@ -199,6 +199,39 @@ state while streaming; the page on the iPhone.
 
 ---
 
+## F3/F4 — Proxy and room actions (first part done 2026-11-25)
+
+**No pairing:** with F7 dropped, nothing on the devices needs protecting
+from the rest of the LAN that is not already open there (every API, OTA
+included, answers anyone on the network). A fleet key would only matter
+together with locking those APIs, which needs a PIN for the user too.
+
+- [x] **Proxy** `GET/POST /api/fleet/proxy?id=<peer>&to=self|volume` on
+      every device (the overview uses the hub's): forwards a JSON body of
+      < 256 B over plain HTTP to the peer's `/api/fleet/self` or
+      `/api/audio/volume`, 3 s timeout, returns the peer's status and body.
+      Only those two targets; 404 for a device that is not online. The page
+      calls its own device directly (its httpd would wait on itself). A
+      proxied change of `self` wakes the hub's fleet task, so the overview
+      shows it within ~2 s instead of a round.
+- [x] **Overview:** room volume (all online devices of the room, the same
+      dB; persisted on release), "Rename room" (every online device of the
+      room; offline ones keep the old name and are reported), "Assign
+      room" for devices without one (field with the existing rooms), "Make
+      hub" in the Network panel. No redraw while a slider moves or a field
+      has focus; refresh 1.5 s and 6 s after a change.
+- Tested: jsdom against a fake hub (each action sends the right requests,
+  own device direct, peer via proxy); on the boards via DUT as proxy: GET
+  over HTTP and HTTPS, 400/404, Arply's room changed and back, visible on
+  DUT after 2 s.
+- [ ] **Update all:** needs a firmware source per build (arply_v1 vs
+      usbdac; app image and web pages separately, not the merged 8 MB
+      flasher image) — decision pending.
+- [ ] Mute, copy calibration: not built (iOS mutes AirPlay groups itself;
+      copying only helps for identical speakers in similar places).
+
+---
+
 ## F5 — Subwoofer role (done 2026-11-25, before F3/F4)
 
 Built without pairing or a proxy: everything a speaker needs to know about

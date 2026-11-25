@@ -826,6 +826,95 @@ static esp_err_t self_post_handler(httpd_req_t *req) {
   return self_get_handler(req);
 }
 
+/* GET/POST /api/fleet/proxy?id=<peer>&to=self|volume: the overview on
+ * arply.local cannot call other devices from the browser (other origin,
+ * other certificate), so the hub forwards these two small JSON requests
+ * over plain HTTP inside the LAN. Only these: they are what the overview
+ * changes (room, hub pick, volume). Not for the hub itself: its own httpd
+ * would wait on itself, so the page calls its own API directly. */
+#define PROXY_MS 3000
+static esp_err_t proxy_handler(httpd_req_t *req) {
+  static const char *const TARGETS[][2] = {{"self", "/api/fleet/self"},
+                                           {"volume", "/api/audio/volume"}};
+  char q[64];
+  char id[13];
+  char to[8];
+  const char *path = NULL;
+  if (httpd_req_get_url_query_str(req, q, sizeof(q)) == ESP_OK &&
+      httpd_query_key_value(q, "id", id, sizeof(id)) == ESP_OK &&
+      httpd_query_key_value(q, "to", to, sizeof(to)) == ESP_OK) {
+    for (size_t i = 0; i < sizeof(TARGETS) / sizeof(TARGETS[0]); i++) {
+      if (strcmp(to, TARGETS[i][0]) == 0) {
+        path = TARGETS[i][1];
+      }
+    }
+  }
+  if (!path) {
+    return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
+                               "Expected ?id=<device id>&to=self|volume");
+  }
+  uint32_t ip = 0;
+  xSemaphoreTake(s_lock, portMAX_DELAY);
+  const fleet_peer_t *p = find_peer(id);
+  if (p && p->online) {
+    ip = p->ip;
+  }
+  xSemaphoreGive(s_lock);
+  if (!ip) {
+    return httpd_resp_send_err(req, HTTPD_404_NOT_FOUND,
+                               "No such device online");
+  }
+  char body[256];
+  const int len = (int)req->content_len;
+  if (len >= (int)sizeof(body)) {
+    return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Body too large");
+  }
+  for (int got = 0; got < len;) {
+    const int r = httpd_req_recv(req, body + got, len - got);
+    if (r <= 0) {
+      return ESP_FAIL;
+    }
+    got += r;
+  }
+  char url[64];
+  snprintf(url, sizeof(url), "http://" IPSTR "%s",
+           IP2STR((const esp_ip4_addr_t *)&ip), path);
+  const bool post = req->method == HTTP_POST;
+  esp_http_client_config_t cfg = {.url = url,
+                                  .timeout_ms = PROXY_MS,
+                                  .method = post ? HTTP_METHOD_POST
+                                                 : HTTP_METHOD_GET};
+  esp_http_client_handle_t h = esp_http_client_init(&cfg);
+  if (!h) {
+    return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
+                               "No memory");
+  }
+  esp_http_client_set_header(h, "Content-Type", "application/json");
+  char resp[512];
+  int n = -1;
+  int code = 0;
+  if (esp_http_client_open(h, post ? len : 0) == ESP_OK &&
+      (!post || esp_http_client_write(h, body, len) == len) &&
+      esp_http_client_fetch_headers(h) >= 0) {
+    code = esp_http_client_get_status_code(h);
+    n = esp_http_client_read_response(h, resp, sizeof(resp) - 1);
+  }
+  esp_http_client_cleanup(h);
+  if (n < 0 || code == 0) {
+    return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
+                               "The device did not answer");
+  }
+  if (post && code == 200 && path == TARGETS[0][1] && s_task) {
+    xTaskNotifyGive(s_task); // browse now: the overview shows the change
+  }
+  char status[32];
+  snprintf(status, sizeof(status), "%d %s", code,
+           code == 200 ? "OK" : "From device");
+  httpd_resp_set_status(req, status);
+  httpd_resp_set_type(req, "application/json");
+  return httpd_resp_send(req, resp, n);
+}
+
 int fleet_register_handlers(httpd_handle_t server) {
   const httpd_uri_t uris[] = {
       {.uri = "/api/fleet", .method = HTTP_GET, .handler = fleet_get_handler},
@@ -835,6 +924,10 @@ int fleet_register_handlers(httpd_handle_t server) {
       {.uri = "/api/fleet/self",
        .method = HTTP_POST,
        .handler = self_post_handler},
+      {.uri = "/api/fleet/proxy", .method = HTTP_GET, .handler = proxy_handler},
+      {.uri = "/api/fleet/proxy",
+       .method = HTTP_POST,
+       .handler = proxy_handler},
   };
   int n = 0;
   for (size_t i = 0; i < sizeof(uris) / sizeof(uris[0]); i++) {

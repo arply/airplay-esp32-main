@@ -58,6 +58,7 @@ typedef struct {
   // servo_engaged/servo_phase: hysteresis state and trim rate divider.
   // servo_trims: total single-sample corrections applied (diagnostics).
   int64_t pos_err_filtered_us;
+  int64_t playout_start_us; // fast shrink window (POS_SERVO_FAST_US)
   bool servo_engaged;
   uint8_t servo_phase;
   uint32_t servo_trims;
@@ -96,6 +97,10 @@ void audio_timing_set_output_latency(audio_timing_t *timing,
                                      uint32_t latency_us);
 uint32_t audio_timing_get_output_latency(const audio_timing_t *timing);
 uint32_t audio_timing_get_hardware_latency(void);
+
+/** From writing a sample to the output until it leaves the DAC, as the
+ * AirPlay schedule assumes it (hardware latency + pipeline). */
+uint32_t audio_timing_get_playout_delay_us(void);
 // Total end-to-end latency (output target + HW DMA + fixed pipeline delay).
 //
 // DIAGNOSTIC ONLY — do NOT wire this into outputLatencyMicros.

@@ -41,6 +41,15 @@
 #define POS_SERVO_ENGAGE_US     5000 // engage when |filtered err| exceeds this
 #define POS_SERVO_DISENGAGE_US  1500 // disengage when it falls below this
 #define POS_SERVO_TRIM_INTERVAL 4    // one 1-sample trim per this many frames
+// Right after a (re)start the position can carry a standing offset from the
+// start itself (first session after boot: -16..-22 ms, measured with two
+// boards). There, a late position shrinks POS_SERVO_FAST_SHRINK samples per
+// frame (~3 ms/s, 0.3 % pitch for a few seconds) instead of 1 per 4 frames.
+// Only shrinking: output buffers hold one spare sample, so stretch stays 1.
+// 3 samples/frame keep the error change per frame (68 us at 44.1 kHz) below
+// what the clamped filter tracks per frame (94 us), so it does not overshoot.
+#define POS_SERVO_FAST_SHRINK 3
+#define POS_SERVO_FAST_US     30000000LL // fast window after playout start
 // Innovation clamp: cap how far one frame's measurement can move the filter.
 // The per-frame error measurement is NOISY in a one-sided way: the DMA ring
 // holds ~40 ms of queued audio, so when the playback task is briefly starved
@@ -299,6 +308,10 @@ uint32_t audio_timing_get_output_latency(const audio_timing_t *timing) {
 
 uint32_t audio_timing_get_hardware_latency(void) {
   return audio_output_get_hardware_latency_us();
+}
+
+uint32_t audio_timing_get_playout_delay_us(void) {
+  return audio_output_get_hardware_latency_us() + PIPELINE_LATENCY_US;
 }
 
 uint32_t audio_timing_get_advertised_latency(const audio_timing_t *timing) {
@@ -880,8 +893,13 @@ size_t audio_timing_read(audio_timing_t *timing, audio_buffer_t *buffer,
                    (long long)timing->pos_err_filtered_us, timing->servo_trims);
         }
 
-        if (timing->servo_engaged &&
-            ++timing->servo_phase >= POS_SERVO_TRIM_INTERVAL) {
+        if (timing->servo_engaged && timing->pos_err_filtered_us < 0 &&
+            esp_timer_get_time() - timing->playout_start_us <
+                POS_SERVO_FAST_US) {
+          sample_adjust = -POS_SERVO_FAST_SHRINK;
+          timing->servo_trims += POS_SERVO_FAST_SHRINK;
+        } else if (timing->servo_engaged &&
+                   ++timing->servo_phase >= POS_SERVO_TRIM_INTERVAL) {
           timing->servo_phase = 0;
           // Positive error = playing early = stretch (emit one extra sample)
           // so playout slows; negative = late = shrink to catch up.
@@ -898,8 +916,8 @@ size_t audio_timing_read(audio_timing_t *timing, audio_buffer_t *buffer,
     size_t out_samples = frame_samples - skip;
     if (skip > 0) {
       // the start trim replaces this frame's servo trim
-    } else if (sample_adjust < 0 && out_samples > 1) {
-      out_samples--;
+    } else if (sample_adjust < 0 && out_samples > (size_t)-sample_adjust) {
+      out_samples -= (size_t)-sample_adjust;
     } else if (sample_adjust > 0 && out_samples + 1 <= samples) {
       out_samples++;
     }
@@ -929,13 +947,18 @@ size_t audio_timing_read(audio_timing_t *timing, audio_buffer_t *buffer,
         }
       }
     } else {
-      // Servo trim: drop or duplicate exactly one sample, placed at the
-      // frame's quietest point so the seam is inaudible.
+      // Servo trim: drop samples or duplicate one, placed at the frame's
+      // quietest point so the seam is inaudible.
+      const size_t drop =
+          out_samples < frame_samples ? frame_samples - out_samples : 0;
       size_t m = quietest_sample_index(pcm, frame_samples, channels, out_ch);
+      if (m + drop > frame_samples) {
+        m = frame_samples - drop;
+      }
       size_t o = 0;
       for (size_t i = 0; i < frame_samples; i++) {
-        if (out_samples < frame_samples && i == m) {
-          continue; // shrink: skip the quietest sample
+        if (i >= m && i < m + drop) {
+          continue; // shrink: skip the quietest samples
         }
         for (size_t ch = 0; ch < out_ch; ch++) {
           out[o * out_ch + ch] = pcm[i * channels + ch];
@@ -972,6 +995,7 @@ size_t audio_timing_read(audio_timing_t *timing, audio_buffer_t *buffer,
 
     if (!timing->playout_started) {
       timing->playout_started = true;
+      timing->playout_start_us = esp_timer_get_time();
       bool was_quick = timing->quick_start;
       timing->quick_start = false;
       ESP_LOGI(TAG, "Playout started%s: rtp=%" PRIu32 " late_trim=%u",

@@ -11,6 +11,7 @@
 #include "driver/gpio.h"
 #include "esp_check.h"
 #include "esp_heap_caps.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "audio_receiver.h"
@@ -51,6 +52,65 @@ static TaskHandle_t playback_task_handle = NULL;
 static volatile int source_rate = 44100;
 static volatile bool resample_reinit_needed = false;
 static volatile audio_channel_mode_t channel_mode = AUDIO_CHANNEL_STEREO;
+
+/* Exact DAC timing: bytes handed to the DMA against bytes it has sent (the
+ * on_sent interrupt, one per descriptor). The next written byte leaves the
+ * DAC when "sent" reaches "written": exact to a sample, where the average
+ * occupancy model (audio_output_get_hardware_latency_us) swings +-2.9 ms
+ * with the descriptor phase (measured on scheduled sweeps). */
+//
+// The driver hands the writer freed descriptors from a queue of DESC_NUM-1,
+// dropping the oldest when full. Right after enable the first written byte
+// therefore plays one full ring of zeros later (base = ring); after the
+// writer was idle (USB build between sources) it lands in the descriptor
+// after the one being sent: never less than one descriptor ahead.
+#define DMA_DESC_BYTES (I2S_DMA_FRAME_NUM * 2 * (int64_t)sizeof(int16_t))
+static portMUX_TYPE s_dma_lock = portMUX_INITIALIZER_UNLOCKED;
+static int64_t s_dma_sent;    // bytes the DMA finished sending
+static int64_t s_dma_written; // bytes accepted by i2s_channel_write()
+static int64_t s_dma_base;    // DMA bytes before the first written one
+static int64_t s_dma_sent_us; // when the last descriptor finished
+
+static bool IRAM_ATTR on_dma_sent(i2s_chan_handle_t h, i2s_event_data_t *e,
+                                  void *ctx) {
+  (void)h;
+  (void)ctx;
+  portENTER_CRITICAL_ISR(&s_dma_lock);
+  s_dma_sent += e->size;
+  s_dma_sent_us = esp_timer_get_time();
+  portEXIT_CRITICAL_ISR(&s_dma_lock);
+  return false;
+}
+
+static void dma_count_written(size_t bytes) {
+  portENTER_CRITICAL(&s_dma_lock);
+  if (s_dma_written + s_dma_base < s_dma_sent + DMA_DESC_BYTES) {
+    s_dma_base = s_dma_sent + DMA_DESC_BYTES - s_dma_written; // was idle
+  }
+  s_dma_written += (int64_t)bytes;
+  portEXIT_CRITICAL(&s_dma_lock);
+}
+
+/* After (re)enabling the channel the ring starts over. */
+static void dma_count_reset(void) {
+  portENTER_CRITICAL(&s_dma_lock);
+  s_dma_sent = 0;
+  s_dma_written = 0;
+  s_dma_base = I2S_DMA_DESC_NUM * DMA_DESC_BYTES;
+  s_dma_sent_us = esp_timer_get_time();
+  portEXIT_CRITICAL(&s_dma_lock);
+}
+
+int64_t audio_output_next_play_us(void) {
+  portENTER_CRITICAL(&s_dma_lock);
+  int64_t ahead = s_dma_written + s_dma_base - s_dma_sent;
+  const int64_t at = s_dma_sent_us;
+  portEXIT_CRITICAL(&s_dma_lock);
+  if (ahead < DMA_DESC_BYTES) {
+    ahead = DMA_DESC_BYTES; // writer idle: the next descriptor
+  }
+  return at + ahead * 1000000LL / (OUTPUT_RATE * 2 * (int64_t)sizeof(int16_t));
+}
 
 int32_t audio_output_volume_q15_from_db(float volume_db) {
   if (volume_db <= AUDIO_VOLUME_MIN_DB) {
@@ -213,6 +273,7 @@ static void playback_task(void *arg) {
       audio_resample_reset();
       i2s_channel_disable(tx_handle);
       i2s_channel_enable(tx_handle);
+      dma_count_reset();
     }
     if (test_signal_active()) {
       // arply's own signal: measurement signals follow the volume (as loud
@@ -237,6 +298,7 @@ static void playback_task(void *arg) {
       i2s_channel_write(tx_handle, pcm,
                         (size_t)FRAME_SAMPLES * 2 * sizeof(int16_t), &written,
                         portMAX_DELAY);
+      dma_count_written(written);
       continue;
     }
     size_t samples = audio_receiver_read(pcm, FRAME_SAMPLES + 1);
@@ -264,6 +326,7 @@ static void playback_task(void *arg) {
       led_audio_feed(play_buf, play_samples);
       i2s_channel_write(tx_handle, play_buf, play_samples * 2 * sizeof(int16_t),
                         &written, portMAX_DELAY);
+      dma_count_written(written);
       taskYIELD();
     } else {
       // Receiver underflow — output a frame of silence.  Block on the DMA
@@ -273,6 +336,7 @@ static void playback_task(void *arg) {
       i2s_channel_write(tx_handle, silence,
                         (size_t)FRAME_SAMPLES * 2 * sizeof(int16_t), &written,
                         portMAX_DELAY);
+      dma_count_written(written);
     }
   }
 
@@ -332,8 +396,13 @@ esp_err_t audio_output_init(void) {
 
   ESP_RETURN_ON_ERROR(i2s_channel_init_std_mode(tx_handle, &std_cfg), TAG,
                       "std mode init failed");
+  const i2s_event_callbacks_t cbs = {.on_sent = on_dma_sent};
+  ESP_RETURN_ON_ERROR(
+      i2s_channel_register_event_callback(tx_handle, &cbs, NULL), TAG,
+      "DMA callback failed");
   ESP_RETURN_ON_ERROR(i2s_channel_enable(tx_handle), TAG,
                       "channel enable failed");
+  dma_count_reset();
   ESP_LOGI(TAG, "I2S initialized: Rate=%u, DMA_Desc=%d, DMA_Frame=%d",
            (unsigned int)OUTPUT_RATE, I2S_DMA_DESC_NUM, I2S_DMA_FRAME_NUM);
 
@@ -374,7 +443,10 @@ void audio_output_stop(void) {
 
 esp_err_t audio_output_write(const void *data, size_t bytes, TickType_t wait) {
   size_t written = 0;
-  return i2s_channel_write(tx_handle, data, bytes, &written, wait);
+  const esp_err_t err =
+      i2s_channel_write(tx_handle, data, bytes, &written, wait);
+  dma_count_written(written);
+  return err;
 }
 
 void audio_output_set_sample_rate(uint32_t rate) {
@@ -386,6 +458,7 @@ void audio_output_set_sample_rate(uint32_t rate) {
   i2s_std_clk_config_t clk_cfg = I2S_STD_CLK_DEFAULT_CONFIG(rate);
   i2s_channel_reconfig_std_clock(tx_handle, &clk_cfg);
   i2s_channel_enable(tx_handle);
+  dma_count_reset();
 }
 
 void audio_output_flush(void) {

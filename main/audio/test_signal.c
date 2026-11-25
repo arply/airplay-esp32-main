@@ -6,6 +6,7 @@
 
 #include "audio_output.h"
 #include "audio_receiver.h"
+#include "audio_timing.h"
 #include "board_common.h"
 #include "dsp_signal.h"
 #include "esp_log.h"
@@ -48,6 +49,7 @@ typedef struct {
   size_t loop_frames;
   int loop_channels;
   uint8_t flags; // TEST_SIGNAL_FOLLOW_VOLUME | TEST_SIGNAL_APPLY_DSP
+  int64_t at_us; // > 0: the first non-silent sample leaves the DAC then
 } plan_t;
 
 // IDLE -> CLAIMED (a requester is writing s_req) -> REQUESTED -> RUNNING.
@@ -125,12 +127,14 @@ static seg_t silence(uint32_t ms) {
   return (seg_t){.kind = SEG_SILENCE, .outs = 0, .frames = ms_to_frames(ms)};
 }
 
-esp_err_t test_signal_sweep(const uint8_t *outs, int count, uint32_t gap_ms) {
+esp_err_t test_signal_sweep(const uint8_t *outs, int count, uint32_t gap_ms,
+                            int64_t at_us) {
   if (count < 1 || count > TEST_SIGNAL_MAX_SWEEPS) {
     return ESP_ERR_INVALID_ARG;
   }
   plan_t p = {0};
   p.flags = TEST_SIGNAL_FOLLOW_VOLUME;
+  p.at_us = at_us;
   p.seg[p.count++] = silence(TEST_SIGNAL_LEAD_MS);
   dsp_sweep_t probe;
   dsp_sweep_init(&probe, s_fs, TEST_SIGNAL_SWEEP_MS / 1000.0, 20, 20000,
@@ -268,6 +272,21 @@ static inline int16_t to_s16(float v) {
 uint8_t test_signal_fill(int16_t *buf, size_t frames) {
   if (atomic_load(&s_state) == STATE_REQUESTED) {
     s_run = s_req;
+    if (s_run.at_us > 0 && s_run.seg[0].kind == SEG_SILENCE) {
+      // The first sample of this buffer leaves the DAC at
+      // audio_output_next_play_us(); the lead fills the time up to at_us.
+      const int64_t now = esp_timer_get_time();
+      const int64_t next = audio_output_next_play_us();
+      const int64_t lead_us = s_run.at_us - next;
+      ESP_LOGI(TAG, "Scheduled: DAC delay %lld us (model %u us)",
+               (long long)(next - now),
+               (unsigned)audio_timing_get_playout_delay_us());
+      s_run.seg[0].frames =
+          lead_us > 0 ? (uint32_t)(lead_us * (int64_t)s_fs / 1000000) + 1 : 1;
+      if (lead_us < 0) {
+        ESP_LOGW(TAG, "Scheduled start %lld us too late", (long long)-lead_us);
+      }
+    }
     s_seg = 0;
     s_fade = 1.0f;
     start_segment();

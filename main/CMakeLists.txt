@@ -43,6 +43,7 @@ set( SRC_FILES
     "network/log_stream.c"
     "network/https_server.c"
     "network/online_update.c"
+    "network/fleet_clock.c"
     "network/web_dsp.c"
     "network/tls_cert.c"
     "network/fleet.c"

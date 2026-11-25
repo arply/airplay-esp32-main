@@ -36,6 +36,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
+#include "fleet_clock.h"
 #include "mdns.h"
 #include "test_signal.h"
 #include "nvs.h"
@@ -691,6 +692,7 @@ void fleet_start(void) {
   }
   strlcpy(s_hub_id, s_id, sizeof(s_hub_id));
   audio_dsp_set_room(s_role == FLEET_ROLE_BASS, 0); // a subwoofer from boot on
+  fleet_clock_start();
   // mDNS query, HTTP probe with JSON parsing and NVS writes share this stack.
   xTaskCreate(fleet_task, "fleet", 8192, NULL, 2, &s_task);
   ESP_LOGI(TAG, "Fleet discovery started (id %s, room '%s', %s)", s_id, s_room,
@@ -917,6 +919,37 @@ static esp_err_t proxy_handler(httpd_req_t *req) {
   return httpd_resp_send(req, resp, n);
 }
 
+/* GET /api/fleet/clock?id=<peer>: the peer's clock against this one, for
+ * starting sweeps on several devices at one moment (FLEET_PLAN F6):
+ * peer time = now_us + offset_us at the moment of the answer. */
+static esp_err_t clock_handler(httpd_req_t *req) {
+  char q[32];
+  char id[13];
+  if (httpd_req_get_url_query_str(req, q, sizeof(q)) != ESP_OK ||
+      httpd_query_key_value(q, "id", id, sizeof(id)) != ESP_OK) {
+    return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
+                               "Expected ?id=<device id>");
+  }
+  uint32_t ip = 0;
+  xSemaphoreTake(s_lock, portMAX_DELAY);
+  const fleet_peer_t *p = find_peer(id);
+  if (p && p->online) {
+    ip = p->ip;
+  }
+  xSemaphoreGive(s_lock);
+  int64_t offset = 0;
+  int32_t rtt = 0;
+  if (!ip || fleet_clock_measure(ip, &offset, &rtt) != ESP_OK) {
+    return httpd_resp_send_err(req, HTTPD_404_NOT_FOUND,
+                               "No such device online, or no answer");
+  }
+  cJSON *j = cJSON_CreateObject();
+  cJSON_AddNumberToObject(j, "offset_us", (double)offset);
+  cJSON_AddNumberToObject(j, "rtt_us", rtt);
+  cJSON_AddNumberToObject(j, "now_us", (double)esp_timer_get_time());
+  return send_json(req, j);
+}
+
 int fleet_register_handlers(httpd_handle_t server) {
   const httpd_uri_t uris[] = {
       {.uri = "/api/fleet", .method = HTTP_GET, .handler = fleet_get_handler},
@@ -927,6 +960,7 @@ int fleet_register_handlers(httpd_handle_t server) {
        .method = HTTP_POST,
        .handler = self_post_handler},
       {.uri = "/api/fleet/proxy", .method = HTTP_GET, .handler = proxy_handler},
+      {.uri = "/api/fleet/clock", .method = HTTP_GET, .handler = clock_handler},
       {.uri = "/api/fleet/proxy",
        .method = HTTP_POST,
        .handler = proxy_handler},

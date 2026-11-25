@@ -100,6 +100,10 @@ void audio_output_set_source_rate(int rate);
  */
 uint32_t audio_output_get_hardware_latency_us(void);
 
+/** esp_timer time at which the next sample handed to the output leaves the
+ * DAC, from bytes written vs bytes the DMA has sent (exact, not averaged). */
+int64_t audio_output_next_play_us(void);
+
 /**
  * Cycle the output channel mode: STEREO -> LEFT -> RIGHT -> MONO -> STEREO.
  * The new mode is persisted to NVS.

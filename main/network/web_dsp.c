@@ -424,6 +424,9 @@ static esp_err_t sweep_handler(httpd_req_t *req) {
   int n = parse_channels(json, outs, TEST_SIGNAL_MAX_SWEEPS);
   float gap = GAP_MS_DEFAULT;
   bool gap_ok = read_number(json, "gap_ms", &gap, false);
+  // at_us: start at this esp_timer time (joint measurements, FLEET_PLAN F6)
+  const cJSON *at = cJSON_GetObjectItemCaseSensitive(json, "at_us");
+  const int64_t at_us = cJSON_IsNumber(at) ? (int64_t)at->valuedouble : 0;
   cJSON_Delete(json);
   if (n < 1 || !gap_ok) {
     return send_error(req, "400 Bad Request",
@@ -431,7 +434,7 @@ static esp_err_t sweep_handler(httpd_req_t *req) {
                       "(1-8), \"gap_ms\": number}");
   }
   const uint32_t gap_ms = (uint32_t)fminf(fmaxf(gap, GAP_MS_MIN), GAP_MS_MAX);
-  if (test_signal_sweep(outs, n, gap_ms) != ESP_OK) {
+  if (test_signal_sweep(outs, n, gap_ms, at_us) != ESP_OK) {
     return busy_error(req);
   }
   cJSON *resp = cJSON_CreateObject();

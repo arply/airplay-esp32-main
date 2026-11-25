@@ -61,4 +61,4 @@ bool fleet_host_in_use(const char *host);
  * handler count. */
 int fleet_register_handlers(httpd_handle_t server);
 
-#define FLEET_URI_COUNT 5
+#define FLEET_URI_COUNT 6

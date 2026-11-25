@@ -31,9 +31,12 @@ void test_signal_init(uint32_t sample_rate);
 /**
  * Play @p count sweeps back to back, sweep i on outputs @p outs[i].
  * Timeline: TEST_SIGNAL_LEAD_MS silence, then per sweep TEST_SIGNAL_SWEEP_MS
- * sweep + @p gap_ms silence.
+ * sweep + @p gap_ms silence. With @p at_us > 0 (esp_timer time) the lead
+ * instead lasts until the first sweep leaves the DAC at that moment, by the
+ * same output delay the AirPlay schedule uses (joint measurements).
  */
-esp_err_t test_signal_sweep(const uint8_t *outs, int count, uint32_t gap_ms);
+esp_err_t test_signal_sweep(const uint8_t *outs, int count, uint32_t gap_ms,
+                            int64_t at_us);
 
 /** Pink noise at -15 dBFS RMS on @p outs, stopping by itself after
  * @p max_ms. */

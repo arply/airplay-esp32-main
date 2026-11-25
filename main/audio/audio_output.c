@@ -122,9 +122,10 @@ static void apply_channel_mode(int16_t *buf, size_t frames) {
   }
 }
 
-void audio_output_process(int16_t *buf, size_t frames) {
+bool audio_output_process(int16_t *buf, size_t frames) {
+  dsp_set_output_gain((float)audio_output_volume_q15() / 32768.0f);
   apply_channel_mode(buf, frames);
-  dsp_process(buf, frames);
+  return dsp_process(buf, frames);
 }
 
 static void playback_task(void *arg) {
@@ -158,10 +159,11 @@ static void playback_task(void *arg) {
       // as the user's music) but skip the DSP, listening samples get both,
       // the chime neither.
       uint8_t fx = test_signal_fill(pcm, FRAME_SAMPLES);
+      bool volume_done = false;
       if (fx & TEST_SIGNAL_APPLY_DSP) {
-        audio_output_process(pcm, FRAME_SAMPLES);
+        volume_done = audio_output_process(pcm, FRAME_SAMPLES);
       }
-      if (fx & TEST_SIGNAL_FOLLOW_VOLUME) {
+      if ((fx & TEST_SIGNAL_FOLLOW_VOLUME) && !volume_done) {
         apply_volume(pcm, (size_t)FRAME_SAMPLES * 2);
       }
       led_audio_feed(pcm, FRAME_SAMPLES);
@@ -180,10 +182,11 @@ static void playback_task(void *arg) {
         play_buf = resample_buf;
       }
       // Channel mode first: the filters belong to the outputs (speakers),
-      // not to the source channels. Volume last, so the user's volume
-      // never changes the EQ's headroom.
-      audio_output_process(play_buf, play_samples);
-      apply_volume(play_buf, play_samples * 2);
+      // not to the source channels. An active DSP applies the volume itself
+      // (in float, before its limiter); otherwise it is applied here.
+      if (!audio_output_process(play_buf, play_samples)) {
+        apply_volume(play_buf, play_samples * 2);
+      }
       led_audio_feed(play_buf, play_samples);
       i2s_channel_write(tx_handle, play_buf, play_samples * 2 * sizeof(int16_t),
                         &written, portMAX_DELAY);

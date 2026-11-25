@@ -104,10 +104,12 @@ static cJSON *profile_to_json(const audio_dsp_profile_t *p,
       cJSON_AddItemToArray(arr, o);
     }
   }
-  cJSON *pbe = cJSON_AddObjectToObject(json, "pbe");
-  cJSON_AddBoolToObject(pbe, "on", p->pbe.on);
-  cJSON_AddNumberToObject(pbe, "fc", round_to(p->pbe.fc, 0.1));
-  cJSON_AddNumberToObject(pbe, "amount", round_to(p->pbe.amount, 0.001));
+  cJSON *bass = cJSON_AddObjectToObject(json, "bass");
+  cJSON_AddBoolToObject(bass, "on", p->bass.on);
+  cJSON_AddNumberToObject(bass, "f_low", round_to(p->bass.f_low, 0.1));
+  cJSON_AddNumberToObject(bass, "boost", round_to(p->bass.boost, 0.001));
+  cJSON_AddNumberToObject(bass, "harmonics",
+                          round_to(p->bass.harmonics, 0.001));
   cJSON_AddNumberToObject(json, "fs", CONFIG_OUTPUT_SAMPLE_RATE_HZ);
   cJSON_AddNumberToObject(json, "max_filters", DSP_MAX_FILTERS_PER_CH);
   cJSON_AddBoolToObject(json, "bypass", s_bypass);
@@ -205,16 +207,32 @@ static const char *parse_profile(const cJSON *json, audio_dsp_profile_t *p,
     }
     p->count[s] = n;
   }
-  const cJSON *pbe = cJSON_GetObjectItemCaseSensitive(json, "pbe");
-  if (pbe) {
-    const cJSON *on = cJSON_GetObjectItemCaseSensitive(pbe, "on");
+  const cJSON *bass = cJSON_GetObjectItemCaseSensitive(json, "bass");
+  if (bass) {
+    const cJSON *on = cJSON_GetObjectItemCaseSensitive(bass, "on");
     if (on) {
-      p->pbe.on = cJSON_IsTrue(on);
+      p->bass.on = cJSON_IsTrue(on);
     }
-    if (!read_number(pbe, "fc", &p->pbe.fc, false) ||
-        !read_number(pbe, "amount", &p->pbe.amount, false)) {
+    if (!read_number(bass, "f_low", &p->bass.f_low, false) ||
+        !read_number(bass, "boost", &p->bass.boost, false) ||
+        !read_number(bass, "harmonics", &p->bass.harmonics, false)) {
+      return "bass.f_low, bass.boost and bass.harmonics must be numbers";
+    }
+  }
+  // Older exports (prototype, firmware before 2026-11-25): harmonics only,
+  // cut at fc.
+  const cJSON *pbe = cJSON_GetObjectItemCaseSensitive(json, "pbe");
+  if (pbe && !bass) {
+    const cJSON *on = cJSON_GetObjectItemCaseSensitive(pbe, "on");
+    float fc = p->bass.f_low / 2;
+    if (on) {
+      p->bass.on = cJSON_IsTrue(on);
+    }
+    if (!read_number(pbe, "fc", &fc, false) ||
+        !read_number(pbe, "amount", &p->bass.harmonics, false)) {
       return "pbe.fc and pbe.amount must be numbers";
     }
+    p->bass.f_low = 2 * fc;
   }
   return NULL;
 }
@@ -275,8 +293,8 @@ static esp_err_t dsp_post_handler(httpd_req_t *req) {
   if (err != ESP_OK) {
     return send_error(req, "500 Internal Server Error", "saving failed");
   }
-  ESP_LOGI(TAG, "Saved: %u/%u/%u filters, preamp %.1f dB, pbe %d", p.count[0],
-           p.count[1], p.count[2], (double)p.preamp_db, p.pbe.on);
+  ESP_LOGI(TAG, "Saved: %u/%u/%u filters, preamp %.1f dB, bass %d", p.count[0],
+           p.count[1], p.count[2], (double)p.preamp_db, p.bass.on);
   audio_dsp_get_saved(&p);
   return send_json(req, profile_to_json(&p, audio_output_get_channel_mode()));
 }

@@ -123,11 +123,11 @@ void audio_output_preview_channel_mode(audio_channel_mode_t mode);
 void audio_output_restore_channel_mode(void);
 
 /**
- * Channel mode, then the output DSP, on interleaved stereo int16 in place —
- * what the playback task does before volume. For writers that bypass the
- * playback task (USB DAC input); call before applying volume.
+ * Channel mode, then the output DSP, on interleaved stereo int16 in place.
+ * For writers that bypass the playback task (USB DAC input). Returns true
+ * if the DSP also applied the volume; otherwise the caller must.
  */
-void audio_output_process(int16_t *buf, size_t frames);
+bool audio_output_process(int16_t *buf, size_t frames);
 
 /**
  * Get the current output channel mode.

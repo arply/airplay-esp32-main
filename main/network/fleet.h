@@ -35,7 +35,7 @@ typedef struct {
   uint32_t hub;         // pick sequence number, 0 = never picked
   uint8_t channel;      // audio_channel_mode_t of the device
   uint32_t calibrated;  // Unix time of the saved EQ, 1 = date unknown, 0 = flat
-  bool pbe;             // bass enhancement on in the saved profile
+  bool bass;            // bass block on in the saved profile
   bool playing;         // a stream is playing right now
   uint8_t wifi;         // fleet_wifi_t
   bool online;          // answered within the last EXPIRE_ROUNDS rounds

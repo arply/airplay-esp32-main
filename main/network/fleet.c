@@ -147,7 +147,7 @@ static void build_self(fleet_peer_t *me) {
   me->hub = s_hub_seq;
   me->channel = (uint8_t)audio_output_get_channel_mode();
   me->calibrated = audio_dsp_calibrated_at();
-  me->pbe = audio_dsp_saved_pbe();
+  me->bass = audio_dsp_saved_bass();
   me->playing = audio_receiver_is_playing() && audio_receiver_has_data();
   me->wifi = wifi_quality();
   me->online = true;
@@ -209,8 +209,8 @@ static void announce(void) {
     snprintf(num, sizeof(num), "%u", (unsigned)me.calibrated);
     mdns_service_txt_item_set(SERVICE, PROTO, "cal", num);
   }
-  if (me.pbe != a->pbe) {
-    mdns_service_txt_item_set(SERVICE, PROTO, "pbe", me.pbe ? "1" : "0");
+  if (me.bass != a->bass) {
+    mdns_service_txt_item_set(SERVICE, PROTO, "bass", me.bass ? "1" : "0");
   }
   if (me.playing != a->playing) {
     mdns_service_txt_item_set(SERVICE, PROTO, "play", me.playing ? "1" : "0");
@@ -331,8 +331,8 @@ static void browse(void) {
     if ((v = txt_get(r, "cal")) != NULL) {
       p->calibrated = (uint32_t)strtoul(v, NULL, 10);
     }
-    if ((v = txt_get(r, "pbe")) != NULL) {
-      p->pbe = strcmp(v, "1") == 0;
+    if ((v = txt_get(r, "bass")) != NULL) {
+      p->bass = strcmp(v, "1") == 0;
     }
     if ((v = txt_get(r, "play")) != NULL) {
       p->playing = strcmp(v, "1") == 0;
@@ -398,7 +398,7 @@ static bool probe(const cached_peer_t *c, fleet_peer_t *out) {
         if (cJSON_IsNumber(v = cJSON_GetObjectItem(j, "calibrated"))) {
           out->calibrated = (uint32_t)v->valuedouble;
         }
-        out->pbe = cJSON_IsTrue(cJSON_GetObjectItem(j, "pbe"));
+        out->bass = cJSON_IsTrue(cJSON_GetObjectItem(j, "bass"));
         out->playing = cJSON_IsTrue(cJSON_GetObjectItem(j, "playing"));
         if (cJSON_IsString(v = cJSON_GetObjectItem(j, "wifi"))) {
           out->wifi = wifi_from(v->valuestring);
@@ -626,7 +626,7 @@ void fleet_start(void) {
       {"hub", hub},
       {"ch", CHANNEL_NAMES[me.channel]},
       {"cal", cal},
-      {"pbe", me.pbe ? "1" : "0"},
+      {"bass", me.bass ? "1" : "0"},
       {"play", me.playing ? "1" : "0"},
       {"wifi", WIFI_NAMES[me.wifi]},
   };
@@ -672,7 +672,7 @@ static cJSON *peer_json(const fleet_peer_t *p, bool with_age) {
   cJSON_AddNumberToObject(o, "hub", p->hub);
   cJSON_AddStringToObject(o, "ch", CHANNEL_NAMES[p->channel & 3]);
   cJSON_AddNumberToObject(o, "calibrated", p->calibrated);
-  cJSON_AddBoolToObject(o, "pbe", p->pbe);
+  cJSON_AddBoolToObject(o, "bass", p->bass);
   cJSON_AddBoolToObject(o, "playing", p->playing);
   cJSON_AddStringToObject(o, "wifi", WIFI_NAMES[p->wifi & 3]);
   if (with_age) {

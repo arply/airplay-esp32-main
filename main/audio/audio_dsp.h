@@ -31,7 +31,7 @@ typedef struct {
   float preamp_db;
   dsp_filter_t sets[AUDIO_DSP_SET_COUNT][DSP_MAX_FILTERS_PER_CH];
   uint8_t count[AUDIO_DSP_SET_COUNT];
-  dsp_pbe_t pbe;
+  dsp_bass_t bass;
 } audio_dsp_profile_t;
 
 /** dsp_init() at the output rate, then load and apply the saved profile. */
@@ -59,8 +59,8 @@ esp_err_t audio_dsp_save(const audio_dsp_profile_t *p,
  */
 uint32_t audio_dsp_calibrated_at(void);
 
-/** Bass enhancement on in the saved profile. */
-bool audio_dsp_saved_pbe(void);
+/** The bass block is on in the saved profile. */
+bool audio_dsp_saved_bass(void);
 
 /** Apply without persisting; @p mode is applied but not persisted either. */
 void audio_dsp_preview(const audio_dsp_profile_t *p, audio_channel_mode_t mode);

@@ -260,8 +260,12 @@ static void arbiter_task(void *arg) {
           s_ringbuf, &item_size, pdMS_TO_TICKS(ARBITER_POLL_MS),
           ARBITER_MAX_DRAIN_BYTES);
       if (data && item_size > 0) {
-        audio_output_process((int16_t *)data, item_size / sizeof(int16_t) / 2);
-        apply_gain((int16_t *)data, item_size / sizeof(int16_t));
+        if (!audio_output_process((int16_t *)data,
+                                  item_size / sizeof(int16_t) / 2)) {
+          apply_gain((int16_t *)data, item_size / sizeof(int16_t));
+        } else if (s_muted) {
+          memset(data, 0, item_size); // the DSP did the volume, not the mute
+        }
         led_audio_feed((int16_t *)data, item_size / sizeof(int16_t) / 2);
         audio_output_write(data, item_size, portMAX_DELAY);
         vRingbufferReturnItem(s_ringbuf, data);

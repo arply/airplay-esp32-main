@@ -12,13 +12,32 @@ static const char *TAG = "audio_dsp";
 
 // Bump when audio_dsp_profile_t changes; a stored blob with another
 // version (or size) is ignored and the device starts flat.
-#define PROFILE_VERSION 1
+#define PROFILE_VERSION 2
 
 typedef struct {
   uint16_t version;
   uint16_t size;
   audio_dsp_profile_t profile;
 } stored_profile_t;
+
+/* Version 1 (until 2026-11-25): bass enhancement was harmonics only,
+ * {on, fc, amount}. Loaded and converted so saved EQs survive the update. */
+typedef struct {
+  float preamp_db;
+  dsp_filter_t sets[AUDIO_DSP_SET_COUNT][DSP_MAX_FILTERS_PER_CH];
+  uint8_t count[AUDIO_DSP_SET_COUNT];
+  struct {
+    bool on;
+    float fc;
+    float amount;
+  } pbe;
+} profile_v1_t;
+
+typedef struct {
+  uint16_t version;
+  uint16_t size;
+  profile_v1_t profile;
+} stored_v1_t;
 
 static SemaphoreHandle_t s_lock;
 static audio_dsp_profile_t s_saved;
@@ -30,7 +49,7 @@ static uint32_t s_saved_at;
 
 static bool is_flat(const audio_dsp_profile_t *p) {
   return p->count[AUDIO_DSP_SET_L] == 0 && p->count[AUDIO_DSP_SET_R] == 0 &&
-         p->count[AUDIO_DSP_SET_M] == 0 && !p->pbe.on;
+         p->count[AUDIO_DSP_SET_M] == 0 && !p->bass.on;
 }
 
 uint32_t audio_dsp_calibrated_at(void) {
@@ -40,14 +59,16 @@ uint32_t audio_dsp_calibrated_at(void) {
   return s_saved_at ? s_saved_at : 1;
 }
 
-bool audio_dsp_saved_pbe(void) {
-  return s_saved.pbe.on;
+bool audio_dsp_saved_bass(void) {
+  return s_saved.bass.on;
 }
 
 void audio_dsp_profile_flat(audio_dsp_profile_t *p) {
   memset(p, 0, sizeof(*p));
-  p->pbe.fc = 100.0f;
-  p->pbe.amount = 0.5f;
+  // Defaults for small drivers: the limit is set per speaker on the page.
+  p->bass.f_low = 120.0f;
+  p->bass.boost = 0.5f;
+  p->bass.harmonics = 0.3f;
 }
 
 void audio_dsp_profile_clamp(audio_dsp_profile_t *p) {
@@ -55,7 +76,7 @@ void audio_dsp_profile_clamp(audio_dsp_profile_t *p) {
   dsp_config_t c;
   memset(&c, 0, sizeof(c));
   c.preamp_db = p->preamp_db;
-  c.pbe = p->pbe;
+  c.bass = p->bass;
   for (int s = 0; s < AUDIO_DSP_SET_COUNT; s++) {
     const int ch = s % DSP_NUM_CH;
     memcpy(c.filters[ch], p->sets[s], sizeof(c.filters[ch]));
@@ -65,7 +86,7 @@ void audio_dsp_profile_clamp(audio_dsp_profile_t *p) {
     p->count[s] = c.count[ch];
   }
   p->preamp_db = c.preamp_db;
-  p->pbe = c.pbe;
+  p->bass = c.bass;
 }
 
 /* Build the per-output configuration for the current channel mode. */
@@ -90,7 +111,7 @@ static void resolve(const audio_dsp_profile_t *p, audio_channel_mode_t mode) {
   static dsp_config_t c; // ~500 B, kept off the caller's stack
   memset(&c, 0, sizeof(c));
   c.preamp_db = p->preamp_db;
-  c.pbe = p->pbe;
+  c.bass = p->bass;
   memcpy(c.filters[DSP_CH_L], p->sets[set_l], sizeof(c.filters[DSP_CH_L]));
   c.count[DSP_CH_L] = p->count[set_l];
   memcpy(c.filters[DSP_CH_R], p->sets[set_r], sizeof(c.filters[DSP_CH_R]));
@@ -105,12 +126,31 @@ void audio_dsp_init(uint32_t sample_rate) {
   }
   audio_dsp_profile_flat(&s_saved);
 
-  static stored_profile_t stored;
+  static union {
+    stored_profile_t v2;
+    stored_v1_t v1;
+  } stored;
   size_t len = sizeof(stored);
-  if (settings_get_dsp_blob(&stored, &len) == ESP_OK && len == sizeof(stored) &&
-      stored.version == PROFILE_VERSION &&
-      stored.size == sizeof(stored.profile)) {
-    s_saved = stored.profile;
+  bool loaded = false;
+  if (settings_get_dsp_blob(&stored, &len) == ESP_OK) {
+    if (len == sizeof(stored.v2) && stored.v2.version == PROFILE_VERSION &&
+        stored.v2.size == sizeof(stored.v2.profile)) {
+      s_saved = stored.v2.profile;
+      loaded = true;
+    } else if (len == sizeof(stored.v1) && stored.v1.version == 1 &&
+               stored.v1.size == sizeof(stored.v1.profile)) {
+      const profile_v1_t *o = &stored.v1.profile;
+      s_saved.preamp_db = o->preamp_db;
+      memcpy(s_saved.sets, o->sets, sizeof(s_saved.sets));
+      memcpy(s_saved.count, o->count, sizeof(s_saved.count));
+      s_saved.bass.on = o->pbe.on;
+      s_saved.bass.f_low = 2 * o->pbe.fc; // the old cutoff was the cut point
+      s_saved.bass.harmonics = o->pbe.amount;
+      ESP_LOGI(TAG, "Converted a version 1 DSP profile");
+      loaded = true;
+    }
+  }
+  if (loaded) {
     audio_dsp_profile_clamp(&s_saved);
     ESP_LOGI(TAG, "Loaded DSP profile: %u/%u/%u filters, preamp %.1f dB",
              s_saved.count[0], s_saved.count[1], s_saved.count[2],

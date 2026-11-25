@@ -36,6 +36,7 @@ typedef struct {
   uint8_t channel;      // audio_channel_mode_t of the device
   uint32_t calibrated;  // Unix time of the saved EQ, 1 = date unknown, 0 = flat
   bool bass;            // bass block on in the saved profile
+  uint16_t xo;          // subwoofer crossover, Hz (role bass), 0 = none
   bool playing;         // a stream is playing right now
   uint8_t wifi;         // fleet_wifi_t
   bool online;          // answered within the last EXPIRE_ROUNDS rounds

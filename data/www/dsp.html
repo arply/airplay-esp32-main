@@ -128,7 +128,7 @@ footer{margin-top:40px;padding:24px 0 0;border-top:1px solid var(--line);display
       <p class="small" style="margin-top:8px">arply plays the sweeps itself; the filters are calculated after every measurement. Each run plays three sweeps per channel (in stereo: left, right, left, …) and averages them. Measure 3–5 positions around the listening spot, phone at ear height, microphone (bottom edge) towards the speaker.</p>
     </section>
 
-    <section class="panel">
+    <section class="panel" id="basspanel">
       <span class="eyebrow">Optional</span>
       <h2>Bass</h2>
       <p class="small">For small speakers. Lifts the real bass below the speaker’s limit, held back automatically near full scale, a little more at low volume. Only below a third of the limit is cut (there the driver just moves). Harmonics are optional: they add overtones of the deep bass above the limit, from which your ear fills in the note – start at 0 and raise them by ear.</p>
@@ -138,6 +138,17 @@ footer{margin-top:40px;padding:24px 0 0;border-top:1px solid var(--line);display
       <label class="f">Harmonics<input type="range" id="o-pbeamt" min="0" max="100" step="5"><output id="v-pbeamt"></output></label>
       <div class="row"><button id="b-pbesug">Suggest from measurement</button></div>
       <p class="small" id="pbemsg"></p>
+    </section>
+
+    <section class="panel" id="subpanel" hidden>
+      <span class="eyebrow">Subwoofer</span>
+      <h2>Crossover</h2>
+      <p class="small">This arply is its room’s subwoofer (set on the settings page). It plays the mono bass below the crossover; while it plays, the speakers in the same room get the matching high-pass and their bass block pauses (Linkwitz-Riley, 24 dB/octave).</p>
+      <label class="f">Crossover<input type="range" id="o-xo" min="40" max="200" step="5"><output id="v-xo"></output></label>
+      <label class="f">Level<input type="range" id="o-xogain" min="-12" max="12" step="0.5"><output id="v-xogain"></output></label>
+      <label class="f">Delay<input type="range" id="o-xodelay" min="0" max="20" step="0.1"><output id="v-xodelay"></output></label>
+      <label class="chk"><input type="checkbox" id="o-xoinv"> Invert polarity</label>
+      <p class="small">Delay the subwoofer when it stands nearer to you than the speakers (1 ms ≈ 34 cm). Then try the polarity with music, AirPlay to the speakers and the subwoofer together: the setting with the fuller bass around the crossover is right.</p>
     </section>
 
     <section class="panel">
@@ -582,7 +593,7 @@ function makeSample(c, kind) {
     left: 'The left source channel plays on both outputs – one filter set, measured on both outputs together.',
     right: 'The right source channel plays on both outputs – one filter set, measured on both outputs together.'
   };
-  const DEF_OPT = { fmin: 40, fmax: 500, tilt: 2, detail: 1, maxN: 6, maxCut: 12, mode: 'stereo', bass: { on: false, f: 120, boost: 50, harm: 0 } };
+  const DEF_OPT = { fmin: 40, fmax: 500, tilt: 2, detail: 1, maxN: 6, maxCut: 12, mode: 'stereo', bass: { on: false, f: 120, boost: 50, harm: 0 }, sub: { xo: 80, gain: 0, delay: 0, inv: false } };
   const LEAD = 0.5;
   const newCh = () => ({ meas: [], filters: [] });
 
@@ -591,6 +602,10 @@ function makeSample(c, kind) {
   if (!S || typeof S !== 'object') S = {};
   S.opt = { ...DEF_OPT, ...(S.opt || {}) }; delete S.opt.frac;
   S.opt.bass = { ...DEF_OPT.bass, ...(S.opt.bass || {}) }; delete S.opt.pbe;
+  S.opt.sub = { ...DEF_OPT.sub, ...(S.opt.sub || {}) };
+  // set by arply's fleet: this device is a subwoofer, or one plays in its room
+  let ROLE = 'main', ROOM_HP = 0;
+  const isSub = () => ROLE === 'bass';
   if (![0.5, 1, 2].includes(S.opt.detail)) S.opt.detail = 1;
   S.ch = S.ch || {};
   if (S.meas) { S.ch.M = { meas: S.meas, filters: S.filters || [] }; delete S.meas; delete S.filters; } // v1 data
@@ -659,7 +674,15 @@ function makeSample(c, kind) {
     const am = avgMeas();
     cache = { tg, eq, am, pre };
     line(eq.map(e => e + pre), C.mag, 2);
-    if (pbeActive()) {
+    if (isSub() || ROOM_HP) {
+      // crossover: the subwoofer's low-pass with its level, or the speakers' high-pass
+      const fx = isSub() ? S.opt.sub.xo : ROOM_HP, k = DSP.coeffs(isSub() ? 'lp' : 'hp', fx, 0, Math.SQRT1_2, FS);
+      line(grid.map((f, i) => 2 * DSP.magDb(k, f, FS) + (isSub() ? S.opt.sub.gain : 0) + eq[i] + pre), C.mag, 1.5, [3, 3]);
+      const x = X(fx); g.strokeStyle = C.mag; g.lineWidth = 1; g.setLineDash([2, 4]);
+      g.beginPath(); g.moveTo(x, pt); g.lineTo(x, H - pb); g.stroke(); g.setLineDash([]);
+      g.fillStyle = C.mag; g.textAlign = 'left'; g.font = '12px Inter, system-ui, sans-serif';
+      g.fillText('Crossover', x + 4, Y(13));
+    } else if (pbeActive()) {
       // the bass block at full boost (quiet passages); loud ones get less
       line(bassCurve().map((b, i) => b + eq[i] + pre), C.mag, 1.5, [3, 3]);
       const x = X(S.opt.bass.f); g.strokeStyle = C.mag; g.lineWidth = 1; g.setLineDash([2, 4]);
@@ -713,7 +736,7 @@ function makeSample(c, kind) {
   });
   $('#o-mode').value = S.opt.mode;
   $('#o-mode').onchange = e => { S.opt.mode = e.target.value; fixView(); save(); renderAll(); preview(); if (lvl) { stopLevel(); } };
-  function renderAll() { renderSample(); renderPbe(); renderTabs(); renderMeas(); renderFilters(); renderJson(); draw(); }
+  function renderAll() { renderSample(); renderPbe(); renderSub(); renderTabs(); renderMeas(); renderFilters(); renderJson(); draw(); }
 
   // ---------- arply API ----------
   async function api(path, body) {
@@ -864,7 +887,8 @@ function makeSample(c, kind) {
       const ps = peaks.filter((_, j) => j % ks.length === i), p = ps[0];
       if (ps.some(q => q < 0 || Math.abs(h[q]) < 0.05 * ref)) { out.push({ warn: true, t: CH_NAME[k] + ': no signal – is the speaker connected?' }); return; }
       const sp = DSP.spectrumAt(average(ps, pre, Math.round(0.4 * fs)), pre, fs, 0.4);
-      const db = DSP.normalize(DSP.toGrid(sp.P, sp.M, fs, grid, 24), grid).map(v => Math.round(v * 100) / 100);
+      // a subwoofer is levelled on its own band, not on 200 Hz–2 kHz
+      const db = DSP.normalize(DSP.toGrid(sp.P, sp.M, fs, grid, 24), grid, ...(isSub() ? [30, S.opt.sub.xo] : [])).map(v => Math.round(v * 100) / 100);
       // distortion only from sweeps with their harmonics inside the recording
       const pd = ps.filter(q => q >= dpre), thd = pd.length ? DSP.distortion(average(pd, dpre, Math.round(0.2 * fs)), dpre, sw, fs, grid) : null;
       const fd = thd && DSP.distLimit(thd, grid), rel = 20 * Math.log10(Math.abs(h[p]) / ref);
@@ -945,7 +969,7 @@ function makeSample(c, kind) {
     if (!ks.length) return null;
     undo = JSON.stringify(chans().map(k => [k, S.ch[k].filters])); $('#b-undo').disabled = false;
     const res = ks.map(k => {
-      S.ch[k].filters = DSP.autoFit(avgMeas(k).avg, grid, { fs: FS, fmin: S.opt.fmin, fmax: S.opt.fmax, tilt: S.opt.tilt, maxN: S.opt.maxN, maxCut: S.opt.maxCut });
+      S.ch[k].filters = DSP.autoFit(avgMeas(k).avg, grid, { fs: FS, fmin: S.opt.fmin, fmax: isSub() ? Math.min(S.opt.fmax, 2 * S.opt.sub.xo) : S.opt.fmax, tilt: S.opt.tilt, maxN: S.opt.maxN, maxCut: S.opt.maxCut });
       const n = S.ch[k].filters.length; return CH_NAME[k] + ' ' + n;
     });
     const miss = chans().filter(k => !S.ch[k].meas.length).map(k => CH_NAME[k]);
@@ -971,6 +995,19 @@ function makeSample(c, kind) {
     const b = S.opt.bass, sh = DSP.coeffs('ls', b.f, b.boost / 100 * 12, 0, FS), hp = DSP.coeffs('hp', b.f / 3, 0, Math.SQRT1_2, FS);
     return grid.map(f => DSP.magDb(sh, f, FS) + 2 * DSP.magDb(hp, f, FS)); // LR4 subsonic
   }
+  function renderSub() {
+    const b = S.opt.sub;
+    $('#subpanel').hidden = !isSub(); $('#basspanel').hidden = isSub(); $('#o-mode').disabled = isSub();
+    $('#o-xo').value = b.xo; $('#v-xo').textContent = fmtHz(b.xo);
+    $('#o-xogain').value = b.gain; $('#v-xogain').textContent = fmtDb(b.gain);
+    $('#o-xodelay').value = b.delay; $('#v-xodelay').textContent = b.delay.toFixed(1) + ' ms · ' + Math.round(b.delay * 34.3) + ' cm';
+    $('#o-xoinv').checked = b.inv;
+  }
+  const subChanged = () => { renderSub(); save(); draw(); renderJson(); preview(); };
+  $('#o-xo').oninput = e => { S.opt.sub.xo = +e.target.value; subChanged(); };
+  $('#o-xogain').oninput = e => { S.opt.sub.gain = +e.target.value; subChanged(); };
+  $('#o-xodelay').oninput = e => { S.opt.sub.delay = +e.target.value; subChanged(); };
+  $('#o-xoinv').onchange = e => { S.opt.sub.inv = e.target.checked; subChanged(); };
   function renderPbe() {
     const b = S.opt.bass;
     $('#o-pbe').checked = b.on;
@@ -1077,7 +1114,8 @@ function makeSample(c, kind) {
         b: [r6(c.b0), r6(c.b1), r6(c.b2)], a: [r6(c.a1), r6(c.a2)] };
     });
     return { version: 2, fs: FS, mode: S.opt.mode, preamp_db: preampAll(), channels,
-      bass: { on: pbeActive(), f_low: S.opt.bass.f, boost: S.opt.bass.boost / 100, harmonics: S.opt.bass.harm / 100 } };
+      bass: { on: pbeActive(), f_low: S.opt.bass.f, boost: S.opt.bass.boost / 100, harmonics: S.opt.bass.harm / 100 },
+      sub: { xo: S.opt.sub.xo, gain_db: S.opt.sub.gain, delay_ms: S.opt.sub.delay, invert: S.opt.sub.inv } };
   }
   const renderJson = () => { $('#json').textContent = JSON.stringify(payload(), null, 1); };
   $('#b-copy').onclick = async () => {
@@ -1160,6 +1198,10 @@ function makeSample(c, kind) {
     for (const k of ['L', 'R', 'M']) S.ch[k].filters = ((j.channels || {})[k] || []).map(f => ({ type: f.type, on: f.enabled !== false, f: f.f, gain: f.gain_db || 0, q: f.q }));
     if (MODES[j.mode]) S.opt.mode = j.mode;
     if (j.bass) S.opt.bass = { on: !!j.bass.on, f: j.bass.f_low, boost: Math.round(j.bass.boost * 100), harm: Math.round(j.bass.harmonics * 100) };
+    if (j.sub) S.opt.sub = { xo: j.sub.xo, gain: j.sub.gain_db, delay: j.sub.delay_ms, inv: !!j.sub.invert };
+    ROLE = j.role === 'bass' ? 'bass' : 'main'; ROOM_HP = j.room_hp || 0;
+    if (isSub()) S.opt.mode = 'mono'; // a subwoofer plays mono
+    $('#pbemsg').textContent = ROOM_HP ? 'A subwoofer in this room is playing below ' + fmtHz(ROOM_HP) + ': the bass block pauses while it plays.' : '';
     fixView(); save(); $('#o-mode').value = S.opt.mode;
   }
   const host = location.hostname;

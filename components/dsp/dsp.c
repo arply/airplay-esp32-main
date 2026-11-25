@@ -89,9 +89,13 @@ typedef struct {
   float inv; // 1 / env, kept without a division per sample
 } pbe_env_t;
 
+// The crossover's two sections run after the EQ in the same chain.
+#define CHAIN_MAX (DSP_MAX_FILTERS_PER_CH + 2)
+#define DELAY_N   ((int)(DSP_DELAY_MAX_FS * DSP_DELAY_MAX_MS / 1000) + 1)
+
 typedef struct {
-  dsp_coeffs_t k[DSP_NUM_CH][DSP_MAX_FILTERS_PER_CH];
-  dsp_state_t s[DSP_NUM_CH][DSP_MAX_FILTERS_PER_CH];
+  dsp_coeffs_t k[DSP_NUM_CH][CHAIN_MAX];
+  dsp_state_t s[DSP_NUM_CH][CHAIN_MAX];
   uint8_t n[DSP_NUM_CH];
   dsp_coeffs_t pbe_k[PBE_STAGES]; // split and harmonic stages at fs/DECIM
   dsp_state_t pbe_s[DSP_NUM_CH][PBE_STAGES];
@@ -114,6 +118,9 @@ typedef struct {
   float ext_g_max_db;        // the dB value ext_g_max was computed for
   float ext_release;         // per-chunk approach factor of the gain
   float preamp;              // linear, includes the int16 -> float scale
+                             // and the crossover's level and polarity
+  bool mono;                 // subwoofer: L+R summed first
+  uint32_t delay;            // frames
   bool identity;             // flat: leave samples untouched
   uint32_t structure;
 } runtime_t;
@@ -134,6 +141,8 @@ static _Atomic float s_loud_db;         // loudness extra for that volume
 static bool s_was_idle = true;
 static float s_vol; // volume gain currently applied (ramped)
 static uint32_t s_rng = 0x12345678u;
+static int16_t s_delay[DELAY_N][DSP_NUM_CH];
+static uint32_t s_delay_pos;
 
 static inline uint32_t word_make(uint32_t active, uint32_t pending) {
   return active | (pending << 8);
@@ -165,6 +174,13 @@ void dsp_clamp_config(dsp_config_t *cfg) {
   cfg->bass.f_low = clampf(cfg->bass.f_low, DSP_BASS_F_MIN, DSP_BASS_F_MAX);
   cfg->bass.boost = clampf(cfg->bass.boost, 0.0f, 1.0f);
   cfg->bass.harmonics = clampf(cfg->bass.harmonics, 0.0f, 1.0f);
+  dsp_xover_t *x = &cfg->xover;
+  x->lowpass =
+      x->lowpass > 0 ? clampf(x->lowpass, DSP_XO_F_MIN, DSP_XO_F_MAX) : 0;
+  x->highpass =
+      x->highpass > 0 ? clampf(x->highpass, DSP_XO_F_MIN, DSP_XO_F_MAX) : 0;
+  x->gain_db = clampf(x->gain_db, DSP_XO_GAIN_MIN, DSP_XO_GAIN_MAX);
+  x->delay_ms = clampf(x->delay_ms, 0.0f, DSP_DELAY_MAX_MS);
 }
 
 /* FNV-1a over what decides the filter graph: which stages exist, in which
@@ -186,6 +202,17 @@ static void build(runtime_t *rt, const dsp_config_t *cfg) {
       dsp_biquad_design(f->type, f->f, f->gain_db, f->q, s_fs, &rt->k[ch][n]);
       h = hash_byte(h, (uint8_t)f->type);
       n++;
+    }
+    // Linkwitz-Riley 4th order = two Butterworth sections.
+    const dsp_xover_t *x = &cfg->xover;
+    if (x->lowpass > 0 || x->highpass > 0) {
+      const dsp_filter_type_t t =
+          x->lowpass > 0 ? DSP_FILTER_LOW_PASS : DSP_FILTER_HIGH_PASS;
+      dsp_biquad_design(t, x->lowpass > 0 ? x->lowpass : x->highpass, 0,
+                        M_SQRT1_2, s_fs, &rt->k[ch][n]);
+      rt->k[ch][n + 1] = rt->k[ch][n];
+      h = hash_byte(hash_byte(h, (uint8_t)t), (uint8_t)t);
+      n += 2;
     }
     rt->n[ch] = n;
     h = hash_byte(h, n);
@@ -233,9 +260,17 @@ static void build(runtime_t *rt, const dsp_config_t *cfg) {
   h = hash_byte(h, rt->pbe_on);
   rt->structure = h;
 
-  rt->preamp = powf(10.0f, cfg->preamp_db / 20.0f) / 32768.0f;
+  const dsp_xover_t *x = &cfg->xover;
+  rt->mono = x->lowpass > 0;
+  h = hash_byte(h, rt->mono);
+  rt->delay = (uint32_t)lround(x->delay_ms * s_fs / 1000.0);
+  rt->preamp = powf(10.0f, (cfg->preamp_db + x->gain_db) / 20.0f) / 32768.0f;
+  if (x->invert) {
+    rt->preamp = -rt->preamp;
+  }
   rt->identity = rt->n[DSP_CH_L] == 0 && rt->n[DSP_CH_R] == 0 && !rt->pbe_on &&
-                 cfg->preamp_db == 0.0f;
+                 cfg->preamp_db == 0.0f && x->gain_db == 0.0f && !x->invert &&
+                 rt->delay == 0;
 }
 
 void dsp_set_config(const dsp_config_t *cfg_in) {
@@ -566,10 +601,19 @@ static void process_chunk(runtime_t *rt, int16_t *buf, size_t n) {
   const float pre = rt->preamp;
   float g = v0 * pre;
   const float dg = (s_vol - v0) * pre / (float)n;
-  for (size_t i = 0; i < n; i++) {
-    g += dg;
-    s_work[DSP_CH_L][i] = (float)buf[2 * i] * g;
-    s_work[DSP_CH_R][i] = (float)buf[2 * i + 1] * g;
+  if (rt->mono) {
+    for (size_t i = 0; i < n; i++) {
+      g += dg;
+      const float m = ((float)buf[2 * i] + (float)buf[2 * i + 1]) * 0.5f * g;
+      s_work[DSP_CH_L][i] = m;
+      s_work[DSP_CH_R][i] = m;
+    }
+  } else {
+    for (size_t i = 0; i < n; i++) {
+      g += dg;
+      s_work[DSP_CH_L][i] = (float)buf[2 * i] * g;
+      s_work[DSP_CH_R][i] = (float)buf[2 * i + 1] * g;
+    }
   }
   // Filters k of both outputs run as a pair; the longer chain finishes alone.
   const int nl = rt->n[DSP_CH_L];
@@ -598,6 +642,21 @@ static void process_chunk(runtime_t *rt, int16_t *buf, size_t n) {
   s_rng = r;
 }
 
+/* Delay line on the input: d frames late (d < DELAY_N). */
+static void run_delay(int16_t *buf, size_t frames, uint32_t d) {
+  for (size_t i = 0; i < frames; i++) {
+    const uint32_t r =
+        s_delay_pos >= d ? s_delay_pos - d : s_delay_pos + DELAY_N - d;
+    s_delay[s_delay_pos][DSP_CH_L] = buf[2 * i];
+    s_delay[s_delay_pos][DSP_CH_R] = buf[2 * i + 1];
+    buf[2 * i] = s_delay[r][DSP_CH_L];
+    buf[2 * i + 1] = s_delay[r][DSP_CH_R];
+    if (++s_delay_pos == DELAY_N) {
+      s_delay_pos = 0;
+    }
+  }
+}
+
 bool dsp_process(int16_t *buf, size_t frames) {
   runtime_t *rt = acquire();
   if (atomic_load_explicit(&s_bypass, memory_order_relaxed) || rt->identity) {
@@ -607,7 +666,11 @@ bool dsp_process(int16_t *buf, size_t frames) {
   if (s_was_idle) {
     reset_state(rt); // history from before the bypass would click
     s_vol = atomic_load_explicit(&s_out_gain, memory_order_relaxed);
+    memset(s_delay, 0, sizeof(s_delay));
     s_was_idle = false;
+  }
+  if (rt->delay > 0) {
+    run_delay(buf, frames, rt->delay < DELAY_N ? rt->delay : DELAY_N - 1);
   }
   while (frames > 0) {
     const size_t n = frames < CHUNK ? frames : CHUNK;

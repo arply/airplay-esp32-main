@@ -12,7 +12,7 @@ static const char *TAG = "audio_dsp";
 
 // Bump when audio_dsp_profile_t changes; a stored blob with another
 // version (or size) is ignored and the device starts flat.
-#define PROFILE_VERSION 2
+#define PROFILE_VERSION 3
 
 typedef struct {
   uint16_t version;
@@ -39,11 +39,27 @@ typedef struct {
   profile_v1_t profile;
 } stored_v1_t;
 
+/* Version 2 (until 2026-11-25): no subwoofer settings. */
+typedef struct {
+  float preamp_db;
+  dsp_filter_t sets[AUDIO_DSP_SET_COUNT][DSP_MAX_FILTERS_PER_CH];
+  uint8_t count[AUDIO_DSP_SET_COUNT];
+  dsp_bass_t bass;
+} profile_v2_t;
+
+typedef struct {
+  uint16_t version;
+  uint16_t size;
+  profile_v2_t profile;
+} stored_v2_t;
+
 static SemaphoreHandle_t s_lock;
 static audio_dsp_profile_t s_saved;
 static audio_dsp_profile_t s_running; // == s_saved unless previewing
 static bool s_previewing;
 static uint32_t s_saved_at;
+static bool s_sub;      // this device is a subwoofer
+static float s_room_hp; // a subwoofer in this room plays below this, Hz
 
 #define NVS_KEY_SAVED_AT "dsp_saved_at"
 
@@ -69,6 +85,7 @@ void audio_dsp_profile_flat(audio_dsp_profile_t *p) {
   p->bass.f_low = 120.0f;
   p->bass.boost = 0.5f;
   p->bass.harmonics = 0.0f; // opt-in: they colour the sound
+  p->sub.xo = 80.0f;
 }
 
 void audio_dsp_profile_clamp(audio_dsp_profile_t *p) {
@@ -77,6 +94,10 @@ void audio_dsp_profile_clamp(audio_dsp_profile_t *p) {
   memset(&c, 0, sizeof(c));
   c.preamp_db = p->preamp_db;
   c.bass = p->bass;
+  c.xover = (dsp_xover_t){.lowpass = p->sub.xo > 0 ? p->sub.xo : 80.0f,
+                          .gain_db = p->sub.gain_db,
+                          .delay_ms = p->sub.delay_ms,
+                          .invert = p->sub.invert};
   for (int s = 0; s < AUDIO_DSP_SET_COUNT; s++) {
     const int ch = s % DSP_NUM_CH;
     memcpy(c.filters[ch], p->sets[s], sizeof(c.filters[ch]));
@@ -87,13 +108,16 @@ void audio_dsp_profile_clamp(audio_dsp_profile_t *p) {
   }
   p->preamp_db = c.preamp_db;
   p->bass = c.bass;
+  p->sub.xo = c.xover.lowpass;
+  p->sub.gain_db = c.xover.gain_db;
+  p->sub.delay_ms = c.xover.delay_ms;
 }
 
 /* Build the per-output configuration for the current channel mode. */
 static void resolve(const audio_dsp_profile_t *p, audio_channel_mode_t mode) {
   int set_l;
   int set_r;
-  switch (mode) {
+  switch (s_sub ? AUDIO_CHANNEL_MONO : mode) { // a subwoofer plays mono
   case AUDIO_CHANNEL_MONO:
     set_l = set_r = AUDIO_DSP_SET_M;
     break;
@@ -111,7 +135,18 @@ static void resolve(const audio_dsp_profile_t *p, audio_channel_mode_t mode) {
   static dsp_config_t c; // ~500 B, kept off the caller's stack
   memset(&c, 0, sizeof(c));
   c.preamp_db = p->preamp_db;
-  c.bass = p->bass;
+  if (s_sub) {
+    c.xover = (dsp_xover_t){.lowpass = p->sub.xo,
+                            .gain_db = p->sub.gain_db,
+                            .delay_ms = p->sub.delay_ms,
+                            .invert = p->sub.invert};
+  } else {
+    c.bass = p->bass;
+    if (s_room_hp > 0) { // the subwoofer takes the bass
+      c.xover.highpass = s_room_hp;
+      c.bass.on = false;
+    }
+  }
   memcpy(c.filters[DSP_CH_L], p->sets[set_l], sizeof(c.filters[DSP_CH_L]));
   c.count[DSP_CH_L] = p->count[set_l];
   memcpy(c.filters[DSP_CH_R], p->sets[set_r], sizeof(c.filters[DSP_CH_R]));
@@ -127,15 +162,24 @@ void audio_dsp_init(uint32_t sample_rate) {
   audio_dsp_profile_flat(&s_saved);
 
   static union {
-    stored_profile_t v2;
+    stored_profile_t v3;
+    stored_v2_t v2;
     stored_v1_t v1;
   } stored;
   size_t len = sizeof(stored);
   bool loaded = false;
   if (settings_get_dsp_blob(&stored, &len) == ESP_OK) {
-    if (len == sizeof(stored.v2) && stored.v2.version == PROFILE_VERSION &&
-        stored.v2.size == sizeof(stored.v2.profile)) {
-      s_saved = stored.v2.profile;
+    if (len == sizeof(stored.v3) && stored.v3.version == PROFILE_VERSION &&
+        stored.v3.size == sizeof(stored.v3.profile)) {
+      s_saved = stored.v3.profile;
+      loaded = true;
+    } else if (len == sizeof(stored.v2) && stored.v2.version == 2 &&
+               stored.v2.size == sizeof(stored.v2.profile)) {
+      const profile_v2_t *o = &stored.v2.profile;
+      s_saved.preamp_db = o->preamp_db;
+      memcpy(s_saved.sets, o->sets, sizeof(s_saved.sets));
+      memcpy(s_saved.count, o->count, sizeof(s_saved.count));
+      s_saved.bass = o->bass; // sub keeps the flat profile's defaults
       loaded = true;
     } else if (len == sizeof(stored.v1) && stored.v1.version == 1 &&
                stored.v1.size == sizeof(stored.v1.profile)) {
@@ -221,6 +265,32 @@ void audio_dsp_revert(void) {
   s_previewing = false;
   xSemaphoreGive(s_lock);
   audio_output_restore_channel_mode();
+}
+
+void audio_dsp_set_room(bool is_sub, float room_hp) {
+  if (!s_lock) {
+    return;
+  }
+  xSemaphoreTake(s_lock, portMAX_DELAY);
+  if (is_sub != s_sub || room_hp != s_room_hp) {
+    s_sub = is_sub;
+    s_room_hp = is_sub ? 0 : room_hp;
+    ESP_LOGI(TAG, "%s",
+             s_sub           ? "Subwoofer: mono low-pass"
+             : s_room_hp > 0 ? "Subwoofer in the room: high-pass"
+                             : "No subwoofer in the room");
+    resolve(&s_running, audio_output_get_channel_mode());
+  }
+  xSemaphoreGive(s_lock);
+}
+
+void audio_dsp_get_room(bool *is_sub, float *room_hp) {
+  *is_sub = s_sub;
+  *room_hp = s_room_hp;
+}
+
+float audio_dsp_saved_xo(void) {
+  return s_saved.sub.xo;
 }
 
 void audio_dsp_on_channel_mode(audio_channel_mode_t mode) {

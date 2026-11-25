@@ -16,6 +16,7 @@
 
 #include "fleet.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -36,6 +37,7 @@
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "mdns.h"
+#include "test_signal.h"
 #include "nvs.h"
 #include "settings.h"
 #include "web_server.h"
@@ -45,6 +47,7 @@ static const char *TAG = "fleet";
 #define SERVICE       "_arply"
 #define PROTO         "_tcp"
 #define ROUND_MS      10000
+#define PLAY_POLL_MS  1000 // playback start/stop triggers a round at once
 #define QUERY_MS      2000
 #define EXPIRE_ROUNDS 3 // a peer missing this many rounds counts as offline
 #define CLAIM_ROUNDS  3 // scheduled wins in a row before taking arply.local
@@ -135,6 +138,13 @@ static uint32_t own_ip(void) {
   return info.ip.addr;
 }
 
+/* Sound comes out: a stream, or one of arply's own signals (listening
+ * sample, sweeps). */
+static bool playing_now(void) {
+  return (audio_receiver_is_playing() && audio_receiver_has_data()) ||
+         test_signal_active();
+}
+
 static void build_self(fleet_peer_t *me) {
   memset(me, 0, sizeof(*me));
   strlcpy(me->id, s_id, sizeof(me->id));
@@ -148,7 +158,9 @@ static void build_self(fleet_peer_t *me) {
   me->channel = (uint8_t)audio_output_get_channel_mode();
   me->calibrated = audio_dsp_calibrated_at();
   me->bass = audio_dsp_saved_bass();
-  me->playing = audio_receiver_is_playing() && audio_receiver_has_data();
+  me->xo =
+      s_role == FLEET_ROLE_BASS ? (uint16_t)lroundf(audio_dsp_saved_xo()) : 0;
+  me->playing = playing_now();
   me->wifi = wifi_quality();
   me->online = true;
   me->last_seen_us = esp_timer_get_time();
@@ -214,6 +226,10 @@ static void announce(void) {
   }
   if (me.playing != a->playing) {
     mdns_service_txt_item_set(SERVICE, PROTO, "play", me.playing ? "1" : "0");
+  }
+  if (me.xo != a->xo) {
+    snprintf(num, sizeof(num), "%u", (unsigned)me.xo);
+    mdns_service_txt_item_set(SERVICE, PROTO, "xo", num);
   }
   if (me.wifi != a->wifi) {
     mdns_service_txt_item_set(SERVICE, PROTO, "wifi", WIFI_NAMES[me.wifi]);
@@ -336,6 +352,9 @@ static void browse(void) {
     }
     if ((v = txt_get(r, "play")) != NULL) {
       p->playing = strcmp(v, "1") == 0;
+    }
+    if ((v = txt_get(r, "xo")) != NULL) {
+      p->xo = (uint16_t)strtoul(v, NULL, 10);
     }
     if ((v = txt_get(r, "wifi")) != NULL) {
       p->wifi = wifi_from(v);
@@ -565,15 +584,46 @@ static void elect(bool scheduled) {
   }
 }
 
+/* A subwoofer playing in this room takes the bass of this device. Only
+ * while it plays: a speaker played alone keeps its full range. */
+static void apply_room(void) {
+  float hp = 0;
+  xSemaphoreTake(s_lock, portMAX_DELAY);
+  for (int i = 0; i < s_peer_count && s_role != FLEET_ROLE_BASS && s_room[0];
+       i++) {
+    const fleet_peer_t *p = &s_peers[i];
+    if (p->online && p->role == FLEET_ROLE_BASS && p->playing && p->xo > 0 &&
+        strcasecmp(p->room, s_room) == 0) {
+      hp = p->xo;
+      break;
+    }
+  }
+  xSemaphoreGive(s_lock);
+  audio_dsp_set_room(s_role == FLEET_ROLE_BASS, hp);
+}
+
 static void fleet_task(void *arg) {
   (void)arg;
+  bool was_playing = false;
+  int idle_ms = 0;
   for (;;) {
     // A local change (room, role, pick) wakes the task early; such a round
-    // releases the hub at once but does not count towards claiming it.
-    bool woken = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(ROUND_MS)) > 0;
+    // releases the hub at once but does not count towards claiming it. So
+    // does playback starting or stopping, announced before browsing, so a
+    // subwoofer and its speakers switch within seconds.
+    bool woken = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(PLAY_POLL_MS)) > 0;
+    const bool playing = playing_now();
+    idle_ms += PLAY_POLL_MS;
+    if (!woken && playing == was_playing && idle_ms < ROUND_MS) {
+      continue;
+    }
+    woken = woken || playing != was_playing;
+    was_playing = playing;
+    idle_ms = 0;
     if (woken) {
       s_win_rounds = 0;
     }
+    announce();
     browse();
     probe_cached();
     xSemaphoreTake(s_lock, portMAX_DELAY);
@@ -581,7 +631,7 @@ static void fleet_task(void *arg) {
     xSemaphoreGive(s_lock);
     update_cache();
     elect(!woken);
-    announce();
+    apply_room();
   }
 }
 
@@ -614,8 +664,10 @@ void fleet_start(void) {
   s_announced = me;
   char hub[12];
   char cal[12];
+  char xo[8];
   snprintf(hub, sizeof(hub), "%u", (unsigned)s_hub_seq);
   snprintf(cal, sizeof(cal), "%u", (unsigned)me.calibrated);
+  snprintf(xo, sizeof(xo), "%u", (unsigned)me.xo);
   mdns_txt_item_t txt[] = {
       {"v", "1"},
       {"id", s_id},
@@ -629,6 +681,7 @@ void fleet_start(void) {
       {"bass", me.bass ? "1" : "0"},
       {"play", me.playing ? "1" : "0"},
       {"wifi", WIFI_NAMES[me.wifi]},
+      {"xo", xo},
   };
   esp_err_t err = mdns_service_add(me.name, SERVICE, PROTO, 80, txt,
                                    sizeof(txt) / sizeof(txt[0]));
@@ -637,6 +690,7 @@ void fleet_start(void) {
              esp_err_to_name(err));
   }
   strlcpy(s_hub_id, s_id, sizeof(s_hub_id));
+  audio_dsp_set_room(s_role == FLEET_ROLE_BASS, 0); // a subwoofer from boot on
   // mDNS query, HTTP probe with JSON parsing and NVS writes share this stack.
   xTaskCreate(fleet_task, "fleet", 8192, NULL, 2, &s_task);
   ESP_LOGI(TAG, "Fleet discovery started (id %s, room '%s', %s)", s_id, s_room,

@@ -596,7 +596,7 @@ name with spaces gives an unusable `.local` name — pre-existing, Phase 8.
 - [x] Host test: 50 Hz in, `fc` = 100 → 50 Hz ≈ −12 dB, 100 Hz and 200 Hz
       harmonics present (the prototype measured −12 / −21 dB at
       `amount` 0.5).
-- [ ] Later (Phase 8): force off when the room has a device with role `bass`.
+- [x] Later (Phase 8): off while a subwoofer plays in the room (FLEET_PLAN.md, F5).
 
 Host test result: 50 Hz −12.3 dB, 100 Hz −12.1 dB, 200 Hz −20.8 dB
 (prototype: −12 / −21).

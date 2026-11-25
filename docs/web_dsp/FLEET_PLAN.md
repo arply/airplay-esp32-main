@@ -190,3 +190,49 @@ restart again from `ota_1` (confirmed, no rollback).
 Arply with its date within one round; a restart with cached peers works.
 **Pending:** "offline since" with a board unplugged for a minute; playing
 state while streaming; the page on the iPhone.
+
+---
+
+## F5 — Subwoofer role (done 2026-11-25, before F3/F4)
+
+Built without pairing or a proxy: everything a speaker needs to know about
+its subwoofer is in the subwoofer's mDNS TXT record.
+
+- [x] **DSP** (`dsp_xover_t` in `dsp_config_t`): Linkwitz-Riley 4th order
+      (two Butterworth sections) appended to the EQ chain, low-pass or
+      high-pass, 40–200 Hz. A low-pass also sums L+R to mono. Level
+      (±12 dB) and polarity fold into the preamp factor; a delay line on
+      the input (0–20 ms, 961 stereo int16 frames, 3.8 KB) delays a
+      subwoofer that stands nearer than the speakers.
+- [x] **Profile v3:** `sub {xo, gain_db, delay_ms, invert}` (default 80 Hz),
+      v2 profiles load with these defaults. `/api/dsp` reads and writes
+      `sub` and reports `role` and `room_hp`.
+- [x] **Fleet:** a device with role `bass` announces its saved crossover
+      as TXT `xo`. After every round each device calls
+      `audio_dsp_set_room()`: role `bass` → mono, set M, low-pass with the
+      sub settings, bass block off; otherwise, if an online peer with role
+      `bass` in the same (non-empty, case-insensitive) room is **playing**
+      → high-pass at its `xo`, bass block off. Only while it plays, so a
+      speaker AirPlayed alone keeps its full range. "Playing" now includes
+      arply's own signals (listening sample, sweeps). A start or stop of
+      playback triggers a round at once (polled every second), announced
+      before browsing.
+- [x] **Pages:** the role is selectable on the settings page. On a
+      subwoofer the calibration page shows a Subwoofer panel (crossover,
+      level, delay with cm, polarity) instead of the bass block, locks the
+      output to mono, levels measurements on 30 Hz…crossover instead of
+      200 Hz–2 kHz, fits the EQ up to 2× the crossover and draws the
+      low-pass into the chart. A speaker next to a playing subwoofer shows
+      the high-pass and a note in the bass panel.
+- Host tests: −6.02 dB at the crossover, −48.2 dB two octaves away, low- +
+  high-pass sum flat within 0.005 dB (40–160 Hz), mono sum, polarity,
+  +6 dB level, 10 ms delay to the sample.
+- **Bench test** (`DUT` as subwoofer in Arply's room, captured with the
+  debug probe, crossover 80 Hz): DUT out L = R, 60–90 Hz −4.2, 90–120
+  −10.7, 180–300 −33.7 dB; Arply 20–45 −23.8, 60–90 −7.7, 120–180 −0.8,
+  mids 0.0 dB. Arply switched 1 s after DUT started playing, back 2 s
+  after it stopped.
+- **Open:** a real subwoofer and AirPlay multi-room listening; bypass (A/B
+  on the page) also bypasses the crossover; with USB audio on a speaker
+  the subwoofer gets nothing, so a playing subwoofer would still take the
+  speaker's bass (only if it plays something else at the same time).

@@ -27,11 +27,20 @@ typedef enum {
   AUDIO_DSP_SET_COUNT,
 } audio_dsp_set_t;
 
+/* Used while this device is a subwoofer (fleet role "bass"). */
+typedef struct {
+  float xo;       // crossover, Hz; the room's speakers get the high-pass
+  float gain_db;  // level against the speakers
+  float delay_ms; // a subwoofer nearer than the speakers waits for them
+  bool invert;
+} audio_dsp_sub_t;
+
 typedef struct {
   float preamp_db;
   dsp_filter_t sets[AUDIO_DSP_SET_COUNT][DSP_MAX_FILTERS_PER_CH];
   uint8_t count[AUDIO_DSP_SET_COUNT];
   dsp_bass_t bass;
+  audio_dsp_sub_t sub;
 } audio_dsp_profile_t;
 
 /** dsp_init() at the output rate, then load and apply the saved profile. */
@@ -70,6 +79,20 @@ void audio_dsp_revert(void);
 
 /** True while a preview runs instead of the saved profile. */
 bool audio_dsp_previewing(void);
+
+/**
+ * The device's place in its room (from fleet): @p is_sub plays the mono
+ * low-pass with the profile's sub settings and set M; otherwise @p room_hp
+ * > 0 is the crossover of a subwoofer playing in the same room, giving the
+ * matching high-pass and the bass block off. Re-resolves on a change.
+ */
+void audio_dsp_set_room(bool is_sub, float room_hp);
+
+/** What audio_dsp_set_room() last set. */
+void audio_dsp_get_room(bool *is_sub, float *room_hp);
+
+/** Crossover of the saved profile's subwoofer settings, Hz. */
+float audio_dsp_saved_xo(void);
 
 /** Re-resolve the running profile for a new channel mode. */
 void audio_dsp_on_channel_mode(audio_channel_mode_t mode);

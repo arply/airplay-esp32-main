@@ -37,6 +37,13 @@ extern "C" {
 #define DSP_BASS_F_MAX     200.0f
 #define DSP_BASS_BOOST_MAX 12.0f // dB of extension at boost 1.0
 
+#define DSP_XO_F_MIN     40.0f // crossover to a subwoofer
+#define DSP_XO_F_MAX     200.0f
+#define DSP_XO_GAIN_MIN  (-12.0f)
+#define DSP_XO_GAIN_MAX  12.0f
+#define DSP_DELAY_MAX_MS 20.0f // ~7 m of distance
+#define DSP_DELAY_MAX_FS 48000 // highest rate the delay line is sized for
+
 typedef enum {
   DSP_CH_L = 0,
   DSP_CH_R = 1,
@@ -79,12 +86,24 @@ typedef struct {
   float harmonics; // 0..1
 } dsp_bass_t;
 
+/* Crossover to a subwoofer, after the EQ. A low-pass makes this the
+ * subwoofer's output: L+R are summed to mono first, and level, polarity and
+ * delay align it with the speakers. A high-pass is the speakers' side. */
+typedef struct {
+  float lowpass;  // Hz, Linkwitz-Riley 4th order, 0 = off
+  float highpass; // Hz, Linkwitz-Riley 4th order, 0 = off
+  float gain_db;  // DSP_XO_GAIN_MIN..DSP_XO_GAIN_MAX
+  float delay_ms; // 0..DSP_DELAY_MAX_MS
+  bool invert;    // polarity
+} dsp_xover_t;
+
 typedef struct {
   float preamp_db;
   bool bypass;
   dsp_filter_t filters[DSP_NUM_CH][DSP_MAX_FILTERS_PER_CH];
   uint8_t count[DSP_NUM_CH];
   dsp_bass_t bass;
+  dsp_xover_t xover;
 } dsp_config_t;
 
 /** Initialise for the given output sample rate. Starts flat. */

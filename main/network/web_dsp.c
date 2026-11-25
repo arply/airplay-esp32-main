@@ -113,6 +113,17 @@ static cJSON *profile_to_json(const audio_dsp_profile_t *p,
   cJSON_AddNumberToObject(json, "fs", CONFIG_OUTPUT_SAMPLE_RATE_HZ);
   cJSON_AddNumberToObject(json, "max_filters", DSP_MAX_FILTERS_PER_CH);
   cJSON_AddBoolToObject(json, "bypass", s_bypass);
+  cJSON *sub = cJSON_AddObjectToObject(json, "sub");
+  cJSON_AddNumberToObject(sub, "xo", round_to(p->sub.xo, 0.1));
+  cJSON_AddNumberToObject(sub, "gain_db", round_to(p->sub.gain_db, 0.01));
+  cJSON_AddNumberToObject(sub, "delay_ms", round_to(p->sub.delay_ms, 0.01));
+  cJSON_AddBoolToObject(sub, "invert", p->sub.invert);
+  // Set by the fleet: this device is a subwoofer, or one plays in its room.
+  bool is_sub;
+  float room_hp;
+  audio_dsp_get_room(&is_sub, &room_hp);
+  cJSON_AddStringToObject(json, "role", is_sub ? "bass" : "main");
+  cJSON_AddNumberToObject(json, "room_hp", round_to(room_hp, 0.1));
   cJSON_AddBoolToObject(json, "previewing", audio_dsp_previewing());
   return json;
 }
@@ -217,6 +228,18 @@ static const char *parse_profile(const cJSON *json, audio_dsp_profile_t *p,
         !read_number(bass, "boost", &p->bass.boost, false) ||
         !read_number(bass, "harmonics", &p->bass.harmonics, false)) {
       return "bass.f_low, bass.boost and bass.harmonics must be numbers";
+    }
+  }
+  const cJSON *sub = cJSON_GetObjectItemCaseSensitive(json, "sub");
+  if (sub) {
+    const cJSON *inv = cJSON_GetObjectItemCaseSensitive(sub, "invert");
+    if (inv) {
+      p->sub.invert = cJSON_IsTrue(inv);
+    }
+    if (!read_number(sub, "xo", &p->sub.xo, false) ||
+        !read_number(sub, "gain_db", &p->sub.gain_db, false) ||
+        !read_number(sub, "delay_ms", &p->sub.delay_ms, false)) {
+      return "sub.xo, sub.gain_db and sub.delay_ms must be numbers";
     }
   }
   // Older exports (prototype, firmware before 2026-11-25): only "on" is

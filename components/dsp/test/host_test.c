@@ -439,6 +439,100 @@ static void test_pink_level(void) {
   check_near("pink noise RMS (dBFS)", 10 * log10(s / (double)cnt), -15.0, 0.5);
 }
 
+/* Tone @p f through @p c: output channel @p ch, -12 dBFS sine on L and
+ * @p r_amp of it on R. Returns the output buffer (caller frees). */
+static int16_t *xover_run(const dsp_config_t *c, double f, double r_amp) {
+  const size_t n = (size_t)FS;
+  int16_t *b = malloc(n * 4);
+  sine16(b, n, f, 0.25);
+  for (size_t i = 0; i < n; i++) {
+    b[2 * i + 1] = (int16_t)lrint(b[2 * i + 1] * r_amp);
+  }
+  dsp_set_config(c);
+  process_frames(b, n);
+  return b;
+}
+
+static double xover_db(const dsp_config_t *c, double f, int ch) {
+  int16_t *b = xover_run(c, f, 1.0);
+  const double a = chan_amp(b, (size_t)FS / 2, (size_t)FS / 2, ch, f);
+  free(b);
+  return db(a / 0.25);
+}
+
+static void test_xover(void) {
+  dsp_set_output_gain(1.0f);
+  dsp_config_t lp = flat();
+  lp.xover.lowpass = 80;
+  dsp_config_t hp = flat();
+  hp.xover.highpass = 80;
+  // Linkwitz-Riley 4th order: -6 dB at the crossover, 24 dB/octave.
+  check_near("sub low-pass 80 Hz: 30 Hz (dB)", xover_db(&lp, 30, 0), -0.17,
+             0.3);
+  check_near("sub low-pass 80 Hz: 80 Hz (dB)", xover_db(&lp, 80, 1), -6.02,
+             0.3);
+  check_near("sub low-pass 80 Hz: 320 Hz (dB)", xover_db(&lp, 320, 0), -48.2,
+             1.5);
+  check_near("speaker high-pass 80 Hz: 80 Hz (dB)", xover_db(&hp, 80, 0), -6.02,
+             0.3);
+  check_near("speaker high-pass 80 Hz: 320 Hz (dB)", xover_db(&hp, 320, 1),
+             -0.02, 0.3);
+  // Both halves together add up flat (they are in phase at the crossover).
+  const size_t n = (size_t)FS;
+  double worst = 0;
+  for (double f = 40; f <= 160; f *= 1.41421356) {
+    int16_t *a = xover_run(&lp, f, 1.0);
+    int16_t *b = xover_run(&hp, f, 1.0);
+    float *sum = malloc(n / 2 * sizeof(float));
+    for (size_t i = 0; i < n / 2; i++) {
+      sum[i] = (a[2 * (n / 2 + i)] + b[2 * (n / 2 + i)]) / 32768.0f;
+    }
+    worst = fmax(worst, fabs(db(tone_amp(sum, n / 2, f, FS) / 0.25)));
+    free(sum);
+    free(a);
+    free(b);
+  }
+  check(worst < 0.3, "low-pass + high-pass sum, 40-160 Hz, worst (dB)", worst,
+        0, 0.3);
+  // The subwoofer sums L+R: a tone on L only comes out at half on both.
+  int16_t *m = xover_run(&lp, 30, 0.0);
+  check_near("sub mono sum: L only -> right output (dB)",
+             db(chan_amp(m, n / 2, n / 2, 1, 30) / 0.25), -6.2, 0.3);
+  free(m);
+  // Level and polarity.
+  dsp_config_t g = flat();
+  g.xover.gain_db = 6;
+  g.xover.invert = true;
+  int16_t *x = xover_run(&g, 1000, 1.0);
+  int16_t *ref = malloc(n * 4);
+  sine16(ref, n, 1000, 0.25);
+  double dot = 0;
+  for (size_t i = n / 2; i < n; i++) {
+    dot += (double)x[2 * i] * ref[2 * i];
+  }
+  check(dot < 0, "sub polarity inverted", dot, -1, 0);
+  check_near("sub level +6 dB (dB)",
+             db(chan_amp(x, n / 2, n / 2, 0, 1000) / 0.25), 6.0, 0.1);
+  free(x);
+  // Delay: a click 10 ms later (441 frames at 44.1 kHz).
+  dsp_config_t d = flat();
+  d.xover.delay_ms = 10;
+  dsp_set_config(&d);
+  memset(ref, 0, n * 4);
+  ref[2 * 1000] = ref[2 * 1000 + 1] = 16000;
+  process_frames(ref, n);
+  size_t at = 0;
+  for (size_t i = 0; i < n; i++) {
+    if (abs(ref[2 * i]) > abs(ref[2 * at])) {
+      at = i;
+    }
+  }
+  check(at == 1441, "sub delay 10 ms: click at frame", (double)at, 1441, 0);
+  free(ref);
+  dsp_config_t f0 = flat();
+  dsp_set_config(&f0);
+}
+
 int main(void) {
   test_biquad_magnitudes();
   test_identity_and_bypass();
@@ -450,6 +544,7 @@ int main(void) {
   test_clamp();
   test_sweep_matches_closed_form();
   test_pink_level();
+  test_xover();
   printf("%s: %d failure(s)\n", s_failures ? "FAILED" : "PASSED", s_failures);
   return s_failures ? 1 : 0;
 }

@@ -119,8 +119,9 @@ static double chan_amp(const int16_t *buf, size_t from, size_t frames, int ch,
 static dsp_config_t flat(void) {
   dsp_config_t c;
   memset(&c, 0, sizeof(c));
-  c.pbe.fc = 100;
-  c.pbe.amount = 0.5f;
+  c.bass.f_low = 120;
+  c.bass.boost = 0.5f;
+  c.bass.harmonics = 0.3f;
   return c;
 }
 
@@ -245,28 +246,30 @@ static void test_param_change_is_smooth(void) {
   free(buf);
 }
 
-/* PBE: 50 Hz in, fc 100 Hz, amount 0.5. The fundamental drops with the
- * main high-pass; consecutive harmonics (2f, 3f, 4f) carry the pitch. */
+/* Harmonics: 50 Hz in, cut at 100 Hz, no extension. The fundamental drops
+ * with the subsonic high-pass; consecutive harmonics (2f, 3f, 4f) carry the
+ * pitch. */
 static void test_pbe(void) {
   const size_t n = 3 * 44100;
   int16_t *buf = malloc(n * 4);
   dsp_init(44100);
   dsp_config_t c = flat();
-  c.pbe.on = true;
-  c.pbe.fc = 100;
-  c.pbe.amount = 0.5f;
+  c.bass.on = true;
+  c.bass.f_low = 200; // cut and harmonics at 100 Hz
+  c.bass.boost = 0;
+  c.bass.harmonics = 1;
   dsp_set_config(&c);
   sine16(buf, n, 50, 0.5);
   process_frames(buf, n);
   const size_t from = n / 2;
   const double base = 0.5;
-  check_near("PBE: 50 Hz fundamental (dB)",
+  check_near("harmonics: 50 Hz fundamental (dB)",
              db(chan_amp(buf, from, n - from, 0, 50) / base), -12.3, 0.5);
-  check_near("PBE: 100 Hz, 2nd harmonic (dB)",
+  check_near("harmonics: 100 Hz, 2nd harmonic (dB)",
              db(chan_amp(buf, from, n - from, 0, 100) / base), -13.7, 1.0);
-  check_near("PBE: 150 Hz, 3rd harmonic (dB)",
+  check_near("harmonics: 150 Hz, 3rd harmonic (dB)",
              db(chan_amp(buf, from, n - from, 0, 150) / base), -13.3, 1.0);
-  check_near("PBE: 200 Hz, 4th harmonic (dB)",
+  check_near("harmonics: 200 Hz, 4th harmonic (dB)",
              db(chan_amp(buf, from, n - from, 0, 200) / base), -17.0, 1.0);
   free(buf);
 }
@@ -285,9 +288,10 @@ static void test_pbe_intermodulation(void) {
   }
   dsp_init(44100);
   dsp_config_t c = flat();
-  c.pbe.on = true;
-  c.pbe.fc = 100;
-  c.pbe.amount = 0.5f;
+  c.bass.on = true;
+  c.bass.f_low = 200; // cut and harmonics at 100 Hz
+  c.bass.boost = 0;
+  c.bass.harmonics = 1;
   dsp_set_config(&c);
   process_frames(buf, n);
   double harm = 0;
@@ -301,9 +305,55 @@ static void test_pbe_intermodulation(void) {
       }
     }
   }
-  check(harm / band > 0.26, "PBE: harmonic share, 40 + 75 Hz (%)",
+  check(harm / band > 0.26, "harmonics: harmonic share, 40 + 75 Hz (%)",
         100 * harm / band, 33, 7);
   free(buf);
+}
+
+/* Level of a sine at @p f, @p in_db, after the bass block, f_low 120 Hz,
+ * boost 0.5 (+6 dB), no harmonics, at output gain @p vol. */
+static double extension_db_at(double f, double in_db, float vol) {
+  const size_t n = 3 * 44100;
+  int16_t *buf = malloc(n * 4);
+  const double a = pow(10, in_db / 20);
+  sine16(buf, n, f, a);
+  dsp_init(44100);
+  dsp_set_output_gain(vol);
+  dsp_config_t c = flat();
+  c.bass.on = true;
+  c.bass.f_low = 120;
+  c.bass.boost = 0.5f;
+  c.bass.harmonics = 0;
+  dsp_set_config(&c);
+  process_frames(buf, n);
+  // the DSP applies the volume itself: take it out to compare the boost
+  const double out = db(chan_amp(buf, 2 * 44100, 44100, 0, f) / (a * vol));
+  free(buf);
+  dsp_set_output_gain(1.0f);
+  return out;
+}
+
+static double extension_db(double in_db, float vol) {
+  return extension_db_at(80, in_db, vol);
+}
+
+static void test_bass_extension(void) {
+  // quiet: full boost (+6 dB shelf; the subsonic high-pass at 60 Hz and the
+  // shelf's slope at 80 Hz take some of it)
+  const double quiet = extension_db(-40, 1.0f);
+  check(quiet > 3.0 && quiet < 6.5, "bass: quiet 80 Hz boosted (dB)", quiet,
+        4.5, 1.5);
+  // loud at full volume: the dynamics hold the boost back
+  const double loud = extension_db(-6, 1.0f);
+  check(loud < quiet - 3.0, "bass: loud 80 Hz held back (dB)", loud, 0, 2);
+  // the same loud input at -26 dB volume: free again, plus loudness
+  const double soft = extension_db(-6, 0.05f);
+  check(soft > quiet + 2.0, "bass: low volume adds loudness (dB)", soft,
+        quiet + 6, 4);
+  // a real shelf: no dip above the limit (the parallel form dipped -1.5 dB)
+  const double above = extension_db_at(200, -40, 1.0f);
+  check(above > -0.2, "bass: no dip above the limit, 200 Hz (dB)", above, 1,
+        1.2);
 }
 
 static void test_clamp(void) {
@@ -312,8 +362,9 @@ static void test_clamp(void) {
   add_filter(&c, DSP_CH_L, DSP_FILTER_PEAK, 30000, 20, 50);
   add_filter(&c, DSP_CH_L, DSP_FILTER_PEAK, NAN, -40, 0.01f);
   c.preamp_db = 99;
-  c.pbe.fc = 10;
-  c.pbe.amount = 3;
+  c.bass.f_low = 10;
+  c.bass.boost = 3;
+  c.bass.harmonics = -1;
   dsp_clamp_config(&c);
   check_near("clamp f to 0.45 fs", c.filters[0][0].f, 0.45 * 44100, 0.5);
   check_near("clamp gain max", c.filters[0][0].gain_db, DSP_GAIN_MAX, 0);
@@ -323,8 +374,9 @@ static void test_clamp(void) {
   check_near("clamp gain min", c.filters[0][1].gain_db, DSP_GAIN_MIN, 0);
   check_near("clamp q min", c.filters[0][1].q, DSP_Q_MIN, 0.001);
   check_near("clamp preamp", c.preamp_db, DSP_PREAMP_MAX, 0);
-  check_near("clamp pbe fc", c.pbe.fc, DSP_PBE_FC_MIN, 0);
-  check_near("clamp pbe amount", c.pbe.amount, 1, 0);
+  check_near("clamp bass f_low", c.bass.f_low, DSP_BASS_F_MIN, 0);
+  check_near("clamp bass boost", c.bass.boost, 1, 0);
+  check_near("clamp bass harmonics", c.bass.harmonics, 0, 0);
 }
 
 /* The device sweep must equal sweep() in the prototype, which evaluates the
@@ -394,6 +446,7 @@ int main(void) {
   test_param_change_is_smooth();
   test_pbe();
   test_pbe_intermodulation();
+  test_bass_extension();
   test_clamp();
   test_sweep_matches_closed_form();
   test_pink_level();

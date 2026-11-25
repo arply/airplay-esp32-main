@@ -33,8 +33,9 @@ extern "C" {
 #define DSP_PREAMP_MIN (-24.0f)
 #define DSP_PREAMP_MAX 6.0f
 
-#define DSP_PBE_FC_MIN 60.0f
-#define DSP_PBE_FC_MAX 150.0f
+#define DSP_BASS_F_MIN     40.0f // speaker's lowest usable frequency
+#define DSP_BASS_F_MAX     200.0f
+#define DSP_BASS_BOOST_MAX 12.0f // dB of extension at boost 1.0
 
 typedef enum {
   DSP_CH_L = 0,
@@ -59,19 +60,30 @@ typedef struct {
   bool enabled;
 } dsp_filter_t;
 
-/** Psychoacoustic bass enhancement (missing fundamental). */
+/**
+ * Bass for small speakers, one block of four parts:
+ *  - extension: real bass, a boost of up to boost * DSP_BASS_BOOST_MAX dB
+ *    below f_low, where the speaker starts to roll off;
+ *  - dynamics: the boost backs off when the bass at the DAC (after the
+ *    volume, dsp_set_output_gain) would get too loud for the driver;
+ *  - loudness: at low volume the boost may go up to 6 dB further;
+ *  - harmonics: what lies below f_low / 2 (cut there to spare the driver)
+ *    is replaced by its 2nd-4th harmonics, more of them while the dynamics
+ *    hold the boost back.
+ */
 typedef struct {
   bool on;
-  float fc;     // Hz, DSP_PBE_FC_MIN..DSP_PBE_FC_MAX
-  float amount; // 0..1
-} dsp_pbe_t;
+  float f_low;     // Hz, DSP_BASS_F_MIN..DSP_BASS_F_MAX
+  float boost;     // 0..1
+  float harmonics; // 0..1
+} dsp_bass_t;
 
 typedef struct {
   float preamp_db;
   bool bypass;
   dsp_filter_t filters[DSP_NUM_CH][DSP_MAX_FILTERS_PER_CH];
   uint8_t count[DSP_NUM_CH];
-  dsp_pbe_t pbe;
+  dsp_bass_t bass;
 } dsp_config_t;
 
 /** Initialise for the given output sample rate. Starts flat. */
@@ -94,11 +106,19 @@ void dsp_get_config(dsp_config_t *cfg);
 void dsp_set_bypass(bool bypass);
 
 /**
- * Process interleaved stereo int16 in place. Any length. Returns at once,
- * leaving the samples bit-identical, when the configuration is flat or
- * bypassed.
+ * The volume (linear, 0..1). While the DSP is active it applies the volume
+ * itself, at its input, so EQ, bass and limiter work at the level that
+ * reaches the DAC (and the loudness follows it). Any task.
  */
-void dsp_process(int16_t *buf, size_t frames);
+void dsp_set_output_gain(float gain);
+
+/**
+ * Process interleaved stereo int16 in place. Any length. Returns false at
+ * once, leaving the samples bit-identical and the volume to the caller,
+ * when the configuration is flat or bypassed; true when it processed them,
+ * volume included (dsp_set_output_gain).
+ */
+bool dsp_process(int16_t *buf, size_t frames);
 
 /** True when dsp_process() currently changes the signal. */
 bool dsp_is_active(void);

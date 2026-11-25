@@ -688,6 +688,34 @@ margin. Checked in jsdom on a simulated recording (6 sweeps, noise,
 drift): channels assigned correctly, bass error 0.6–0.9 dB at 5 dB margin,
 0.2 dB at 20 dB.
 
+**Distortion, speaker limit, delay and polarity from the same sweeps (same
+day):**
+- The k-th harmonic's impulse response lies L·ln(k) before the linear one
+  (0.40 s for the 2nd … 0.93 s for the 5th). The page windows the 2nd–5th
+  (0.1 s each, same window for the fundamental) and stores THD per
+  frequency up to 300 Hz with every measurement (`thd`). Noise comes from
+  five windows 1.15–1.55 s before the peak; harmonics count only at ≥ 3×
+  the noise, otherwise the noise-limited upper bound is kept if it is below
+  10 %. Only sweeps with 1.6 s of recording before them are used (the
+  first one in a run usually is not).
+- Simulated driver (resonance 90 Hz, cubic stiffness, 25 % THD below it,
+  model crossing 10 % at ≈ 100 Hz): found at 78–106 Hz at 5 dB margin,
+  89–95 Hz at 10–20 dB. Clean driver: no false alarm in 13 runs (one noise
+  window and a 2× threshold gave 2 in 6).
+- "Suggest from measurement" now takes the higher of the −6 dB roll-off
+  (if ≥ 85 Hz, below that it is the phone microphone's own) and 3× the
+  frequency below which THD exceeds 10 %, so the bass block's cut (a third
+  of the limit) sits where the driver distorts. Distortion grows with
+  volume, so the page asks to measure at listening volume when it cannot
+  tell.
+- A joint L+R sweep would add nothing: the room is linear, so the sum is
+  the sum of the separate responses. From the separate sweeps the page now
+  reports the right speaker's arrival vs the left (clock drift removed via
+  the left sweeps' spacing; shown from 0.3 ms) and a reversed polarity
+  (sign of the direct sound, only when it clearly beats the opposite lobe
+  on all sweeps of both channels). Delay compensation would need a delay
+  line in the firmware; not built.
+
 **Detail:** the prototype's WebAudio `Q` of `20·log10(1/√2)` dB *is* linear
 Q = 1/√2 (WebAudio's LP/HP Q is in dB), so all sections are plain
 Butterworth biquads. The prototype's `oversample='2x'` on `|x|` is not

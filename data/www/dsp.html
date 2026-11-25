@@ -360,6 +360,38 @@ const DSP = (() => {
     return null;
   }
 
+  // Harmonic distortion from the same sweep (Farina): the k-th harmonic's
+  // impulse response lies L·ln(k) before the linear one (0.40 s for the 2nd,
+  // 0.93 s for the 5th with a 4 s sweep). Returns THD (2nd–5th harmonic, dB
+  // re the fundamental, 1/3 octave) per grid frequency up to 300 Hz. Where
+  // the harmonics are below 3× the noise (five windows 1.15–1.55 s before
+  // the peak; fewer gave false alarms in simulation), the value is the upper
+  // bound that noise allows if that is below 10 %, else null. h must reach
+  // DIST_PRE seconds before p. Same 0.1 s window for all, so the room's
+  // reverb counts equally in fundamental and harmonics.
+  const DIST_PRE = 1.6;
+  function distortion(h, p, sw, fs, grid) {
+    const L = sw.T / Math.log(sw.f2 / sw.f1), lead = Math.round(0.018 * fs);
+    const spec = t => spectrumAt(h, p + Math.round(t * fs) - lead, fs, 0.1); // window from 20 ms before
+    const band = (sp, k) => toGrid(sp.P, sp.M, fs, grid.map(f => f * k), 3).map(d => Math.pow(10, d / 10));
+    const nw = [-1.55, -1.45, -1.35, -1.25, -1.15].map(spec), ns = { ...nw[0], P: nw[0].P.map((_, j) => nw.reduce((a, w) => a + w.P[j], 0) / nw.length) };
+    const lin = band(spec(0), 1), harm = grid.map(() => 0), noise = grid.map(() => 0);
+    for (let k = 2; k <= 5; k++) {
+      const hk = band(spec(-L * Math.log(k)), k), nk = band(ns, k);
+      grid.forEach((_, i) => { harm[i] += hk[i]; noise[i] += nk[i]; });
+    }
+    return grid.map((f, i) => {
+      if (f > 300) return null;
+      const ok = harm[i] >= 3 * noise[i], db = 10 * Math.log10((ok ? harm[i] - noise[i] : 3 * noise[i]) / lin[i]);
+      return ok || db < -20 ? Math.round(db * 10) / 10 : null;
+    });
+  }
+  // highest frequency <= 300 Hz with more than 10 % distortion; null if none
+  function distLimit(thd, grid) {
+    for (let i = grid.length - 1; i >= 0 && grid[i] >= 40; i--) if (grid[i] <= 300 && thd[i] !== null && thd[i] > -20) return grid[i];
+    return null;
+  }
+
   function normalize(db, grid, a = 200, b = 2000) {
     let s = 0, n = 0;
     grid.forEach((f, i) => { if (f >= a && f <= b) { s += db[i]; n++; } });
@@ -481,7 +513,7 @@ const DSP = (() => {
     return out;
   }
 
-  return { bassLimit, varFrac, fft, sweep, impulse, argmaxAbs, spectrumAt, deconvolve, pinkNoise, logGrid, toGrid, smoothGrid, normalize, coeffs, magDb, eqCurve, target, autoFit, simulate, DEMO_CHAIN };
+  return { bassLimit, distortion, distLimit, DIST_PRE, varFrac, fft, sweep, impulse, argmaxAbs, spectrumAt, deconvolve, pinkNoise, logGrid, toGrid, smoothGrid, normalize, coeffs, magDb, eqCurve, target, autoFit, simulate, DEMO_CHAIN };
 })();
 /*DSP-END*/
 
@@ -819,19 +851,39 @@ function makeSample(c, kind) {
     }
     const ref = Math.abs(h[p0]), out = [], run = Date.now();
     const peaks = Array.from({ length: ks.length * REPEAT }, (_, i) => i ? DSP.argmaxAbs(h, p0 + i * step - win, p0 + i * step + win) : p0);
-    const pre = Math.round(0.01 * fs), len = pre + Math.round(0.4 * fs);
+    // a channel's sweeps, aligned on their own peaks (clock drift) and averaged
+    const average = (ps, pre, len) => {
+      const a = new Float64Array(pre + len);
+      for (const q of ps) for (let j = 0; j < a.length; j++) a[j] += (h[q - pre + j] || 0) / ps.length;
+      return a;
+    };
+    const pre = Math.round(0.01 * fs), dpre = Math.round(DSP.DIST_PRE * fs);
     ks.forEach((k, i) => {
       const ps = peaks.filter((_, j) => j % ks.length === i), p = ps[0];
       if (ps.some(q => q < 0 || Math.abs(h[q]) < 0.05 * ref)) { out.push({ warn: true, t: CH_NAME[k] + ': no signal – is the speaker connected?' }); return; }
-      // this channel's sweeps, aligned on their own peaks (clock drift) and averaged
-      const avg = new Float64Array(len);
-      for (const q of ps) for (let j = 0; j < len; j++) avg[j] += (h[q - pre + j] || 0) / ps.length;
-      const sp = DSP.spectrumAt(avg, pre, fs, 0.4);
+      const sp = DSP.spectrumAt(average(ps, pre, Math.round(0.4 * fs)), pre, fs, 0.4);
       const db = DSP.normalize(DSP.toGrid(sp.P, sp.M, fs, grid, 24), grid).map(v => Math.round(v * 100) / 100);
-      const rel = 20 * Math.log10(Math.abs(h[p]) / ref);
-      S.ch[k].meas.push({ run, db });
-      out.push({ warn: false, t: CH_NAME[k] + (i ? ' (' + fmtDb(rel) + ' vs ' + CH_NAME[ks[0]] + ')' : '') + ': ok' });
+      // distortion only from sweeps with their harmonics inside the recording
+      const pd = ps.filter(q => q >= dpre), thd = pd.length ? DSP.distortion(average(pd, dpre, Math.round(0.2 * fs)), dpre, sw, fs, grid) : null;
+      const fd = thd && DSP.distLimit(thd, grid), rel = 20 * Math.log10(Math.abs(h[p]) / ref);
+      S.ch[k].meas.push({ run, db, thd });
+      out.push({ warn: false, t: CH_NAME[k] + (i ? ' (' + fmtDb(rel) + ' vs ' + CH_NAME[ks[0]] + ')' : '') + ': ok' + (fd ? ', distortion > 10 % below ' + fmtHz(fd) : '') });
     });
+    // Stereo: arrival time and polarity of right vs left. A sweep of both
+    // together would add nothing: the room is linear, L+R is the sum of these.
+    if (ks.length === 2 && out.every(o => !o.warn)) {
+      const L = peaks.filter((_, j) => j % 2 === 0), R = peaks.filter((_, j) => j % 2 === 1);
+      const st = (L[L.length - 1] - L[0]) / (2 * (L.length - 1)); // real sweep spacing on the phone's clock
+      const ms = (R.reduce((a, r, j) => a + r - L[j], 0) / R.length - st) / fs * 1000;
+      if (Math.abs(ms) >= 0.3) out.push({ warn: false, t: 'Right arrives ' + Math.abs(ms).toFixed(1) + ' ms (' + Math.round(Math.abs(ms) * 34.3) + ' cm) ' + (ms > 0 ? 'later' : 'earlier') });
+      // polarity: sign of the direct sound, trusted only if it clearly beats the opposite lobe within ±1 ms
+      const w1 = Math.round(0.001 * fs), sign = q => {
+        let pos = 0, neg = 0; for (let j = q - w1; j <= q + w1; j++) { pos = Math.max(pos, h[j]); neg = Math.max(neg, -h[j]); }
+        return pos > 1.5 * neg ? 1 : neg > 1.5 * pos ? -1 : 0;
+      };
+      const sl = L.map(sign), sr = R.map(sign);
+      if (sl.every(v => v && v === sl[0]) && sr.every(v => v === -sl[0])) out.push({ warn: true, t: 'Right has the opposite polarity of Left – swap + and − on one speaker, or the bass cancels' });
+    }
     save(); renderMeas(); draw();
     const fit = fitAll(), warn = lv > -1 || out.some(o => o.warn);
     msg('Level ' + lv.toFixed(0) + ' dBFS, delay ' + Math.round(p0 / fs * 1000 - (live ? LEAD * 1000 : 0)) + ' ms' +
@@ -930,17 +982,39 @@ function makeSample(c, kind) {
   $('#o-pbefc').oninput = e => { S.opt.bass.f = +e.target.value; pbeChanged(); };
   $('#o-pbeboost').oninput = e => { S.opt.bass.boost = +e.target.value; pbeChanged(); };
   $('#o-pbeamt').oninput = e => { S.opt.bass.harm = +e.target.value; pbeChanged(); };
+  // a channel's distortion over its measurements (power mean where measured); null = no data
+  function avgThd(k) {
+    const ts = S.ch[k].meas.map(m => m.thd).filter(Boolean);
+    if (!ts.length) return null;
+    return grid.map((_, i) => {
+      const v = ts.map(t => t[i]).filter(x => x !== null);
+      return v.length ? 10 * Math.log10(v.reduce((a, x) => a + Math.pow(10, x / 10), 0) / v.length) : null;
+    });
+  }
   $('#b-pbesug').onclick = () => {
-    const lims = chans().map(k => [k, avgMeas(k)]).filter(([, a]) => a).map(([k, a]) => [k, DSP.bassLimit(a.avg, grid)]);
-    if (!lims.length) { $('#pbemsg').textContent = 'Measure first.'; return; }
-    if (lims.some(([, f]) => f === null)) { $('#pbemsg').textContent = 'No bass roll-off found up to 300 Hz – this speaker probably needs no bass help.'; return; }
-    const f6 = Math.max(...lims.map(([, f]) => f)), txt = lims.map(([k, f]) => CH_NAME[k] + ' ' + fmtHz(f)).join(', ');
-    if (f6 < 85) {
-      $('#pbemsg').textContent = '−6 dB roll-off at ' + txt + '. That is where the iPhone microphone rolls off itself – the speaker probably goes deeper. Set the limit by ear.';
+    const ks = chans().filter(k => S.ch[k].meas.length);
+    if (!ks.length) { $('#pbemsg').textContent = 'Measure first.'; return; }
+    const per = (fn, none) => { const v = ks.map(fn); return { f: Math.max(0, ...v.filter(x => typeof x === 'number')), txt: ks.map((k, i) => CH_NAME[k] + ' ' + (typeof v[i] === 'number' ? fmtHz(v[i]) : v[i] || none)).join(', ') }; };
+    const ro = per(k => DSP.bassLimit(avgMeas(k).avg, grid), 'none up to 300 Hz');
+    const ds = per(k => {
+      const t = avgThd(k);
+      let lo = -1; // lowest frequency of the known range that starts at 300 Hz
+      for (let i = grid.length - 1; t && i >= 0 && grid[i] >= 40; i--) if (grid[i] <= 300) { if (t[i] === null) break; lo = i; }
+      if (lo < 0) return 'too quiet to tell';
+      return DSP.distLimit(t, grid) || 'none down to ' + fmtHz(grid[lo]);
+    });
+    const facts = '−6 dB roll-off: ' + ro.txt + '. Distortion above 10 %: ' + ds.txt + '. ';
+    // A roll-off below 85 Hz is the phone microphone's own. Where the driver
+    // distorts, the bass block should cut: that is a third of the limit.
+    const lim = Math.max(ro.f >= 85 ? ro.f : 0, 3 * ds.f);
+    if (!lim) {
+      $('#pbemsg').textContent = facts + (ro.f ? 'The roll-off is where the phone microphone rolls off itself. ' : '') +
+        'No clear limit – set it by ear, or measure again at listening volume (distortion grows with volume).';
       return;
     }
-    S.opt.bass.f = Math.max(40, Math.min(200, Math.round(f6 / 5) * 5));
-    $('#pbemsg').textContent = '−6 dB roll-off at ' + txt + ' → speaker limit set to ' + fmtHz(S.opt.bass.f) + '. Phone microphones are weak in the deep bass, so trust your ears too.';
+    S.opt.bass.f = Math.max(40, Math.min(200, Math.round(lim / 5) * 5));
+    $('#pbemsg').textContent = facts + '→ speaker limit ' + fmtHz(S.opt.bass.f) + ', bass below ' + fmtHz(Math.round(S.opt.bass.f / 3)) +
+      ' is cut. Measured at your measuring volume and with a phone microphone, so trust your ears too.';
     pbeChanged();
   };
 

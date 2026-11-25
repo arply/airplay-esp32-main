@@ -42,6 +42,7 @@ set( SRC_FILES
     "network/dns_server.c"
     "network/log_stream.c"
     "network/https_server.c"
+    "network/online_update.c"
     "network/web_dsp.c"
     "network/tls_cert.c"
     "network/fleet.c"
@@ -93,6 +94,7 @@ set( DEPS
     esp_http_server
     esp_https_server
     esp_http_client
+    esp_https_ota
     app_update
     json
     mbedtls

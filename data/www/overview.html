@@ -30,8 +30,9 @@ header .in{max-width:1160px;margin:0 auto;min-height:68px;display:flex;align-ite
 h1{margin:0;font-size:clamp(36px,6vw,48px);line-height:1.05;font-weight:700;letter-spacing:-1px}
 .lead{margin:0;font-size:17px;color:var(--mut)}
 .panel{background:var(--card);border:1px solid var(--line);border-radius:16px}
-.fw{flex:0 1 460px;padding:18px 20px;display:flex;flex-direction:column;gap:4px}
-.fw span:last-child{font-size:14px;color:var(--mut)}
+.fw{flex:0 1 520px;padding:18px 20px;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px 16px}
+.fw>div{display:flex;flex-direction:column;gap:4px;flex:1 1 240px}
+.fw>div span:last-child{font-size:14px;color:var(--mut)}
 .cols{display:flex;flex-wrap:wrap;gap:24px;align-items:flex-start}
 main{flex:999 1 560px;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,380px),1fr));gap:20px;align-items:start}
 aside{flex:1 1 300px;display:flex;flex-direction:column;gap:20px}
@@ -169,7 +170,7 @@ const say = t => { $('#msg').textContent = t; };
 const soon = () => { quietUntil = 0; setTimeout(load, 1500); setTimeout(load, 6000); };
 const roomDevs = n => Object.values(byId).filter(d => d.room === n);
 // This device's own API directly; the others through the hub's proxy.
-const PATH = { self: '/api/fleet/self', volume: '/api/audio/volume' };
+const PATH = { self: '/api/fleet/self', volume: '/api/audio/volume', update: '/api/update' };
 async function call(d, to, body) {
   const u = d.id === F.self.id ? PATH[to] : '/api/fleet/proxy?id=' + encodeURIComponent(d.id) + '&to=' + to;
   const r = await fetch(u, body === undefined ? { cache: 'no-store' }
@@ -211,12 +212,43 @@ async function load() {
   $('#n-hub').innerHTML = hub ? esc(hub.name) + (stand ? '<br><span>Stand-in: ' + esc(stand.name) + '</span>' : '') : '–';
   const off = devs.filter(d => !d.online).length;
   $('#n-disc').textContent = plural(devs.length, 'device') + ' via Bonjour' + (off ? ', ' + off + ' offline' : '');
-  const fws = [...new Set(devs.map(d => d.fw))];
-  $('#fw').hidden = fws.length < 2;
-  if (fws.length > 1) $('#fw').innerHTML = '<span class="eyebrow">Firmware</span><strong>' + fws.length + ' firmware versions in use.</strong><span>' +
-    fws.map(v => esc(v) + ': ' + devs.filter(d => d.fw === v).map(d => esc(d.name)).join(', ')).join(' · ') + '</span>';
+  renderFw();
+  if (!UPD) fetch('/api/update', { cache: 'no-store' }).then(r => r.json()).then(j => { LATEST = j.latest; renderFw(); }).catch(() => {});
   $('#foot').textContent = 'Firmware ' + f.self.fw + ' on ' + f.self.name;
 }
+// ---- firmware from arply.de (each device fetches its own build) ----
+let LATEST = null, UPD = null; // UPD: {title, text} while "Update all" runs
+const older = (a, b) => { const x = String(a).split('.').map(Number), y = String(b).split('.').map(Number);
+  for (let i = 0; i < 3; i++) if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) < (y[i] || 0); return false; };
+function renderFw() {
+  const p = $('#fw'), devs = Object.values(byId);
+  if (UPD) { p.hidden = false; p.innerHTML = `<div><span class="eyebrow">Update</span><strong>${esc(UPD.title)}</strong><span>${esc(UPD.text)}</span></div>`; return; }
+  const todo = LATEST ? devs.filter(d => d.online && older(d.fw, LATEST)) : [], fws = [...new Set(devs.map(d => d.fw))];
+  p.hidden = !todo.length && fws.length < 2;
+  if (todo.length) p.innerHTML = `<div><span class="eyebrow">Update</span><strong>Firmware ${esc(LATEST)} is here.</strong>` +
+    `<span>For ${todo.length} of ${plural(devs.length, 'device')}, one at a time, hub last.</span></div><button class="btn pri" data-act="update">Update all</button>`;
+  else if (fws.length > 1) p.innerHTML = '<div><span class="eyebrow">Firmware</span><strong>' + fws.length + ' firmware versions in use.</strong><span>' +
+    fws.map(v => esc(v) + ': ' + devs.filter(d => d.fw === v).map(d => esc(d.name)).join(', ')).join(' · ') + '</span></div>';
+}
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+// one device: start, follow its download, wait until it is back with the new version
+async function updateOne(d, latest, step) {
+  try { await call(d, 'update', { install: true }); }
+  catch (e) { return /playing/.test(e.message) ? 'skipped, it is playing' : /URI|404/.test(e.message) ? 'needs a USB update (web flasher)' : 'did not start: ' + e.message; }
+  for (let t = Date.now(); Date.now() - t < 240000;) {
+    await sleep(2500);
+    const s = await call(d, 'update').catch(() => null); // fails while it restarts
+    if (s && s.state === 'error') return 'failed: ' + (s.error || 'unknown');
+    if (s && (s.state === 'firmware' || s.state === 'pages')) UPD.text = `${step} – ${s.state === 'firmware' ? 'firmware' : 'web pages'} ${s.progress} %`;
+    else UPD.text = step + ' – restarting …';
+    renderFw();
+    const f = await fetch('/api/fleet', { cache: 'no-store' }).then(r => r.json()).catch(() => null);
+    const now = f && [f.self, ...f.peers].find(x => x.id === d.id);
+    if (now && (now.online !== false) && now.fw === latest) return 'done';
+  }
+  return 'did not come back with ' + latest + ' within 4 minutes';
+}
+
 // ---- changes ----
 async function setRoomVol(room, db, persist) {
   for (const d of roomDevs(room).filter(x => x.online)) await call(d, 'volume', { db, persist }).catch(() => {});
@@ -250,6 +282,18 @@ const ACTS = {
     if (!room) { say('Type or pick a room first.'); return; }
     await call(d, 'self', { room });
     say(d.name + ' is now in ' + room + '.');
+  },
+  async update() {
+    const latest = LATEST, hubId = F.hub;
+    const todo = Object.values(byId).filter(d => d.online && older(d.fw, latest)).sort((a, b) => (a.id === hubId) - (b.id === hubId));
+    if (!confirm('Update ' + plural(todo.length, 'device') + ' to ' + latest + '? Each one restarts once; music on it stops for a moment.')) return;
+    const out = [];
+    UPD = { title: 'Updating to ' + latest + ' …', text: '' };
+    for (const [i, d] of todo.entries()) {
+      const r = await updateOne(d, latest, d.name + ' (' + (i + 1) + ' of ' + todo.length + ')');
+      out.push(d.name + ': ' + r);
+    }
+    UPD = null; say(out.join(' · ')); renderFw();
   },
   async hub() {
     const d = byId[$('#hubsel').value]; if (!d) return;

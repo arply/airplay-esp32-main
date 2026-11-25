@@ -1025,7 +1025,8 @@ int web_server_register_shared(httpd_handle_t server) {
       n++;
     }
   }
-  return n + web_dsp_register(server) + fleet_register_handlers(server);
+  return n + web_dsp_register(server) + fleet_register_handlers(server) +
+         online_update_register(server);
 }
 
 esp_err_t web_server_start(uint16_t port) {

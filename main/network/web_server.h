@@ -6,6 +6,7 @@
 #include "esp_err.h"
 #include "esp_http_server.h"
 #include "fleet.h"
+#include "online_update.h"
 #include "web_dsp.h"
 
 /**
@@ -42,7 +43,8 @@ esp_err_t web_server_send_file(httpd_req_t *req, const char *path,
                                const char *content_type);
 
 /** Handlers web_server_register_shared() adds, for max_uri_handlers. */
-#define WEB_SERVER_SHARED_URI_COUNT (22 + WEB_DSP_URI_COUNT + FLEET_URI_COUNT)
+#define WEB_SERVER_SHARED_URI_COUNT \
+  (22 + WEB_DSP_URI_COUNT + FLEET_URI_COUNT + ONLINE_UPDATE_URI_COUNT)
 
 /**
  * Register the pages and APIs that both the HTTP and the HTTPS server

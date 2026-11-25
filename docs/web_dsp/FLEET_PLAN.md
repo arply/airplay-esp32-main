@@ -20,7 +20,7 @@ not start before the mock is in `docs/web_dsp/`.
 
 - **Discovery:** each device announces `_arply._tcp` (port 80) via mDNS
   with TXT `id`, `name`, `room`, `role`, `fw`, `hub`. Each device browses
-  for the others every 20 s and keeps a peer table. Last known IPs are
+  for the others every 10 s and keeps a peer table. Last known IPs are
   cached in NVS as a fallback for networks where multicast is unreliable.
 - **Names:** display names stay free (`Living Room`). The `.local` host
   name is derived from it with the DHCP rule (lower case, anything but
@@ -29,7 +29,7 @@ not start before the mock is in `docs/web_dsp/`.
   changes in F1.
   - `arply` is reserved for the hub. A device whose name maps to `arply`
     (the factory default is `ARPLY`!) uses `arply-<last 4 MAC hex>` as its
-    host name instead, and renaming to `arply` is refused.
+    host name instead, so no name needs to be refused for it.
   - Renaming to a host name another device already uses is refused (409).
 - **Rooms:** `room` is free text (≤ 32 chars). It groups devices; later
   phases act per room.
@@ -80,8 +80,8 @@ right after `mdns_airplay_init()` (mDNS must be up).
 - [ ] `mdns_hostname_set()` uses it; the AirPlay instance names keep the
       display name. The TLS certificate uses the same helper (a changed
       host name regenerates the certificate, as today).
-- [ ] `POST /api/device/name`: refuse names mapping to `arply` (400) and
-      names whose host name a seen peer uses (409).
+- [ ] `POST /api/device/name`: refuse names whose host name a seen peer
+      uses (`success: false` with a message, like the other errors there).
 
 ### Task F1.2 — Announce `_arply._tcp`
 
@@ -93,12 +93,15 @@ right after `mdns_airplay_init()` (mDNS must be up).
 
 ### Task F1.3 — Peer table and election
 
-- [ ] Task (prio 2, 4 KB): every 20 s `mdns_query_ptr("_arply", "_tcp",
+- [ ] Task (prio 2, 4 KB): every 10 s `mdns_query_ptr("_arply", "_tcp",
       2000 ms, 16)`; parse TXT + IPv4 into a table of ≤ 16 peers, own
       entry excluded by `id`. A peer not seen for 3 rounds is dropped.
 - [ ] Election as above after every round and on every local change.
       Winner = self → `mdns_delegate_hostname_add("arply", own IPv4)`;
-      otherwise remove the delegation. Log every change of hub.
+      otherwise remove the delegation. Log every change of hub. Taking the
+      name needs 3 scheduled wins in a row, releasing it is immediate, so
+      after a new pick the old hub has let go (≤ 12 s) before the new one
+      claims (≥ 20 s): never two devices announcing `arply.local`.
 - [ ] Re-run election immediately on `POST /api/fleet/self`.
 
 ### Task F1.4 — Last-known cache
@@ -119,7 +122,7 @@ right after `mdns_airplay_init()` (mDNS must be up).
       “Use this device for arply.local” button, list of the other devices
       found (name, room, link).
 
-**Hardware test (2 boards):** each lists the other within ~20 s;
+**Hardware test (2 boards):** each lists the other within ~10 s;
 `arply.local` resolves to the elected hub and moves when another device is
 picked; unplugging the hub hands `arply.local` to the other board within
 ~60 s and back when it returns; renaming to `arply` or to the other board's

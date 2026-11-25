@@ -44,6 +44,7 @@ set( SRC_FILES
     "network/https_server.c"
     "network/web_dsp.c"
     "network/tls_cert.c"
+    "network/fleet.c"
     "led.c"
     "buttons.c"
     "playback_control.c"

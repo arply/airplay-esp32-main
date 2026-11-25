@@ -16,6 +16,7 @@
 #include "spiffs_storage.h"
 #include "https_server.h"
 #include "chime.h"
+#include "fleet.h"
 
 #ifdef CONFIG_AUDIO_INPUT_USB_DAC
 #include "usb_dac_input.h"
@@ -71,6 +72,7 @@ static void start_airplay_services(void) {
     ESP_ERROR_CHECK(audio_receiver_init());
     ESP_ERROR_CHECK(ensure_audio_output_init());
     mdns_airplay_init();
+    fleet_start();
     s_airplay_infrastructure_ready = true;
   }
 

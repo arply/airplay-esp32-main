@@ -3,6 +3,7 @@
 
 #include "esp_netif.h"
 #include "lwip/sockets.h"
+#include "fleet.h"
 #include "tls_cert.h"
 
 #include "esp_log.h"
@@ -397,7 +398,17 @@ static esp_err_t device_name_handler(httpd_req_t *req) {
   cJSON *name_json = cJSON_GetObjectItem(json, "name");
   cJSON *response = cJSON_CreateObject();
 
-  if (name_json && cJSON_IsString(name_json)) {
+  char host[33] = "";
+  if (cJSON_IsString(name_json)) {
+    settings_host_name_from(cJSON_GetStringValue(name_json), host,
+                            sizeof(host));
+  }
+  if (host[0] && fleet_host_in_use(host)) {
+    // Two devices on one host name: one of them would be unreachable.
+    cJSON_AddBoolToObject(response, "success", false);
+    cJSON_AddStringToObject(response, "error",
+                            "Another arply on this network uses that name");
+  } else if (name_json && cJSON_IsString(name_json)) {
     const char *name = cJSON_GetStringValue(name_json);
     esp_err_t err = settings_set_device_name(name);
     if (err == ESP_OK) {
@@ -994,7 +1005,7 @@ int web_server_register_shared(httpd_handle_t server) {
       n++;
     }
   }
-  return n + web_dsp_register(server);
+  return n + web_dsp_register(server) + fleet_register_handlers(server);
 }
 
 esp_err_t web_server_start(uint16_t port) {

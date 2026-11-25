@@ -668,6 +668,8 @@ lost its network.
 
 ## Phase 8 — Fleet (outline — write a separate plan before starting)
 
+> Detailed plan: [`FLEET_PLAN.md`](FLEET_PLAN.md) (2026-11-24).
+
 Decided concept (see the project notes):
 
 - **Discovery:** register `_arply._tcp` via ESP-IDF mDNS with TXT `name`,

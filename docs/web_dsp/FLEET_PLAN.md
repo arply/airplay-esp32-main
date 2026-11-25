@@ -360,6 +360,22 @@ On the subwoofer's calibration page (Subwoofer panel):
   three measurements accumulate to +6.5 dB, 1.4 ms, inverted (the
   devices' volumes were -5.5 and -20.9 dB and are corrected), 6 cuts;
   crossover 200 → 120 Hz re-aligns to 0.9 ms and re-fits 20–240 Hz.
+- **Three subwoofer sweeps, wake-up noise, gap check, auto-save (same
+  day, Till):** the subwoofer plays REPEAT = 3 sweeps (one request, 4.5 s
+  apart), averaged on their planned places; the speakers one each.
+  Behind Arply's amplifier the first ~2.5 s of the first sweep were
+  missing while the debug capture showed the DAC output complete: a
+  signal-sensing standby. Every sweep request now starts with 2 s of noise
+  at the sweep level and 0.3 s rest (`TEST_SIGNAL_WAKE_MS`); the joint
+  run spaces the devices 7 s apart (first sweep after 3.5 s) so no
+  wake-up noise falls into another device's sweep. With it all three
+  sweeps arrived complete in 3 runs after 30 s pauses. A recording that
+  lost samples (the Mac's PortAudio dropped 3.2 ms in its first run)
+  shows as the subwoofer's sweeps sitting at different places; more than
+  0.5 ms spread discards the measurement. The calibration page saves 1.5 s
+  after the last change and on leaving the page (sendBeacon); the Save
+  and Discard buttons are gone (Till: a forgotten save lost the filters
+  while the measurements stayed).
 - Tests: synthetic responses (flat, sub 2 ms earlier, inverted, -6 dB →
   2.0 ms, inverted, +6.2 dB, sum perfect; speaker roll-offs → sum within
   0.1 dB). On the boards with the Mac microphone (Arply as subwoofer at

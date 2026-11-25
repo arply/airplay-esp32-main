@@ -17,7 +17,7 @@
 
 static const char *TAG = "test_signal";
 
-#define MAX_SEGS     (2 * TEST_SIGNAL_MAX_SWEEPS + 2)
+#define MAX_SEGS     (2 * TEST_SIGNAL_MAX_SWEEPS + 4)
 #define CHUNK        128
 #define STOP_FADE_MS 5
 #define NOISE_DBFS   (-15.0f)
@@ -136,6 +136,10 @@ esp_err_t test_signal_sweep(const uint8_t *outs, int count, uint32_t gap_ms,
   p.flags = TEST_SIGNAL_FOLLOW_VOLUME;
   p.at_us = at_us;
   p.seg[p.count++] = silence(TEST_SIGNAL_LEAD_MS);
+  p.seg[p.count++] = (seg_t){.kind = SEG_NOISE,
+                             .outs = TEST_SIGNAL_OUT_BOTH,
+                             .frames = ms_to_frames(TEST_SIGNAL_WAKE_MS)};
+  p.seg[p.count++] = silence(TEST_SIGNAL_WAKE_REST_MS);
   dsp_sweep_t probe;
   dsp_sweep_init(&probe, s_fs, TEST_SIGNAL_SWEEP_MS / 1000.0, 20, 20000,
                  SWEEP_AMP);
@@ -277,7 +281,11 @@ uint8_t test_signal_fill(int16_t *buf, size_t frames) {
       // audio_output_next_play_us(); the lead fills the time up to at_us.
       const int64_t now = esp_timer_get_time();
       const int64_t next = audio_output_next_play_us();
-      const int64_t lead_us = s_run.at_us - next;
+      int64_t before_us = 0; // wake noise and rest between lead and sweep
+      for (int i = 1; i < s_run.count && s_run.seg[i].kind != SEG_SWEEP; i++) {
+        before_us += (int64_t)s_run.seg[i].frames * 1000000 / s_fs;
+      }
+      const int64_t lead_us = s_run.at_us - next - before_us;
       ESP_LOGI(TAG, "Scheduled: DAC delay %lld us (model %u us)",
                (long long)(next - now),
                (unsigned)audio_timing_get_playout_delay_us());

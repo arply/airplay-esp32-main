@@ -172,7 +172,7 @@ footer{margin-top:40px;padding:24px 0 0;border-top:1px solid var(--line);display
     <section class="panel">
       <span class="eyebrow">Step 3</span>
       <h2>Listen</h2>
-      <p class="small">arply plays the sample with the current correction. Every change is heard live (not saved until you press “Save to arply”). For your own music, play it to arply via AirPlay – the correction applies there too.</p>
+      <p class="small">arply plays the sample with the current correction. Every change is heard live and saved a moment later. For your own music, play it to arply via AirPlay – the correction applies there too.</p>
       <label class="f">Volume<input type="range" id="o-vol2" min="-30" max="0" step="0.5"><output id="v-vol2"></output></label>
       <label class="f">Sample<select id="o-sample"><option value="groove">Groove (built-in)</option><option value="tones">Bass tones 30–160 Hz</option><option value="noise">Pink noise</option></select><span></span></label>
       <p class="small" id="samplehint"></p>
@@ -185,9 +185,9 @@ footer{margin-top:40px;padding:24px 0 0;border-top:1px solid var(--line);display
 
     <section class="panel">
       <span class="eyebrow">Step 4</span>
-      <h2>Save to arply</h2>
-      <p class="small">One shared preamp for all channels, so the balance stays intact. Saved filters survive a restart.</p>
-      <div class="row"><button class="pri" id="b-send">Save to arply</button><button id="b-revert">Discard changes</button><button id="b-copy">Copy JSON</button></div>
+      <h2>Saved on arply</h2>
+      <p class="small">Every change is saved on arply a moment later and survives a restart. One shared preamp for all channels, so the balance stays intact.</p>
+      <div class="row"><button id="b-copy">Copy JSON</button></div>
       <p id="sendmsg" class="small"></p>
       <pre id="json"></pre>
     </section>
@@ -809,17 +809,26 @@ function makeSample(c, kind) {
   async function deviceSweeps(ks) {
     return api('/api/dsp/sweep', { channels: Array(REPEAT).fill(sweepOuts(ks)).flat(), gap_ms: GAP * 1000 });
   }
-  let devOk = false, previewing = false, pvTimer = null, pvLast = 0;
-  // throttled live preview on the speakers: at most every 150 ms, always ending on the latest state
+  let devOk = false, previewing = false, pvTimer = null, pvLast = 0, saveT = null;
+  // throttled live preview on the speakers: at most every 150 ms, always
+  // ending on the latest state; saved 1.5 s after the last change (a
+  // forgotten save lost the filters when the page was left)
   function preview() {
     if (!devOk) return;
     clearTimeout(pvTimer);
     const run = () => { pvLast = performance.now(); api('/api/dsp/preview', payload()).then(() => { previewing = true; showSaved(); }).catch(() => {}); };
     const wait = 150 - (performance.now() - pvLast);
     if (wait <= 0) run(); else pvTimer = setTimeout(run, wait);
+    clearTimeout(saveT); saveT = setTimeout(saveNow, 1500);
+  }
+  const savePayload = () => ({ ...payload(), saved_at: Math.floor(Date.now() / 1000) });
+  async function saveNow() {
+    clearTimeout(saveT); saveT = null;
+    try { await api('/api/dsp', savePayload()); previewing = false; showSaved(); }
+    catch (e) { $('#sendmsg').textContent = 'Saving failed: ' + e.message; }
   }
   function showSaved() {
-    $('#sendmsg').textContent = previewing ? 'Previewing on arply – not saved yet.' : 'Saved on arply.';
+    $('#sendmsg').textContent = previewing ? 'Saving on arply in a moment …' : 'Saved on arply.';
   }
 
 
@@ -1054,7 +1063,11 @@ function makeSample(c, kind) {
     return grid.map(f => DSP.magDb(sh, f, FS) + 2 * DSP.magDb(hp, f, FS)); // LR4 subsonic
   }
   // ---- subwoofer alignment: one recording, the room's speakers then this subwoofer ----
-  const ALIGN_STEP = 5; // s between sweep starts (4 s sweep + gap)
+  // s between the devices' first sweeps: 2 s wake-up noise + 0.3 s rest
+  // (amplifiers with a signal-sensing standby) + 4 s sweep + gap, so no
+  // device's wake-up noise falls into another one's sweep
+  const ALIGN_STEP = 7, ALIGN_START = 3.5;
+  const SUB_STEP = 4.5;  // s between the subwoofer's own sweeps (one request, gap 0.5 s)
   const volLin = db => Math.pow(Math.max(0, (db + 30) / 30), 2); // arply's volume curve
   const MEAS_HINT = $('#meashint').textContent;
   const plural = (n, w) => n + ' ' + w + (n === 1 ? '' : 's');
@@ -1081,32 +1094,45 @@ function makeSample(c, kind) {
       proc = m.ac.createScriptProcessor(4096, 1, 1);
       proc.onaudioprocess = e => chunks.push(new Float32Array(e.inputBuffer.getChannelData(0)));
       m.src.connect(proc); proc.connect(m.mute);
-      // this subwoofer's clock: start in 2.5 s, one sweep every ALIGN_STEP
-      const t0 = now + 2500000, sweepAt = k => t0 + k * ALIGN_STEP * 1000000;
+      // this subwoofer's clock: first sweep in ALIGN_START s, then one device every ALIGN_STEP
+      const t0 = now + ALIGN_START * 1000000, sweepAt = k => t0 + k * ALIGN_STEP * 1000000;
       for (let k = 0; k < mains.length; k++)
         await api('/api/fleet/proxy?id=' + id(mains[k]) + '&to=sweep', { channels: ['LR'], gap_ms: 500, at_us: sweepAt(k) + off[k] });
-      await api('/api/dsp/sweep', { channels: ['LR'], gap_ms: 500, at_us: sweepAt(mains.length) });
-      msg('Measuring: ' + mains.map(p => p.name).join(', ') + ', then this subwoofer – please stay quiet …');
-      await progress(2.5 + (mains.length + 1) * ALIGN_STEP + 0.5);
+      // the subwoofer REPEAT times back to back (4 s sweep + 0.5 s gap), averaged:
+      // in the bass the room's noise and the phone microphone are weakest
+      await api('/api/dsp/sweep', { channels: Array(REPEAT).fill('LR'), gap_ms: 500, at_us: sweepAt(mains.length) });
+      msg('Measuring: ' + mains.map(p => p.name).join(', ') + ', then this subwoofer ' + REPEAT + '× – please stay quiet …');
+      await progress(ALIGN_START + mains.length * ALIGN_STEP + REPEAT * SUB_STEP + 0.5);
       m.src.disconnect(proc); proc.disconnect(); proc = null;
       const n = chunks.reduce((a, c) => a + c.length, 0), rec = new Float32Array(n); let o = 0;
       for (const c of chunks) { rec.set(c, o); o += c.length; }
       const sw = DSP.sweep(fs), h = DSP.impulse(rec, sw, fs), step = Math.round(ALIGN_STEP * fs);
       // anchor: the first speaker's direct sound; every other slot follows the plan
-      const p0 = DSP.argmaxAbs(h, 0, Math.min(h.length, Math.round((2.5 + ALIGN_STEP / 2) * fs)));
+      const p0 = DSP.argmaxAbs(h, 0, Math.min(h.length, Math.round((ALIGN_START + ALIGN_STEP / 2) * fs)));
       const pre = Math.round(0.02 * fs), len = Math.round(0.3 * fs), cut = (k, scale) => {
         const a = new Float64Array(len); for (let i = 0; i < len; i++) a[i] = (h[p0 + k * step - pre + i] || 0) * scale; return a; };
       const hMain = new Float64Array(len);
       mains.forEach((p, k) => { const c = cut(k, 1 / volLin(vols[k])); for (let i = 0; i < len; i++) hMain[i] += c[i]; });
-      const ps = p0 + mains.length * step, sp = DSP.spectrumAt(h, ps, fs, 0.4);
-      if (!(Math.abs(h[ps] || 0) > 0) || !(Math.abs(h[p0]) > 0)) throw new Error('no sweep in the recording – is the microphone allowed?');
+      // the subwoofer's sweeps, averaged on their planned places
+      const ps = p0 + mains.length * step, sstep = Math.round(SUB_STEP * fs), avgSub = (pre2, len2, scale) => {
+        const a = new Float64Array(len2);
+        for (let r = 0; r < REPEAT; r++) for (let i = 0; i < len2; i++) a[i] += (h[ps + r * sstep - pre2 + i] || 0) * scale / REPEAT;
+        return a;
+      };
+      if (!(Math.abs(h[p0]) > 0)) throw new Error('no sweep in the recording – is the microphone allowed?');
+      // the subwoofer's sweeps come from one request, sample-exact apart: if
+      // their energy sits at different places, the recording lost samples
+      const centre = r => { let e = 0, t = 0; for (let i = 0; i < len; i++) { const v = (h[ps + r * sstep - pre + i] || 0) ** 2; e += v; t += v * i; } return t / e / fs * 1000; };
+      const cs = Array.from({ length: REPEAT }, (_, r) => centre(r)), spread = Math.max(...cs) - Math.min(...cs);
+      if (spread > 0.5) throw new Error('the recording has a gap (' + spread.toFixed(1) + ' ms) – please measure again.');
       // subwoofer response for the room-mode cuts, levelled on its own band
+      const sp = DSP.spectrumAt(avgSub(pre, pre + Math.round(0.45 * fs), 1), pre, fs, 0.4);
       const db = DSP.normalize(DSP.toGrid(sp.P, sp.M, fs, grid, 24), grid, 30, S.opt.sub.xo).map(v => Math.round(v * 100) / 100);
-      S.ch.M.meas.push({ run: Date.now(), db, al: DSP.alignSpectra(hMain, cut(mains.length, 1 / volLin(vSub)), fs) });
+      S.ch.M.meas.push({ run: Date.now(), db, al: DSP.alignSpectra(hMain, avgSub(pre, len, 1 / volLin(vSub)), fs) });
       save(); renderMeas();
       const r = realign(), fit = fitAll();
       msg('Measured with ' + mains.map(p => p.name).join(', ') + '. ' + (fit ? 'Room-mode cuts: ' + S.ch.M.filters.length + '. ' : '') +
-        (S.ch.M.meas.length < 3 ? 'Measure 2–4 more positions around the listening spot, then listen and press “Save to arply”.' : 'Listen, then press “Save to arply”.'));
+        (S.ch.M.meas.length < 3 ? 'Measure 2–4 more positions around the listening spot.' : 'Saved – listen with music.'));
       return r;
     } catch (e) { msg('That did not work: ' + (e.status === 409 ? 'a device is busy – stop AirPlay first.' : e.message), true); }
     finally { if (proc && m) { m.src.disconnect(proc); proc.disconnect(); } busy = false; }
@@ -1133,7 +1159,7 @@ function makeSample(c, kind) {
     // a subwoofer: range and target follow the crossover, cuts only, no editor
     $('#adv').hidden = isSub();
     $('#meashint').textContent = isSub()
-      ? 'Each measurement plays a sweep on every speaker of this room, then on this subwoofer, and sets level, delay, polarity and the room-mode cuts (20 Hz to twice the crossover). The first at the listening spot, 2–4 more around it.'
+      ? 'Each measurement plays a sweep on every speaker of this room, then three on this subwoofer (averaged), and sets level, delay, polarity and the room-mode cuts (20 Hz to twice the crossover). The first at the listening spot, 2–4 more around it.'
       : MEAS_HINT;
     $('#o-xo').value = b.xo; $('#v-xo').textContent = fmtHz(b.xo);
     $('#o-xogain').value = b.gain; $('#v-xogain').textContent = fmtDb(b.gain);
@@ -1264,19 +1290,12 @@ function makeSample(c, kind) {
     try { await navigator.clipboard.writeText(JSON.stringify(payload())); $('#sendmsg').textContent = 'Copied.'; }
     catch (e) { $('#sendmsg').textContent = 'Copying not allowed – select the text below.'; }
   };
-  $('#b-send').onclick = async () => {
-    $('#sendmsg').textContent = 'Saving …';
-    clearTimeout(pvTimer);
-    try { await api('/api/dsp', { ...payload(), saved_at: Math.floor(Date.now() / 1000) }); previewing = false; showSaved(); }
-    catch (e) { $('#sendmsg').textContent = 'Saving failed: ' + e.message; }
-  };
-  $('#b-revert').onclick = async () => {
-    clearTimeout(pvTimer);
-    try { applyDevice(await api('/api/dsp/revert', {})); previewing = false; showSaved(); renderAll(); }
-    catch (e) { $('#sendmsg').textContent = 'arply did not answer (' + e.message + ').'; }
-  };
-  // leaving the page drops an unsaved preview, so the speakers never keep a half-made EQ
-  addEventListener('pagehide', () => { if (previewing) navigator.sendBeacon('/api/dsp/revert'); });
+  // leaving the page saves what is still pending
+  addEventListener('pagehide', () => {
+    if (!saveT) return;
+    clearTimeout(saveT); saveT = null;
+    navigator.sendBeacon('/api/dsp', new Blob([JSON.stringify(savePayload())], { type: 'application/json' }));
+  });
 
   // ---------- listen on arply ----------
   let playing = false, playT0 = 0, bypass = false;

@@ -25,15 +25,21 @@
 #define TEST_SIGNAL_MAX_SWEEPS 8
 #define TEST_SIGNAL_SWEEP_MS   4000
 #define TEST_SIGNAL_LEAD_MS    500
+// Before sweeps: noise that wakes amplifiers with a signal-sensing standby
+// (measured: without it the first ~2.5 s of the first sweep were missing
+// behind Arply's amplifier, the DAC output was complete), then a rest.
+#define TEST_SIGNAL_WAKE_MS      2000
+#define TEST_SIGNAL_WAKE_REST_MS 300
 
 void test_signal_init(uint32_t sample_rate);
 
 /**
  * Play @p count sweeps back to back, sweep i on outputs @p outs[i].
- * Timeline: TEST_SIGNAL_LEAD_MS silence, then per sweep TEST_SIGNAL_SWEEP_MS
+ * Timeline: TEST_SIGNAL_LEAD_MS silence, TEST_SIGNAL_WAKE_MS noise,
+ * TEST_SIGNAL_WAKE_REST_MS silence, then per sweep TEST_SIGNAL_SWEEP_MS
  * sweep + @p gap_ms silence. With @p at_us > 0 (esp_timer time) the lead
- * instead lasts until the first sweep leaves the DAC at that moment, by the
- * same output delay the AirPlay schedule uses (joint measurements).
+ * instead lasts until the first sweep leaves the DAC at that moment
+ * (joint measurements).
  */
 esp_err_t test_signal_sweep(const uint8_t *outs, int count, uint32_t gap_ms,
                             int64_t at_us);

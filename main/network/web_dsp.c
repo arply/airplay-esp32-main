@@ -438,7 +438,9 @@ static esp_err_t sweep_handler(httpd_req_t *req) {
     return busy_error(req);
   }
   cJSON *resp = cJSON_CreateObject();
-  cJSON_AddNumberToObject(resp, "lead_ms", TEST_SIGNAL_LEAD_MS);
+  cJSON_AddNumberToObject(resp, "lead_ms",
+                          TEST_SIGNAL_LEAD_MS + TEST_SIGNAL_WAKE_MS +
+                              TEST_SIGNAL_WAKE_REST_MS);
   cJSON_AddNumberToObject(resp, "sweep_ms", TEST_SIGNAL_SWEEP_MS);
   cJSON_AddNumberToObject(resp, "gap_ms", gap_ms);
   cJSON_AddNumberToObject(resp, "count", n);

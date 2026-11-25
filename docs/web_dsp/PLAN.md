@@ -649,6 +649,29 @@ drivers (f_low 120 Hz, +6 dB, harmonics 30 %):
   room noise (20 dB is enough) instead of absolute dBFS, which asked for
   painful volume with an AGC-free phone microphone.
 
+**Bass block v3 (2026-11-25, "still sounds terrible"), found with a probe:**
+`scripts/dsp_probe.py` plays a synthetic groove through the device's DSP
+(preview only), captures DSP input and DAC output (`/api/debug/capture`,
+4 channels, PSRAM) and prints gain per band, limiter use and clipping. It
+showed what made the tin can: the migrated profile (f_low 200 Hz from an
+old cutoff of 100), the −18 dBFS guard keeping the boost near 0 dB, the
+subsonic at f_low/2 removing real bass, and harmonics landing in
+300–1000 Hz. Now: guard at −6 dBFS, subsonic LR4 at f_low/3, harmonics
+taken from below `f_low` and added between `f_low` and 3·`f_low`, default
+harmonics 0, v1 profiles keep only `on`. Probe at defaults (120 Hz, 50 %,
+volume −10.5 dB): 45–60 +5.3, 60–90 +6.3, 90–120 +5.2, 180–300 +0.9,
+300–1k +0.1 dB, no limiter, no clipping; DSP flat is exactly 0.0 dB.
+Harmonics 50 % still add +2…+4 dB in 300–1000 Hz, so they stay opt-in.
+
+**Measurement, checked before building anything (simulation of sweep +
+deconvolution with room noise):** the exponential sweep's deconvolution is
+already the "band-pass that follows the sweep"; with 10 dB margin the
+response error stays < 1 dB, so the level check now asks for 10 dB, not
+20. Averaging an up and a down sweep gains little and the down sweep is
+worse (its distortion lands after the impulse response, not before it).
+The start time is found exactly from the deconvolved peak, so acoustic
+markers add nothing.
+
 **Detail:** the prototype's WebAudio `Q` of `20·log10(1/√2)` dB *is* linear
 Q = 1/√2 (WebAudio's LP/HP Q is in dB), so all sections are plain
 Butterworth biquads. The prototype's `oversample='2x'` on `|x|` is not

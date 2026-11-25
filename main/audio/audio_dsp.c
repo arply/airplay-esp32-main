@@ -68,7 +68,7 @@ void audio_dsp_profile_flat(audio_dsp_profile_t *p) {
   // Defaults for small drivers: the limit is set per speaker on the page.
   p->bass.f_low = 120.0f;
   p->bass.boost = 0.5f;
-  p->bass.harmonics = 0.3f;
+  p->bass.harmonics = 0.0f; // opt-in: they colour the sound
 }
 
 void audio_dsp_profile_clamp(audio_dsp_profile_t *p) {
@@ -144,8 +144,8 @@ void audio_dsp_init(uint32_t sample_rate) {
       memcpy(s_saved.sets, o->sets, sizeof(s_saved.sets));
       memcpy(s_saved.count, o->count, sizeof(s_saved.count));
       s_saved.bass.on = o->pbe.on;
-      s_saved.bass.f_low = 2 * o->pbe.fc; // the old cutoff was the cut point
-      s_saved.bass.harmonics = o->pbe.amount;
+      // Only the on/off state carries over: the old cutoff/amount meant
+      // something else, and mapping them gave a thin, buzzy result.
       ESP_LOGI(TAG, "Converted a version 1 DSP profile");
       loaded = true;
     }

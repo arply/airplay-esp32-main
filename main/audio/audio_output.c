@@ -10,11 +10,14 @@
 #include "driver/i2s_std.h"
 #include "driver/gpio.h"
 #include "esp_check.h"
+#include "esp_heap_caps.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "audio_receiver.h"
 #include <inttypes.h>
+#include <stdatomic.h>
 #include <stdlib.h>
+#include <string.h>
 
 #define TAG           "audio_output"
 #define I2S_SCK_PIN   CONFIG_I2S_SCK_IO
@@ -128,6 +131,63 @@ bool audio_output_process(int16_t *buf, size_t frames) {
   return dsp_process(buf, frames);
 }
 
+/* ---- Debug probe ------------------------------------------------------
+ * Records, inside this task, what goes into the output processing and what
+ * goes to the DAC, so the DSP can be checked on the device with real audio.
+ * Interleaved frames of 4 samples: in L, in R, out L, out R. */
+enum { CAPTURE_IDLE, CAPTURE_RUNNING, CAPTURE_DONE };
+static int16_t *s_cap;
+static size_t s_cap_frames;
+static size_t s_cap_pos;
+static _Atomic int s_cap_state = CAPTURE_IDLE;
+static int16_t s_cap_in[MAX_RESAMPLE_FRAMES * 2];
+
+esp_err_t audio_output_capture_start(uint32_t seconds) {
+  if (atomic_load(&s_cap_state) == CAPTURE_RUNNING) {
+    return ESP_ERR_INVALID_STATE;
+  }
+  heap_caps_free(s_cap);
+  s_cap_frames = (size_t)seconds * OUTPUT_RATE;
+  s_cap =
+      heap_caps_malloc(s_cap_frames * 4 * sizeof(int16_t), MALLOC_CAP_SPIRAM);
+  if (!s_cap) {
+    atomic_store(&s_cap_state, CAPTURE_IDLE);
+    return ESP_ERR_NO_MEM;
+  }
+  s_cap_pos = 0;
+  atomic_store(&s_cap_state, CAPTURE_RUNNING);
+  return ESP_OK;
+}
+
+const int16_t *audio_output_capture_get(size_t *frames) {
+  if (atomic_load(&s_cap_state) != CAPTURE_DONE) {
+    return NULL;
+  }
+  *frames = s_cap_frames;
+  return s_cap;
+}
+
+static inline bool capturing(void) {
+  return atomic_load_explicit(&s_cap_state, memory_order_relaxed) ==
+         CAPTURE_RUNNING;
+}
+
+static void capture(const int16_t *in, const int16_t *out, size_t frames) {
+  const size_t n =
+      frames < s_cap_frames - s_cap_pos ? frames : s_cap_frames - s_cap_pos;
+  int16_t *dst = s_cap + s_cap_pos * 4;
+  for (size_t i = 0; i < n; i++) {
+    dst[4 * i] = in[2 * i];
+    dst[4 * i + 1] = in[2 * i + 1];
+    dst[4 * i + 2] = out[2 * i];
+    dst[4 * i + 3] = out[2 * i + 1];
+  }
+  s_cap_pos += n;
+  if (s_cap_pos >= s_cap_frames) {
+    atomic_store(&s_cap_state, CAPTURE_DONE);
+  }
+}
+
 static void playback_task(void *arg) {
   int16_t *pcm = malloc((size_t)(FRAME_SAMPLES + 1) * 2 * sizeof(int16_t));
   int16_t *silence = calloc((size_t)FRAME_SAMPLES * 2, sizeof(int16_t));
@@ -159,12 +219,19 @@ static void playback_task(void *arg) {
       // as the user's music) but skip the DSP, listening samples get both,
       // the chime neither.
       uint8_t fx = test_signal_fill(pcm, FRAME_SAMPLES);
+      const bool cap = capturing();
+      if (cap) {
+        memcpy(s_cap_in, pcm, (size_t)FRAME_SAMPLES * 2 * sizeof(int16_t));
+      }
       bool volume_done = false;
       if (fx & TEST_SIGNAL_APPLY_DSP) {
         volume_done = audio_output_process(pcm, FRAME_SAMPLES);
       }
       if ((fx & TEST_SIGNAL_FOLLOW_VOLUME) && !volume_done) {
         apply_volume(pcm, (size_t)FRAME_SAMPLES * 2);
+      }
+      if (cap) {
+        capture(s_cap_in, pcm, FRAME_SAMPLES);
       }
       led_audio_feed(pcm, FRAME_SAMPLES);
       i2s_channel_write(tx_handle, pcm,
@@ -184,8 +251,15 @@ static void playback_task(void *arg) {
       // Channel mode first: the filters belong to the outputs (speakers),
       // not to the source channels. An active DSP applies the volume itself
       // (in float, before its limiter); otherwise it is applied here.
+      const bool cap = capturing();
+      if (cap) {
+        memcpy(s_cap_in, play_buf, play_samples * 2 * sizeof(int16_t));
+      }
       if (!audio_output_process(play_buf, play_samples)) {
         apply_volume(play_buf, play_samples * 2);
+      }
+      if (cap) {
+        capture(s_cap_in, play_buf, play_samples);
       }
       led_audio_feed(play_buf, play_samples);
       i2s_channel_write(tx_handle, play_buf, play_samples * 2 * sizeof(int16_t),

@@ -219,20 +219,14 @@ static const char *parse_profile(const cJSON *json, audio_dsp_profile_t *p,
       return "bass.f_low, bass.boost and bass.harmonics must be numbers";
     }
   }
-  // Older exports (prototype, firmware before 2026-11-25): harmonics only,
-  // cut at fc.
+  // Older exports (prototype, firmware before 2026-11-25): only "on" is
+  // taken over.
   const cJSON *pbe = cJSON_GetObjectItemCaseSensitive(json, "pbe");
   if (pbe && !bass) {
     const cJSON *on = cJSON_GetObjectItemCaseSensitive(pbe, "on");
-    float fc = p->bass.f_low / 2;
     if (on) {
       p->bass.on = cJSON_IsTrue(on);
     }
-    if (!read_number(pbe, "fc", &fc, false) ||
-        !read_number(pbe, "amount", &p->bass.harmonics, false)) {
-      return "pbe.fc and pbe.amount must be numbers";
-    }
-    p->bass.f_low = 2 * fc;
   }
   return NULL;
 }
@@ -533,6 +527,74 @@ static esp_err_t stop_handler(httpd_req_t *req) {
   return send_json(req, resp);
 }
 
+/* ---- Debug probe ------------------------------------------------------ */
+
+/* POST /api/debug/capture?seconds=N (1-10): record the output path. */
+static esp_err_t capture_start_handler(httpd_req_t *req) {
+  int seconds = 10;
+  char query[32];
+  char val[8];
+  if (httpd_req_get_url_query_str(req, query, sizeof(query)) == ESP_OK &&
+      httpd_query_key_value(query, "seconds", val, sizeof(val)) == ESP_OK) {
+    seconds = atoi(val);
+  }
+  if (seconds < 1 || seconds > 10) {
+    return send_error(req, "400 Bad Request", "seconds must be 1-10");
+  }
+  esp_err_t err = audio_output_capture_start((uint32_t)seconds);
+  if (err != ESP_OK) {
+    return send_error(req, "409 Conflict", esp_err_to_name(err));
+  }
+  cJSON *resp = cJSON_CreateObject();
+  cJSON_AddNumberToObject(resp, "seconds", seconds);
+  cJSON_AddNumberToObject(resp, "fs", CONFIG_OUTPUT_SAMPLE_RATE_HZ);
+  return send_json(req, resp);
+}
+
+/* GET /api/debug/capture: the finished capture as a 4-channel WAV
+ * (in L, in R, out L, out R). */
+static esp_err_t capture_get_handler(httpd_req_t *req) {
+  size_t frames = 0;
+  const int16_t *pcm = audio_output_capture_get(&frames);
+  if (!pcm) {
+    return send_error(req, "409 Conflict", "no finished capture");
+  }
+  const uint32_t rate = CONFIG_OUTPUT_SAMPLE_RATE_HZ;
+  const uint32_t data = (uint32_t)(frames * 8);
+  uint8_t h[44];
+  memcpy(h, "RIFF", 4);
+  const uint32_t riff = 36 + data;
+  memcpy(h + 4, &riff, 4);
+  memcpy(h + 8, "WAVEfmt ", 8);
+  const uint32_t fmt_len = 16;
+  const uint16_t fmt = 1;
+  const uint16_t channels = 4;
+  const uint32_t byte_rate = rate * 8;
+  const uint16_t align = 8;
+  const uint16_t bits = 16;
+  memcpy(h + 16, &fmt_len, 4);
+  memcpy(h + 20, &fmt, 2);
+  memcpy(h + 22, &channels, 2);
+  memcpy(h + 24, &rate, 4);
+  memcpy(h + 28, &byte_rate, 4);
+  memcpy(h + 32, &align, 2);
+  memcpy(h + 34, &bits, 2);
+  memcpy(h + 36, "data", 4);
+  memcpy(h + 40, &data, 4);
+  httpd_resp_set_type(req, "audio/wav");
+  if (httpd_resp_send_chunk(req, (const char *)h, sizeof(h)) != ESP_OK) {
+    return ESP_FAIL;
+  }
+  const char *p = (const char *)pcm;
+  for (size_t off = 0; off < data; off += 4096) {
+    const size_t n = data - off < 4096 ? data - off : 4096;
+    if (httpd_resp_send_chunk(req, p + off, (ssize_t)n) != ESP_OK) {
+      return ESP_FAIL;
+    }
+  }
+  return httpd_resp_send_chunk(req, NULL, 0);
+}
+
 int web_dsp_register(httpd_handle_t server) {
   if (!s_listen_lock) {
     s_listen_lock = xSemaphoreCreateMutex();
@@ -556,6 +618,12 @@ int web_dsp_register(httpd_handle_t server) {
       {.uri = "/api/dsp/listen",
        .method = HTTP_POST,
        .handler = listen_handler},
+      {.uri = "/api/debug/capture",
+       .method = HTTP_POST,
+       .handler = capture_start_handler},
+      {.uri = "/api/debug/capture",
+       .method = HTTP_GET,
+       .handler = capture_get_handler},
   };
   int n = 0;
   for (size_t i = 0; i < sizeof(uris) / sizeof(uris[0]); i++) {

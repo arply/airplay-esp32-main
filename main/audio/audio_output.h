@@ -130,6 +130,18 @@ void audio_output_restore_channel_mode(void);
 bool audio_output_process(int16_t *buf, size_t frames);
 
 /**
+ * Debug probe: record the next @p seconds of what goes into the output
+ * processing and what goes to the DAC (PSRAM, replaces an earlier capture).
+ */
+esp_err_t audio_output_capture_start(uint32_t seconds);
+
+/**
+ * The finished capture, interleaved in L, in R, out L, out R at the output
+ * rate, or NULL while it is still running or none was started.
+ */
+const int16_t *audio_output_capture_get(size_t *frames);
+
+/**
  * Get the current output channel mode.
  */
 audio_channel_mode_t audio_output_get_channel_mode(void);

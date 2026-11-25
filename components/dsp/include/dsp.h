@@ -67,9 +67,10 @@ typedef struct {
  *  - dynamics: the boost backs off when the bass at the DAC (after the
  *    volume, dsp_set_output_gain) would get too loud for the driver;
  *  - loudness: at low volume the boost may go up to 6 dB further;
- *  - harmonics: what lies below f_low / 2 (cut there to spare the driver)
- *    is replaced by its 2nd-4th harmonics, more of them while the dynamics
- *    hold the boost back.
+ *  - subsonic: cut below f_low / 3, where the driver only moves;
+ *  - harmonics (opt-in): the bass below f_low adds its 2nd-4th harmonics
+ *    between f_low and 3 f_low, more of them while the dynamics hold the
+ *    boost back; the real bass stays.
  */
 typedef struct {
   bool on;

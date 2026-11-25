@@ -246,16 +246,15 @@ static void test_param_change_is_smooth(void) {
   free(buf);
 }
 
-/* Harmonics: 50 Hz in, cut at 100 Hz, no extension. The fundamental drops
- * with the subsonic high-pass; consecutive harmonics (2f, 3f, 4f) carry the
- * pitch. */
+/* Harmonics: 50 Hz in, limit 100 Hz, no extension. The fundamental stays;
+ * consecutive harmonics (2f, 3f, 4f) above the limit carry the pitch. */
 static void test_pbe(void) {
   const size_t n = 3 * 44100;
   int16_t *buf = malloc(n * 4);
   dsp_init(44100);
   dsp_config_t c = flat();
   c.bass.on = true;
-  c.bass.f_low = 200; // cut and harmonics at 100 Hz
+  c.bass.f_low = 100; // harmonics from below 100 Hz, added above it
   c.bass.boost = 0;
   c.bass.harmonics = 1;
   dsp_set_config(&c);
@@ -263,14 +262,15 @@ static void test_pbe(void) {
   process_frames(buf, n);
   const size_t from = n / 2;
   const double base = 0.5;
-  check_near("harmonics: 50 Hz fundamental (dB)",
-             db(chan_amp(buf, from, n - from, 0, 50) / base), -12.3, 0.5);
+  // the real bass stays: only the subsonic cut (LR4 at 33 Hz) touches it
+  check_near("harmonics: 50 Hz fundamental kept (dB)",
+             db(chan_amp(buf, from, n - from, 0, 50) / base), -1.6, 0.5);
   check_near("harmonics: 100 Hz, 2nd harmonic (dB)",
              db(chan_amp(buf, from, n - from, 0, 100) / base), -13.7, 1.0);
   check_near("harmonics: 150 Hz, 3rd harmonic (dB)",
              db(chan_amp(buf, from, n - from, 0, 150) / base), -13.3, 1.0);
   check_near("harmonics: 200 Hz, 4th harmonic (dB)",
-             db(chan_amp(buf, from, n - from, 0, 200) / base), -17.0, 1.0);
+             db(chan_amp(buf, from, n - from, 0, 200) / base), -17.7, 1.0);
   free(buf);
 }
 
@@ -289,7 +289,7 @@ static void test_pbe_intermodulation(void) {
   dsp_init(44100);
   dsp_config_t c = flat();
   c.bass.on = true;
-  c.bass.f_low = 200; // cut and harmonics at 100 Hz
+  c.bass.f_low = 100; // harmonics from below 100 Hz, added above it
   c.bass.boost = 0;
   c.bass.harmonics = 1;
   dsp_set_config(&c);

@@ -3,7 +3,7 @@
 #include "esp_http_server.h"
 
 /** Number of URI handlers web_dsp_register() adds (for max_uri_handlers). */
-#define WEB_DSP_URI_COUNT 10
+#define WEB_DSP_URI_COUNT 12
 
 /**
  * Register the /api/dsp handlers on @p server. Call before any wildcard

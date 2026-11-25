@@ -55,7 +55,10 @@
  * protection keeps the boosted bass band at the DAC (after the volume) under
  * BASS_PROTECT; loudness adds up to BASS_LOUD_MAX_DB at low volume
  * (BASS_LOUD_SLOPE dB per dB of volume cut). */
-#define BASS_PROTECT      0.125f // -18 dBFS peak of the bass band at the DAC
+// Headroom guard only (-6 dBFS peak of the bass band at the DAC): how loud
+// the driver may go is the boost setting. -18 dBFS held the boost back at
+// normal listening levels (probe, 2026-11-25).
+#define BASS_PROTECT      0.5f
 #define BASS_LOUD_MAX_DB  6.0f
 #define BASS_LOUD_SLOPE   0.3f
 #define BASS_RELEASE      0.3  // seconds for the boost to come back
@@ -67,7 +70,8 @@
 
 #define PBE_BANDS 2
 enum {
-  PBE_HP_MAIN,   // main path: subsonic high-pass at fc = f_low / 2
+  PBE_HP_MAIN,   // main path: subsonic high-pass at f_low / 3 (LR4:
+  PBE_HP_MAIN2,  //   a 2nd-order cut let the shelf boost 20-45 Hz by 5 dB)
   PBE_LP1,       // bass band (LR4 low-pass at fc; 1st section at
   PBE_LP2,       //   full rate, 2nd at the low rate) ...
   PBE_SPLIT_LP1, // ... split into fc/4..fc/2 ...
@@ -76,7 +80,7 @@ enum {
   PBE_SPLIT_HP2, //
   PBE_HP2,       // harmonics band: high-pass at fc ...
   PBE_HP3,       //
-  PBE_LP3,       // ... low-pass at 5 fc
+  PBE_LP3,       // ... low-pass at 3 fc
   PBE_STAGES
 };
 
@@ -189,12 +193,15 @@ static void build(runtime_t *rt, const dsp_config_t *cfg) {
 
   rt->pbe_on = cfg->bass.on;
   if (rt->pbe_on) {
-    // Below half the speaker's limit nothing useful comes out of the driver
-    // (only excursion): that part is cut and turned into harmonics.
-    const double fc = cfg->bass.f_low / 2;
+    // Harmonics are made from the bass below the limit and added above it;
+    // the real bass stays (removing it sounded thin: probe, 2026-11-25).
+    // Only below a third of the limit is cut, to spare the driver.
+    const double fc = cfg->bass.f_low;
     const double bw = M_SQRT1_2; // Butterworth sections; two make an LR4
     dsp_coeffs_t *k = rt->pbe_k;
-    dsp_biquad_design(DSP_FILTER_HIGH_PASS, fc, 0, bw, s_fs, &k[PBE_HP_MAIN]);
+    dsp_biquad_design(DSP_FILTER_HIGH_PASS, cfg->bass.f_low / 3, 0, bw, s_fs,
+                      &k[PBE_HP_MAIN]);
+    k[PBE_HP_MAIN2] = k[PBE_HP_MAIN];
     dsp_biquad_design(DSP_FILTER_LOW_PASS, fc, 0, bw, s_fs, &k[PBE_LP1]);
     const double low_fs = s_fs / PBE_DECIM;
     dsp_biquad_design(DSP_FILTER_LOW_PASS, fc, 0, bw, low_fs, &k[PBE_LP2]);
@@ -206,7 +213,8 @@ static void build(runtime_t *rt, const dsp_config_t *cfg) {
     k[PBE_SPLIT_HP2] = k[PBE_SPLIT_HP1];
     dsp_biquad_design(DSP_FILTER_HIGH_PASS, fc, 0, bw, low_fs, &k[PBE_HP2]);
     k[PBE_HP3] = k[PBE_HP2];
-    dsp_biquad_design(DSP_FILTER_LOW_PASS, 5 * fc, 0, bw, low_fs, &k[PBE_LP3]);
+    // Harmonics stay below 3 fc: higher up they buzz in the midrange.
+    dsp_biquad_design(DSP_FILTER_LOW_PASS, 3 * fc, 0, bw, low_fs, &k[PBE_LP3]);
     rt->pbe_release = (float)exp(-1.0 / (PBE_RELEASE * low_fs));
     rt->pbe_gain = cfg->bass.harmonics * PBE_GAIN;
     dsp_biquad_design(DSP_FILTER_LOW_PASS, cfg->bass.f_low, 0, bw, s_fs,
@@ -285,7 +293,7 @@ void dsp_init(uint32_t sample_rate) {
   memset(&flat, 0, sizeof(flat));
   flat.bass.f_low = 120.0f;
   flat.bass.boost = 0.5f;
-  flat.bass.harmonics = 0.3f;
+  flat.bass.harmonics = 0.0f;
   s_cfg = flat;
   build(&s_slots[0], &flat);
   atomic_store(&s_word, word_make(0, SLOT_NONE));
@@ -532,6 +540,7 @@ static void run_bass(runtime_t *rt, size_t n) {
   }
 
   run_pair(rt, PBE_HP_MAIN, s_work[DSP_CH_L], s_work[DSP_CH_R], n);
+  run_pair(rt, PBE_HP_MAIN2, s_work[DSP_CH_L], s_work[DSP_CH_R], n);
   for (int ch = 0; ch < DSP_NUM_CH; ch++) {
     // More harmonics while the dynamics hold real bass back.
     const float g =

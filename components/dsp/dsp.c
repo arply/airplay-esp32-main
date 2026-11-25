@@ -120,6 +120,9 @@ typedef struct {
   float preamp;              // linear, includes the int16 -> float scale
                              // and the crossover's level and polarity
   bool mono;                 // subwoofer: L+R summed first
+  bool xover;                // crossover/alignment present: survives bypass
+  uint8_t n_eq[DSP_NUM_CH];  // EQ sections; the crossover follows them
+  float preamp_xo;           // as preamp, crossover level and polarity only
   uint32_t delay;            // frames
   bool identity;             // flat: leave samples untouched
   uint32_t structure;
@@ -203,6 +206,7 @@ static void build(runtime_t *rt, const dsp_config_t *cfg) {
       h = hash_byte(h, (uint8_t)f->type);
       n++;
     }
+    rt->n_eq[ch] = n;
     // Linkwitz-Riley 4th order = two Butterworth sections.
     const dsp_xover_t *x = &cfg->xover;
     if (x->lowpass > 0 || x->highpass > 0) {
@@ -265,9 +269,13 @@ static void build(runtime_t *rt, const dsp_config_t *cfg) {
   h = hash_byte(h, rt->mono);
   rt->delay = (uint32_t)lround(x->delay_ms * s_fs / 1000.0);
   rt->preamp = powf(10.0f, (cfg->preamp_db + x->gain_db) / 20.0f) / 32768.0f;
+  rt->preamp_xo = powf(10.0f, x->gain_db / 20.0f) / 32768.0f;
   if (x->invert) {
     rt->preamp = -rt->preamp;
+    rt->preamp_xo = -rt->preamp_xo;
   }
+  rt->xover = x->lowpass > 0 || x->highpass > 0 || x->gain_db != 0.0f ||
+              x->invert || rt->delay > 0;
   rt->identity = rt->n[DSP_CH_L] == 0 && rt->n[DSP_CH_R] == 0 && !rt->pbe_on &&
                  cfg->preamp_db == 0.0f && x->gain_db == 0.0f && !x->invert &&
                  rt->delay == 0;
@@ -589,7 +597,9 @@ static void run_bass(runtime_t *rt, size_t n) {
   }
 }
 
-static void process_chunk(runtime_t *rt, int16_t *buf, size_t n) {
+/* @p bypass: the A/B comparison on the page, EQ and bass block off; the
+ * crossover stays, a subwoofer playing full range is no comparison. */
+static void process_chunk(runtime_t *rt, int16_t *buf, size_t n, bool bypass) {
   // The volume is applied here, at the input, so EQ, bass and limiter work
   // at the level that really reaches the DAC: at low volume a bass boost
   // has the headroom it needs instead of hitting the limiter. It moves
@@ -598,7 +608,7 @@ static void process_chunk(runtime_t *rt, int16_t *buf, size_t n) {
   const float v0 = s_vol;
   const float v1 = v0 + (target - v0) * 0.5f;
   s_vol = fabsf(v1 - target) < 1e-5f ? target : v1;
-  const float pre = rt->preamp;
+  const float pre = bypass ? rt->preamp_xo : rt->preamp;
   float g = v0 * pre;
   const float dg = (s_vol - v0) * pre / (float)n;
   if (rt->mono) {
@@ -618,18 +628,18 @@ static void process_chunk(runtime_t *rt, int16_t *buf, size_t n) {
   // Filters k of both outputs run as a pair; the longer chain finishes alone.
   const int nl = rt->n[DSP_CH_L];
   const int nr = rt->n[DSP_CH_R];
-  const int pairs = nl < nr ? nl : nr;
+  const int pairs = bypass ? 0 : nl < nr ? nl : nr;
   for (int k = 0; k < pairs; k++) {
     dsp_biquad_run2(&rt->k[DSP_CH_L][k], &rt->s[DSP_CH_L][k], s_work[DSP_CH_L],
                     &rt->k[DSP_CH_R][k], &rt->s[DSP_CH_R][k], s_work[DSP_CH_R],
                     n);
   }
   for (int ch = 0; ch < DSP_NUM_CH; ch++) {
-    for (int k = pairs; k < rt->n[ch]; k++) {
+    for (int k = bypass ? rt->n_eq[ch] : pairs; k < rt->n[ch]; k++) {
       dsp_biquad_run(&rt->k[ch][k], &rt->s[ch][k], s_work[ch], n);
     }
   }
-  if (rt->pbe_on) {
+  if (rt->pbe_on && !bypass) {
     run_bass(rt, n);
   }
   uint32_t r = s_rng; // kept in a register for the whole chunk
@@ -659,7 +669,8 @@ static void run_delay(int16_t *buf, size_t frames, uint32_t d) {
 
 bool dsp_process(int16_t *buf, size_t frames) {
   runtime_t *rt = acquire();
-  if (atomic_load_explicit(&s_bypass, memory_order_relaxed) || rt->identity) {
+  const bool bypass = atomic_load_explicit(&s_bypass, memory_order_relaxed);
+  if ((bypass && !rt->xover) || rt->identity) {
     s_was_idle = true;
     return false;
   }
@@ -674,7 +685,7 @@ bool dsp_process(int16_t *buf, size_t frames) {
   }
   while (frames > 0) {
     const size_t n = frames < CHUNK ? frames : CHUNK;
-    process_chunk(rt, buf, n);
+    process_chunk(rt, buf, n, bypass);
     buf += 2 * n;
     frames -= n;
   }

@@ -529,6 +529,18 @@ static void test_xover(void) {
   }
   check(at == 1441, "sub delay 10 ms: click at frame", (double)at, 1441, 0);
   free(ref);
+  // Bypass (A/B on the page) drops the EQ but keeps the crossover.
+  dsp_config_t eq = flat();
+  eq.xover.lowpass = 80;
+  add_filter(&eq, 0, DSP_FILTER_PEAK, 40, 6, 1);
+  add_filter(&eq, 1, DSP_FILTER_PEAK, 40, 6, 1);
+  check_near("sub with +6 dB EQ at 40 Hz (dB)", xover_db(&eq, 40, 0), 5.47,
+             0.15);
+  dsp_set_bypass(true);
+  check_near("  ... bypassed: EQ gone (dB)", xover_db(&eq, 40, 0), -0.53, 0.1);
+  check_near("  ... bypassed: low-pass stays, 320 Hz (dB)",
+             xover_db(&eq, 320, 1), -48.2, 1.5);
+  dsp_set_bypass(false);
   dsp_config_t f0 = flat();
   dsp_set_config(&f0);
 }

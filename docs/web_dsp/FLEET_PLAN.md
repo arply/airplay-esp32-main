@@ -232,7 +232,9 @@ its subwoofer is in the subwoofer's mDNS TXT record.
   −10.7, 180–300 −33.7 dB; Arply 20–45 −23.8, 60–90 −7.7, 120–180 −0.8,
   mids 0.0 dB. Arply switched 1 s after DUT started playing, back 2 s
   after it stopped.
-- **Open:** a real subwoofer and AirPlay multi-room listening; bypass (A/B
-  on the page) also bypasses the crossover; with USB audio on a speaker
+- Bypass (A/B on the page) drops EQ and bass block but keeps the crossover,
+  its level, polarity and delay (Till); checked on DUT: same low-pass with
+  bypass on.
+- **Open:** a real subwoofer and AirPlay multi-room listening; with USB audio on a speaker
   the subwoofer gets nothing, so a playing subwoofer would still take the
   speaker's bass (only if it plays something else at the same time).

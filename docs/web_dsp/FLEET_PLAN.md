@@ -74,53 +74,70 @@ right after `mdns_airplay_init()` (mDNS must be up).
 
 ### Task F1.1 — Host names
 
-- [ ] One shared helper for the DNS name of a device (`wifi.c` has
+- [x] One shared helper for the DNS name of a device (`wifi.c` has
       `sanitize_hostname()`, `tls_cert.c` a copy): lower case, non-alnum →
       `-`, trimmed; `arply` → `arply-<mac4>`.
-- [ ] `mdns_hostname_set()` uses it; the AirPlay instance names keep the
+- [x] `mdns_hostname_set()` uses it; the AirPlay instance names keep the
       display name. The TLS certificate uses the same helper (a changed
       host name regenerates the certificate, as today).
-- [ ] `POST /api/device/name`: refuse names whose host name a seen peer
+- [x] `POST /api/device/name`: refuse names whose host name a seen peer
       uses (`success: false` with a message, like the other errors there).
 
 ### Task F1.2 — Announce `_arply._tcp`
 
-- [ ] Settings: `room` (string ≤ 32, NVS `room`), `role` (`main` | `bass`,
+- [x] Settings: `room` (string ≤ 32, NVS `room`), `role` (`main` | `bass`,
       NVS `role`), `hub` sequence (u32, NVS `hub_seq`).
-- [ ] Register `_arply._tcp` on port 80 with TXT `v=1`, `id` (MAC, 12 hex),
+- [x] Register `_arply._tcp` on port 80 with TXT `v=1`, `id` (MAC, 12 hex),
       `name`, `room`, `role`, `fw`, `hub`. Update TXT items in place on
       change (`mdns_service_txt_item_set`).
 
 ### Task F1.3 — Peer table and election
 
-- [ ] Task (prio 2, 4 KB): every 10 s `mdns_query_ptr("_arply", "_tcp",
+- [x] Task (prio 2, 4 KB): every 10 s `mdns_query_ptr("_arply", "_tcp",
       2000 ms, 16)`; parse TXT + IPv4 into a table of ≤ 16 peers, own
       entry excluded by `id`. A peer not seen for 3 rounds is dropped.
-- [ ] Election as above after every round and on every local change.
+- [x] Election as above after every round and on every local change.
       Winner = self → `mdns_delegate_hostname_add("arply", own IPv4)`;
       otherwise remove the delegation. Log every change of hub. Taking the
       name needs 3 scheduled wins in a row, releasing it is immediate, so
       after a new pick the old hub has let go (≤ 12 s) before the new one
       claims (≥ 20 s): never two devices announcing `arply.local`.
-- [ ] Re-run election immediately on `POST /api/fleet/self`.
+- [x] Re-run election immediately on `POST /api/fleet/self`.
 
 ### Task F1.4 — Last-known cache
 
-- [ ] NVS blob `fleet_peers` (`id`, `ip`, `name`), written only when the
+- [x] NVS blob `fleet_peers` (`id`, `ip`, `name`), written only when the
       set of peers changes. A cached peer missing from mDNS is probed with
       `GET http://<ip>/api/fleet/self` (800 ms timeout, ≤ 4 per round) and
       kept if it answers with the same `id`.
 
 ### Task F1.5 — API and settings page
 
-- [ ] `GET /api/fleet` → `{self:{id,name,host,room,role,fw,hub}, hub:<id>,
+- [x] `GET /api/fleet` → `{self:{id,name,host,room,role,fw,hub}, hub:<id>,
       is_hub, peers:[{id,name,host,ip,room,role,fw,hub,age_s,via}]}`
       (`via`: `mdns` | `cache`).
-- [ ] `GET /api/fleet/self` → `self` only (used by the cache probe).
-- [ ] `POST /api/fleet/self` `{room?, role?, hub?: true}`.
-- [ ] Settings page: room field, role select (bass marked “coming later”),
+- [x] `GET /api/fleet/self` → `self` only (used by the cache probe).
+- [x] `POST /api/fleet/self` `{room?, role?, hub?: true}`.
+- [x] Settings page: room field, role select (bass marked “coming later”),
       “Use this device for arply.local” button, list of the other devices
       found (name, room, link).
+
+**Results (2026-11-25, `DUT` 192.168.86.29 on `arply_v1`, `Arply`
+192.168.86.31 on `arply_v1_usbdac`, both updated over the air):**
+- Each lists the other within one round (age 1–7 s), via mDNS.
+- `Arply` maps to `arply-68b4.local` (reserved name rule); `dut.local`,
+  `arply-68b4.local` and `arply.local` (→ the hub) resolve.
+- Hub: DUT by lowest id at first. Picking Arply: DUT released after ~10 s,
+  Arply claimed at ~40 s, never both. Picking DUT again: claimed at ~30 s.
+- Renaming Arply to `dut` is refused; a room set on DUT shows on Arply
+  within 6 s; invalid role → 400. Arply still works as a USB speaker.
+- **Stale caches:** the releasing hub sends no goodbye for `arply.local`,
+  so a Mac kept resolving it to the old hub until the 120 s TTL ran out.
+  F2 handles this: a device that is not the hub redirects
+  `Host: arply.local` requests to the current hub.
+- **Not tested yet:** failover when the hub is unplugged (needs ≥ 60 s
+  off power), the cached-address probe (needs a network where multicast
+  fails), a display name with spaces end to end.
 
 **Hardware test (2 boards):** each lists the other within ~10 s;
 `arply.local` resolves to the elected hub and moves when another device is
@@ -134,6 +151,7 @@ room/role changes show up on the other board within one round.
 ## F2 — Overview at arply.local (waits for the mock)
 
 Outline: `data/www/overview.html` in the arply.de design (mock), served by
-the hub for `Host: arply.local`; rooms as cards, device rows linking to
+the hub for `Host: arply.local` (a non-hub device redirects such requests
+to the hub, covering stale mDNS caches after a hub change); rooms as cards, device rows linking to
 `https://<host>.local/`, data from `GET /api/fleet` of the hub, refreshed
 every 10 s. To be detailed when the mock is in the repo.

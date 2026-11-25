@@ -73,15 +73,13 @@ summary{cursor:pointer;font-weight:600;min-height:44px;display:flex;align-items:
 .tabs button{min-height:38px;padding:0 16px}
 .tabs button[aria-pressed=true]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
 .tabs .one{font:500 12px 'JetBrains Mono',ui-monospace,monospace;letter-spacing:1px;text-transform:uppercase;color:var(--mut);padding:0 4px}
-.mbar{position:relative;height:16px;border-radius:999px;background:var(--bg);border:1px solid var(--line);overflow:hidden;margin:8px 0 4px}
-.mzone{position:absolute;top:0;bottom:0;left:8.3%;right:0;background:var(--accbg)}
-#mfill{position:absolute;top:0;bottom:0;left:0;width:0;background:var(--acc);transition:width .08s linear}
-.mscale{display:flex;justify-content:space-between;font:500 11.5px 'JetBrains Mono',ui-monospace,monospace;color:var(--quiet)}
-#mtext{font-size:14.5px;margin:4px 0 0;min-height:1.4em}
-#mtext b{color:var(--ink)}
+#mic{position:absolute;right:0;top:8px;bottom:22px;width:4px;border-radius:2px;background:var(--line);overflow:hidden}
+#micfill{position:absolute;left:0;right:0;bottom:0;height:0;background:var(--acc);transition:height .08s linear}
+#mic.clip #micfill{background:#d92d20}
+#micfloor{position:absolute;left:0;right:0;height:2px;background:var(--ink)}
 footer{margin-top:40px;padding:24px 0 0;border-top:1px solid var(--line);display:flex;flex-direction:column;align-items:center;gap:6px;text-align:center}
 @media(max-width:600px){label.f{grid-template-columns:7em 1fr 4.2em}}
-@media(prefers-reduced-motion:reduce){#mfill{transition:none}}
+@media(prefers-reduced-motion:reduce){#micfill{transition:none}}
 </style>
 </head>
 <body>
@@ -96,7 +94,7 @@ footer{margin-top:40px;padding:24px 0 0;border-top:1px solid var(--line);display
 
   <div class="tabs" id="tabs"></div>
   <div class="chartbox">
-    <div class="fig"><canvas id="cv" aria-label="Frequency response"></canvas></div>
+    <div class="fig"><canvas id="cv" aria-label="Frequency response"></canvas><div id="mic" role="meter" aria-label="Microphone level" title="Microphone level (mark: background noise)" hidden><i id="micfill"></i><i id="micfloor" hidden></i></div></div>
     <div id="readout"></div>
     <div class="legend">
       <span><i style="background:var(--meas)"></i>Measured (average)</span>
@@ -120,14 +118,8 @@ footer{margin-top:40px;padding:24px 0 0;border-top:1px solid var(--line);display
       <h2>Measure</h2>
       <label class="f">Output<select id="o-mode"><option value="stereo">Stereo</option><option value="mono">Mono</option><option value="left">Left only</option><option value="right">Right only</option></select><span></span></label>
       <p class="small" id="modehint"></p>
-      <label class="f">Volume<input type="range" id="o-vol" min="-30" max="0" step="0.5"><output id="v-vol"></output></label>
-      <p class="small">arply’s volume – the same one AirPlay uses. The test signals follow it.</p>
-      <div class="row"><button id="b-level">1. Check level</button></div>
-      <div id="meter" hidden>
-        <div class="mbar"><div class="mzone"></div><div id="mfill"></div></div>
-        <div class="mscale"><span>0</span><span>20</span><span>40</span><span>60 dB above background</span></div>
-        <p id="mtext"></p>
-      </div>
+      <div class="row"><button id="b-level">1. Set level</button></div>
+      <p class="small">arply measures the room’s background noise, then raises its volume (the one AirPlay uses) from the lowest step until the test noise is clearly above it. The bar at the right of the chart shows the microphone.</p>
       <div class="row"><button class="pri" id="b-live">2. Measure</button></div>
       <progress id="prog" value="0" max="1" hidden></progress>
       <p id="msg"></p>
@@ -752,7 +744,7 @@ function makeSample(c, kind) {
   }
 
 
-  // ---------- level test ----------
+  // ---------- microphone ----------
   // A fresh AudioContext after getUserMedia, with the analysis chain ending
   // in a muted gain at the destination: Safari only pulls audio through
   // nodes that reach the output, otherwise the microphone reads as silence.
@@ -763,74 +755,74 @@ function makeSample(c, kind) {
     mute.gain.value = 0; mute.connect(ac.destination);
     return { ac, src, mute };
   }
+  // One microphone for the page, started by the first level check or
+  // measurement and kept open, so the meter at the right of the chart always
+  // shows whether it works. iOS ends the track in the background; the next
+  // action opens it again.
+  const MIC_LO = -90, MIC_HI = -10, micPos = db => Math.max(0, Math.min(100, (db - MIC_LO) / (MIC_HI - MIC_LO) * 100)) + '%';
+  let mic = null;
+  async function ensureMic() {
+    if (mic && mic.stream.getAudioTracks().some(t => t.readyState === 'live')) { await mic.ac.resume(); return mic; }
+    if (mic) mic.ac.close().catch(() => {});
+    const stream = await getMic(), { ac, src, mute } = await micChain(stream), an = ac.createAnalyser();
+    an.fftSize = 2048; src.connect(an); an.connect(mute);
+    const m = mic = { stream, ac, src, mute, db: -120, peak: -120, floor: null }, buf = new Float32Array(an.fftSize);
+    const tick = () => {
+      if (mic !== m) return;
+      an.getFloatTimeDomainData(buf);
+      let s = 0, pk = 0; for (const v of buf) { s += v * v; pk = Math.max(pk, Math.abs(v)); }
+      const db = 10 * Math.log10(s / buf.length + 1e-12);
+      m.db = m.db < -100 ? db : 0.85 * m.db + 0.15 * db;
+      m.peak = Math.max(20 * Math.log10(pk + 1e-9), m.peak - 0.5);
+      $('#micfill').style.height = micPos(m.db); $('#mic').classList.toggle('clip', m.peak > -3);
+      requestAnimationFrame(tick);
+    };
+    $('#mic').hidden = false; $('#micfloor').hidden = true; tick();
+    return m;
+  }
+
+  // ---------- level ----------
+  // 10 dB above the background: three averaged sweeps measure to ~0.3 dB
+  // there (simulated), and the distortion check sees a driver that distorts.
+  const LEVEL_MARGIN = 10, VOL_MIN = -30;
   let lvl = null;
-  function stopLevel() {
-    if (!lvl) return;
-    cancelAnimationFrame(lvl.raf);
-    if (lvl.noise) api('/api/dsp/noise', { on: false }).catch(() => {});
-    if (lvl.stream) lvl.stream.getTracks().forEach(t => t.stop());
-    if (lvl.ac) lvl.ac.close().catch(() => {});
-    lvl = null; $('#b-level').textContent = '1. Check level';
-  }
-  // pink noise from arply on both outputs, at arply's volume; it stops by itself after 30 s
-  function startNoise() {
-    api('/api/dsp/noise', { on: true, channels: ['LR'] }).catch(e => { $('#mtext').textContent = busyMsg(e); });
-    return true;
-  }
+  async function stopLevel() { if (lvl) { lvl.stop = true; await lvl.done; } }
   $('#b-level').onclick = async () => {
     if (lvl) { stopLevel(); return; }
     if (busy) return;
+    if (!micOk()) { msg('No microphone on this page – it needs https (the link at the top).', true); return; }
     stopPlay();
-    $('#meter').hidden = false; $('#b-level').textContent = 'Stop level check';
-    lvl = { raf: 0, noise: null, stream: null, ac: null };
-    if (!micOk()) {
-      lvl.noise = startNoise(); $('#mfill').style.width = '0';
-      $('#mtext').innerHTML = '<b>No microphone on this page.</b> Noise is playing – set the volume by ear: clearly louder than normal music, but not unpleasant.';
-      return;
-    }
-    let stream;
-    try { stream = await getMic(); } catch (e) {
-      lvl.noise = startNoise();
-      $('#mtext').innerHTML = '<b>Microphone blocked.</b> Noise is playing – set the volume by ear.'; return;
-    }
-    if (!lvl) { stream.getTracks().forEach(t => t.stop()); return; }
-    const { ac, src, mute } = await micChain(stream), an = ac.createAnalyser();
-    an.fftSize = 2048; src.connect(an); an.connect(mute);
-    Object.assign(lvl, { stream, ac });
-    const buf = new Float32Array(an.fftSize), t0 = performance.now(), floorAcc = [];
-    let sm = -90, floor = null, peakHold = -90;
-    const tick = () => {
-      if (!lvl) return;
-      an.getFloatTimeDomainData(buf);
-      let s = 0, pk = 0; for (const v of buf) { s += v * v; pk = Math.max(pk, Math.abs(v)); }
-      const db = 10 * Math.log10(s / buf.length + 1e-12), pdb = 20 * Math.log10(pk + 1e-9);
-      const el = performance.now() - t0;
-      if (floor === null) {
-        floorAcc.push(db);
-        $('#mtext').innerHTML = 'Measuring background noise – please stay quiet …';
-        $('#mfill').style.width = Math.max(0, (db + 60) / 60 * 100) + '%';
-        if (el > 1200) { floor = floorAcc.slice(5).reduce((a, b) => a + b, 0) / Math.max(1, floorAcc.length - 5); lvl.noise = startNoise(); }
-      } else {
-        sm = sm < -80 ? db : 0.85 * sm + 0.15 * db;
-        peakHold = Math.max(pdb, peakHold - 0.5);
-        // What the sweep needs is distance to the room's background noise, not
-        // a high absolute level: the deconvolution recovers the rest.
-        // A phone microphone without AGC reads low (often -50 dBFS at normal
-        // listening level), so absolute dBFS thresholds asked for painful volume.
-        const snr = sm - floor;
-        $('#mfill').style.width = Math.max(0, Math.min(100, snr / 60 * 100)) + '%';
-        let v;
-        if (sm < -100) v = '<b>The microphone delivers silence</b> – reload the page and allow the microphone.';
-        else if (peakHold > -3) v = '<b>Clipping</b> – lower the volume, or move the phone away.';
-        // Simulated with this page's analysis and REPEAT sweeps: 5 dB margin -> ~0.5 dB error.
-        else if (snr < 0) v = '<b>Too quiet for this room</b> – raise the volume, or make the room quieter.';
-        else if (snr < 5) v = '<b>A bit quiet</b> – raise the volume a little.';
-        else v = '<b>Good</b> – measure like this. Louder is not needed.';
-        $('#mtext').innerHTML = v + ' ' + snr.toFixed(0) + ' dB above the background noise (5 dB are enough) · level ' + sm.toFixed(0) + ' dBFS';
+    let end; const run = lvl = { stop: false, done: new Promise(r => (end = r)) };
+    $('#b-level').textContent = 'Stop';
+    let noise = false, db = VOL_MIN;
+    try {
+      const m = await ensureMic();
+      msg('Measuring the background noise – please stay quiet …');
+      await sleep(500);
+      const acc = []; for (let i = 0; i < 10; i++) { await sleep(100); acc.push(m.db); }
+      if (m.db < -100) throw new Error('The microphone delivers silence – reload the page and allow the microphone.');
+      m.floor = acc.reduce((a, b) => a + b, 0) / acc.length;
+      $('#micfloor').style.bottom = micPos(m.floor); $('#micfloor').hidden = false;
+      setVol(db, false);
+      await api('/api/dsp/noise', { on: true, channels: ['LR'] }); noise = true;
+      while (!run.stop) {
+        await sleep(400); // volume request, arply's ramp and the meter's smoothing
+        const snr = m.db - m.floor;
+        if (snr >= LEVEL_MARGIN || m.peak > -6 || db >= 0) break;
+        msg('Raising the volume … ' + Math.max(0, snr).toFixed(0) + ' of ' + LEVEL_MARGIN + ' dB above the background noise');
+        db = Math.min(0, db + 2); setVol(db, false);
       }
-      lvl.raf = requestAnimationFrame(tick);
-    };
-    tick();
+      const snr = m.db - m.floor;
+      if (!run.stop) setVol(db, true);
+      msg(run.stop ? 'Level check stopped.' :
+        snr >= LEVEL_MARGIN || m.peak > -6 ? 'Level set: volume ' + volPct(db) + ', ' + snr.toFixed(0) + ' dB above the background noise. Now measure.' :
+        'Even at full volume only ' + snr.toFixed(0) + ' dB above the background noise – move the phone closer or make the room quieter. Measuring still works, less precisely.', !run.stop && snr < LEVEL_MARGIN && m.peak <= -6);
+    } catch (e) {
+      msg(e.status ? busyMsg(e) : e.message || 'Microphone denied or blocked here (' + e.name + ').', true);
+    } finally {
+      if (noise) await api('/api/dsp/noise', { on: false }).catch(() => {});
+      lvl = null; $('#b-level').textContent = '1. Set level'; end();
+    }
   };
 
   // ---------- measurements ----------
@@ -838,7 +830,7 @@ function makeSample(c, kind) {
   function analyzeRec(rec, fs, ks, live) {
     let pk = 0; for (let i = 0; i < rec.length; i++) pk = Math.max(pk, Math.abs(rec[i]));
     const lv = 20 * Math.log10(pk + 1e-12);
-    if (lv < -75) { msg('The recording is almost silent (' + lv.toFixed(0) + ' dBFS). Check the level first, then try again.', true); return; }
+    if (lv < -75) { msg('The recording is almost silent (' + lv.toFixed(0) + ' dBFS). Set the level first, then try again.', true); return; }
     const sw = DSP.sweep(fs), h = DSP.impulse(rec, sw, fs), step = Math.round((sw.T + GAP) * fs), win = Math.round(0.05 * fs);
     let p0;
     if (live) p0 = DSP.argmaxAbs(h, 0, Math.round(LEAD * fs) + step);
@@ -908,14 +900,14 @@ function makeSample(c, kind) {
   $('#b-live').onclick = async () => {
     if (busy) return;
     if (!micOk()) { msg('No microphone on this page – it needs https (the link at the top).', true); return; }
-    stopLevel(); stopPlay(); busy = true;
-    let stream;
-    try { stream = await getMic(); } catch (e) { busy = false; msg('Microphone denied or blocked here (' + e.name + ').', true); return; }
-    const { ac, src, mute } = await micChain(stream), fs = ac.sampleRate, proc = ac.createScriptProcessor(4096, 1, 1), chunks = [];
+    busy = true; await stopLevel(); stopPlay();
+    let m;
+    try { m = await ensureMic(); } catch (e) { busy = false; msg('Microphone denied or blocked here (' + e.name + ').', true); return; }
+    const fs = m.ac.sampleRate, proc = m.ac.createScriptProcessor(4096, 1, 1), chunks = [];
     let on = true;
     proc.onaudioprocess = e => { if (on) chunks.push(new Float32Array(e.inputBuffer.getChannelData(0))); };
-    src.connect(proc); proc.connect(mute);
-    const ks = chans(), finish = () => { on = false; stream.getTracks().forEach(t => t.stop()); src.disconnect(); proc.disconnect(); ac.close().catch(() => {}); };
+    m.src.connect(proc); proc.connect(m.mute);
+    const ks = chans(), finish = () => { on = false; m.src.disconnect(proc); proc.disconnect(); };
     // recording runs first; arply starts the sweeps lead_ms after the request
     let t;
     try { t = await deviceSweeps(ks); } catch (e) { finish(); busy = false; msg(busyMsg(e), true); return; }
@@ -1126,7 +1118,7 @@ function makeSample(c, kind) {
   $('#b-play').onclick = async () => {
     if (playing) { stopPlay(); return; }
     if (!devOk) { $('#musicname').textContent = 'arply not reachable.'; return; }
-    stopLevel();
+    await stopLevel();
     const b = $('#b-play'); b.disabled = true; $('#musicname').textContent = 'Sending the sample to arply …';
     try {
       const { pcm, channels } = samplePcm(S.opt.sample);
@@ -1140,17 +1132,16 @@ function makeSample(c, kind) {
 
   // ---------- volume (arply's one volume, shared with AirPlay) ----------
   let volT = null;
+  const volPct = db => Math.round((db - VOL_MIN) / -VOL_MIN * 100) + ' %';
   function showVol(db) {
-    for (const k of ['', '2']) { $('#o-vol' + k).value = db; $('#v-vol' + k).textContent = Math.round((db + 30) / 30 * 100) + ' %'; }
+    $('#o-vol2').value = db; $('#v-vol2').textContent = volPct(db);
   }
   function setVol(db, persist) {
     showVol(db); clearTimeout(volT);
     volT = setTimeout(() => api('/api/audio/volume', { db, persist }).catch(() => {}), persist ? 0 : 80);
   }
-  for (const k of ['', '2']) {
-    $('#o-vol' + k).oninput = e => setVol(+e.target.value, false);
-    $('#o-vol' + k).onchange = e => setVol(+e.target.value, true);
-  }
+  $('#o-vol2').oninput = e => setVol(+e.target.value, false);
+  $('#o-vol2').onchange = e => setVol(+e.target.value, true);
 
   // ---------- start ----------
   // device filter {type,f,gain_db,q,enabled} -> page filter {type,on,f,gain,q}

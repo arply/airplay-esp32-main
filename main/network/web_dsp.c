@@ -436,6 +436,7 @@ static esp_err_t noise_handler(httpd_req_t *req) {
   cJSON *resp = cJSON_CreateObject();
   if (on && !cJSON_IsTrue(on)) {
     test_signal_stop();
+    test_signal_wait_idle(500); // a sweep may be requested right after this
     cJSON_AddBoolToObject(resp, "on", false);
     return send_json(req, resp);
   }

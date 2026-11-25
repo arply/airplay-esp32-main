@@ -716,6 +716,27 @@ day):**
   on all sweeps of both channels). Delay compensation would need a delay
   line in the firmware; not built.
 
+**Level and microphone (same day, Till: "the mic test should not be its own
+block, show it subtly at the right of the spectrum; the level check should
+set the volume itself, from the lowest step up; manual volume only in
+Step 3"):**
+- One microphone chain per page, opened by the first level check or
+  measurement and kept open; a 4 px vertical meter in the chart's right
+  margin shows its level (−90…−10 dBFS) with a mark at the background
+  noise, red near clipping. iOS ends the track in the background; the next
+  action opens it again.
+- "1. Set level": 1 s of background, then arply's noise from volume −30 dB
+  upwards in 2 dB steps every 0.4 s until 10 dB above the background
+  (three averaged sweeps measure to ~0.3 dB there and the distortion check
+  sees a distorting driver), the microphone nears clipping, or full volume.
+  The volume is saved. Noise and sweep have the same RMS (−15 dBFS), so the
+  margin holds for the sweeps. The Step 1 volume slider is gone.
+- Turning the noise off now waits until arply is idle, so a sweep requested
+  right after it is not refused as busy.
+- jsdom with a simulated room (background −70 dBFS): stops at −14 dB with
+  11 dB margin, saves it, turns the noise off; the measurement afterwards
+  records through the same microphone.
+
 **Detail:** the prototype's WebAudio `Q` of `20·log10(1/√2)` dB *is* linear
 Q = 1/√2 (WebAudio's LP/HP Q is in dB), so all sections are plain
 Butterworth biquads. The prototype's `oversample='2x'` on `|x|` is not

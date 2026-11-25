@@ -327,9 +327,30 @@ does what such a measurement finds hold for AirPlay playback?
   starts still stretch 1 sample per 4 frames (Arply +14 ms took 16 s): the
   output buffers hold only one spare sample.
 
-**Next (joint calibration itself):** on the subwoofer's calibration page,
-"Align with the speakers": the subwoofer compares clocks with the room's
-speakers, schedules a sweep on each (proxy target for `/api/dsp/sweep`)
-and on itself, the phone records once; the page derives level, delay and
-polarity at the crossover from the measured responses with the LR4
-filters applied, and saves them as the subwoofer settings.
+## F6 — "Align with the speakers" (first version, 2026-11-25)
+
+On the subwoofer's calibration page (Subwoofer panel):
+- The subwoofer compares clocks with every online speaker of its room,
+  reads their volumes (proxy `to=volume`), schedules one sweep per speaker
+  (proxy `to=sweep`, new) and then itself, 5 s apart from 2.5 s on; the
+  phone records once.
+- One deconvolution of the whole recording; anchor = the first speaker's
+  peak; every slot is cut out at its planned place (20 ms before, 300 ms
+  long), so relative arrival survives; speakers are summed, each divided
+  by its volume gain ((dB+30)/30)², the subwoofer too: equal volumes.
+- `DSP.alignSub()`: LR4 high-pass on the speakers, LR4 low-pass on the
+  subwoofer (raw sweeps, the devices' EQs are not included); level equal
+  at the crossover (±1/6 octave), then delay 0–20 ms × polarity for the
+  most energy from xo/2 to 2 xo; of the local maxima within 0.2 dB of
+  the best the earliest (not a period later). Reports how far the sum is
+  from a perfect in-phase sum and, if a negative delay would be > 1 dB
+  better, that the subwoofer stands too far away.
+- The result goes into the Subwoofer panel as a live preview; "Save to
+  arply" keeps it.
+- Tests: synthetic responses (flat, sub 2 ms earlier, inverted, -6 dB →
+  2.0 ms, inverted, +6.2 dB, sum perfect; speaker roll-offs → sum within
+  0.1 dB). On the boards with the Mac microphone (Arply as subwoofer at
+  200 Hz, DUT as speaker), 3 runs: +6.6…+6.8 dB, 1.25–1.40 ms,
+  inverted, sum 0.6 dB short of ideal.
+- Open: the iPhone in the real listening spot; EQs of speakers and
+  subwoofer in the calculation; more than one subwoofer.

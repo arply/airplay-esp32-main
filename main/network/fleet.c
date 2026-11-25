@@ -828,8 +828,8 @@ static esp_err_t self_post_handler(httpd_req_t *req) {
   return self_get_handler(req);
 }
 
-/* GET/POST /api/fleet/proxy?id=<peer>&to=self|volume|update: the overview on
- * arply.local cannot call other devices from the browser (other origin,
+/* GET/POST /api/fleet/proxy?id=<peer>&to=self|volume|update|sweep: the overview
+ * on arply.local cannot call other devices from the browser (other origin,
  * other certificate), so the hub forwards these two small JSON requests
  * over plain HTTP inside the LAN. Only these: they are what the overview
  * changes (room, hub pick, volume). Not for the hub itself: its own httpd
@@ -838,7 +838,8 @@ static esp_err_t self_post_handler(httpd_req_t *req) {
 static esp_err_t proxy_handler(httpd_req_t *req) {
   static const char *const TARGETS[][2] = {{"self", "/api/fleet/self"},
                                            {"volume", "/api/audio/volume"},
-                                           {"update", "/api/update"}};
+                                           {"update", "/api/update"},
+                                           {"sweep", "/api/dsp/sweep"}};
   char q[64];
   char id[13];
   char to[8];
@@ -855,7 +856,7 @@ static esp_err_t proxy_handler(httpd_req_t *req) {
   if (!path) {
     return httpd_resp_send_err(
         req, HTTPD_400_BAD_REQUEST,
-        "Expected ?id=<device id>&to=self|volume|update");
+        "Expected ?id=<device id>&to=self|volume|update|sweep");
   }
   uint32_t ip = 0;
   xSemaphoreTake(s_lock, portMAX_DELAY);

@@ -148,7 +148,8 @@ footer{margin-top:40px;padding:24px 0 0;border-top:1px solid var(--line);display
       <label class="f">Level<input type="range" id="o-xogain" min="-12" max="12" step="0.5"><output id="v-xogain"></output></label>
       <label class="f">Delay<input type="range" id="o-xodelay" min="0" max="20" step="0.1"><output id="v-xodelay"></output></label>
       <label class="chk"><input type="checkbox" id="o-xoinv"> Invert polarity</label>
-      <p class="small">Delay the subwoofer when it stands nearer to you than the speakers (1 ms ≈ 34 cm). Then try the polarity with music, AirPlay to the speakers and the subwoofer together: the setting with the fuller bass around the crossover is right.</p>
+      <div class="row"><button class="pri" id="b-align">Align with the speakers</button></div>
+      <p class="small" id="alignmsg">Phone at the listening spot, room quiet: each speaker in this room plays a sweep, then the subwoofer; level, delay and polarity are set from that. Or set them by ear (1 ms ≈ 34 cm).</p>
     </section>
 
     <section class="panel">
@@ -426,6 +427,50 @@ const DSP = (() => {
     return 10 * Math.log10((nr * nr + ni * ni) / (dr * dr + di * di));
   }
 
+  // complex response of a biquad at f
+  function bqC(k, f, fs) {
+    const w = TAU * f / fs, c1 = Math.cos(w), s1 = Math.sin(w), c2 = Math.cos(2 * w), s2 = Math.sin(2 * w);
+    const nr = k.b0 + k.b1 * c1 + k.b2 * c2, ni = -(k.b1 * s1 + k.b2 * s2), dr = 1 + k.a1 * c1 + k.a2 * c2, di = -(k.a1 * s1 + k.a2 * s2), d = dr * dr + di * di;
+    return [(nr * dr + ni * di) / d, (ni * dr - nr * di) / d];
+  }
+  const cmul = (a, b) => [a[0] * b[0] - a[1] * b[1], a[0] * b[1] + a[1] * b[0]];
+  // Subwoofer alignment (FLEET_PLAN F6). hMain (the speakers, summed) and
+  // hSub are impulse responses cut out at the same place relative to their
+  // planned sweep starts, at equal volume. With the LR4 crossover applied,
+  // find the subwoofer level (equal at the crossover), its delay (>= 0)
+  // and polarity that make the sum fullest from xo/2 to 2 xo. Of the local
+  // maxima within 0.2 dB of the best, the earliest wins (a period later
+  // lines up the phase at xo but smears the attack). needMs > 0: the subwoofer
+  // would have to play that much EARLIER (it stands farther away).
+  function alignSub(hMain, hSub, fs, xo) {
+    const M = nextPow2(Math.max(hMain.length, hSub.length)) * 2, spec = h => {
+      const re = new Float64Array(M), im = new Float64Array(M); re.set(h); fft(re, im, false); return [re, im]; };
+    const [ar, ai] = spec(hMain), [br, bi] = spec(hSub);
+    const hp = coeffs('hp', xo, 0, Math.SQRT1_2, fs), lp = coeffs('lp', xo, 0, Math.SQRT1_2, fs), A = [], B = [], F = [];
+    for (let k = Math.ceil(xo / 2 * M / fs); k <= Math.floor(2 * xo * M / fs); k++) {
+      const f = k * fs / M, h = bqC(hp, f, fs), l = bqC(lp, f, fs);
+      A.push(cmul([ar[k], ai[k]], cmul(h, h))); B.push(cmul([br[k], bi[k]], cmul(l, l))); F.push(f);
+    }
+    const pw = (X, lo, hi) => { let s = 0, n = 0; F.forEach((f, i) => { if (f >= lo && f <= hi) { s += X[i][0] ** 2 + X[i][1] ** 2; n++; } }); return s / Math.max(1, n); };
+    const g = Math.sqrt(pw(A, xo / 1.12, xo * 1.12) / Math.max(1e-30, pw(B, xo / 1.12, xo * 1.12)));
+    const energy = (d, pol) => { let e = 0; F.forEach((f, i) => {
+      const ph = -TAU * f * d / 1000, c = Math.cos(ph), sn = Math.sin(ph), br2 = pol * g * (B[i][0] * c - B[i][1] * sn), bi2 = pol * g * (B[i][0] * sn + B[i][1] * c);
+      e += (A[i][0] + br2) ** 2 + (A[i][1] + bi2) ** 2; }); return e; };
+    // local maxima over d per polarity; the earliest within 0.2 dB of the best
+    const peaks = [];
+    for (const pol of [1, -1]) {
+      const E = []; for (let i = 0; i <= 400; i++) E.push(energy(i * 0.05, pol));
+      E.forEach((e, i) => { if ((i === 0 || e >= E[i - 1]) && (i === 400 || e >= E[i + 1])) peaks.push({ d: i * 0.05, pol, e }); });
+    }
+    const top = Math.max(...peaks.map(p => p.e));
+    const best = peaks.filter(p => p.e >= top / 1.047).sort((x, y) => x.d - y.d)[0];
+    let early = null;
+    for (let d = -0.05; d >= -20; d -= 0.05) for (const pol of [1, -1]) { const e = energy(d, pol); if (!early || e > early.e) early = { d, pol, e }; }
+    let ideal = 0; F.forEach((f, i) => { ideal += (Math.hypot(A[i][0], A[i][1]) + g * Math.hypot(B[i][0], B[i][1])) ** 2; });
+    return { gainDb: 20 * Math.log10(g), delayMs: Math.round(best.d * 100) / 100, invert: best.pol < 0, sumDb: 10 * Math.log10(best.e / ideal),
+      needMs: early.e > best.e * 1.26 ? Math.round(-early.d * 10) / 10 : 0 };
+  }
+
   function eqCurve(filters, grid, fs) {
     const out = new Array(grid.length).fill(0);
     for (const f of filters) {
@@ -516,7 +561,7 @@ const DSP = (() => {
     return out;
   }
 
-  return { bassLimit, distortion, distLimit, DIST_PRE, varFrac, fft, sweep, impulse, argmaxAbs, spectrumAt, deconvolve, pinkNoise, logGrid, toGrid, smoothGrid, normalize, coeffs, magDb, eqCurve, target, autoFit, simulate, DEMO_CHAIN };
+  return { alignSub, bassLimit, distortion, distLimit, DIST_PRE, varFrac, fft, sweep, impulse, argmaxAbs, spectrumAt, deconvolve, pinkNoise, logGrid, toGrid, smoothGrid, normalize, coeffs, magDb, eqCurve, target, autoFit, simulate, DEMO_CHAIN };
 })();
 /*DSP-END*/
 
@@ -995,6 +1040,62 @@ function makeSample(c, kind) {
     const b = S.opt.bass, sh = DSP.coeffs('ls', b.f, b.boost / 100 * 12, 0, FS), hp = DSP.coeffs('hp', b.f / 3, 0, Math.SQRT1_2, FS);
     return grid.map(f => DSP.magDb(sh, f, FS) + 2 * DSP.magDb(hp, f, FS)); // LR4 subsonic
   }
+  // ---- subwoofer alignment: one recording, the room's speakers then this subwoofer ----
+  const ALIGN_STEP = 5; // s between sweep starts (4 s sweep + gap)
+  const volLin = db => Math.pow(Math.max(0, (db + 30) / 30), 2); // arply's volume curve
+  $('#b-align').onclick = async () => {
+    if (busy) return;
+    const am = $('#alignmsg'), say = t => { am.textContent = t; };
+    if (!micOk()) { say('No microphone on this page – it needs https (the link at the top).'); return; }
+    busy = true; await stopLevel(); stopPlay();
+    let proc = null, m = null;
+    try {
+      const f = await api('/api/fleet'), room = (f.self.room || '').toLowerCase();
+      const mains = f.peers.filter(p => p.online && p.role === 'main' && room && (p.room || '').toLowerCase() === room);
+      if (!mains.length) { say('No speaker of this room (“' + f.self.room + '”) is online.'); return; }
+      m = await ensureMic();
+      const fs = m.ac.sampleRate, chunks = [];
+      say('Comparing clocks …');
+      const off = [];
+      for (const p of mains) off.push((await api('/api/fleet/clock?id=' + encodeURIComponent(p.id))).offset_us);
+      const vols = [];
+      for (const p of mains) vols.push((await api('/api/fleet/proxy?id=' + encodeURIComponent(p.id) + '&to=volume')).db);
+      const vSub = (await api('/api/audio/volume')).db;
+      const now = (await api('/api/fleet/clock?id=' + encodeURIComponent(mains[0].id))).now_us;
+      proc = m.ac.createScriptProcessor(4096, 1, 1);
+      proc.onaudioprocess = e => chunks.push(new Float32Array(e.inputBuffer.getChannelData(0)));
+      m.src.connect(proc); proc.connect(m.mute);
+      // this subwoofer's clock: start in 2.5 s, one sweep every ALIGN_STEP
+      const t0 = now + 2500000, sweepAt = k => t0 + k * ALIGN_STEP * 1000000;
+      for (let k = 0; k < mains.length; k++)
+        await api('/api/fleet/proxy?id=' + encodeURIComponent(mains[k].id) + '&to=sweep', { channels: ['LR'], gap_ms: 500, at_us: sweepAt(k) + off[k] });
+      await api('/api/dsp/sweep', { channels: ['LR'], gap_ms: 500, at_us: sweepAt(mains.length) });
+      say('Measuring: ' + mains.map(p => p.name).join(', ') + ', then this subwoofer – please stay quiet …');
+      await progress(2.5 + (mains.length + 1) * ALIGN_STEP + 0.5);
+      m.src.disconnect(proc); proc.disconnect(); proc = null;
+      const n = chunks.reduce((a, c) => a + c.length, 0), rec = new Float32Array(n); let o = 0;
+      for (const c of chunks) { rec.set(c, o); o += c.length; }
+      const sw = DSP.sweep(fs), h = DSP.impulse(rec, sw, fs), step = Math.round(ALIGN_STEP * fs);
+      // anchor: the first speaker's direct sound; every other slot follows the plan
+      const p0 = DSP.argmaxAbs(h, 0, Math.min(h.length, Math.round((2.5 + ALIGN_STEP / 2) * fs)));
+      const pre = Math.round(0.02 * fs), len = Math.round(0.3 * fs), cut = (k, scale) => {
+        const a = new Float64Array(len); for (let i = 0; i < len; i++) a[i] = (h[p0 + k * step - pre + i] || 0) * scale; return a; };
+      const hMain = new Float64Array(len);
+      mains.forEach((p, k) => { const c = cut(k, 1 / volLin(vols[k])); for (let i = 0; i < len; i++) hMain[i] += c[i]; });
+      const r = DSP.alignSub(hMain, cut(mains.length, 1 / volLin(vSub)), fs, S.opt.sub.xo);
+      const clampTo = (v, a, b) => Math.max(a, Math.min(b, v));
+      S.opt.sub.gain = clampTo(Math.round(r.gainDb * 2) / 2, -12, 12);
+      S.opt.sub.delay = clampTo(Math.round(r.delayMs * 10) / 10, 0, 20);
+      S.opt.sub.inv = r.invert;
+      subChanged();
+      say('Level ' + fmtDb(S.opt.sub.gain) + (Math.abs(r.gainDb) > 12 ? ' (wanted ' + fmtDb(r.gainDb) + ')' : '') +
+        ', delay ' + S.opt.sub.delay.toFixed(1) + ' ms (' + Math.round(S.opt.sub.delay * 34.3) + ' cm), polarity ' + (r.invert ? 'inverted' : 'normal') +
+        '. Around the crossover the sum is ' + (-r.sumDb).toFixed(1) + ' dB short of perfect.' +
+        (r.needMs ? ' The subwoofer is farther away than the speakers: it would have to play ' + r.needMs + ' ms earlier – move it closer if you can.' : '') +
+        ' Listen, then press “Save to arply”.');
+    } catch (e) { say('That did not work: ' + (e.status === 409 ? 'a device is busy – stop AirPlay first.' : e.message)); }
+    finally { if (proc && m) { m.src.disconnect(proc); proc.disconnect(); } busy = false; }
+  };
   function renderSub() {
     const b = S.opt.sub;
     $('#subpanel').hidden = !isSub(); $('#basspanel').hidden = isSub(); $('#o-mode').disabled = isSub();

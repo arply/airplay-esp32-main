@@ -128,11 +128,13 @@ static cJSON *profile_to_json(const audio_dsp_profile_t *p,
   float load_pct;
   int32_t load_max_us;
   uint32_t load_max_frames;
-  audio_output_dsp_load(&load_pct, &load_max_us, &load_max_frames);
+  uint32_t underruns;
+  audio_output_dsp_load(&load_pct, &load_max_us, &load_max_frames, &underruns);
   cJSON *load = cJSON_AddObjectToObject(json, "load"); // since the last GET
   cJSON_AddNumberToObject(load, "avg_pct", round_to(load_pct, 0.01));
   cJSON_AddNumberToObject(load, "max_us", load_max_us);
   cJSON_AddNumberToObject(load, "max_frames", load_max_frames);
+  cJSON_AddNumberToObject(load, "underruns", underruns);
   return json;
 }
 

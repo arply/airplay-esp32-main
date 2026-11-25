@@ -127,9 +127,13 @@ enough.
       → Certificate Trust Settings). **Done in use (2026-11-24/25):** Till
       measured on the iPhone over HTTPS with the accepted warning many times;
       the trusted-profile variant was not needed.
-- [ ] Log free internal RAM / PSRAM before and after a TLS handshake while
+- [x] Log free internal RAM / PSRAM before and after a TLS handshake while
       AirPlay is playing (`heap_caps_get_free_size`). Check for audio dropouts
-      during the handshake.
+      during the handshake. **Measured 2026-11-25** (AirPlay 2 from the
+      iPhone to DUT + Arply, 6 fresh HTTPS handshakes per device in 10 s):
+      lowest internal free during a session 110 KB on DUT, 69 KB on Arply
+      (USB build), largest block 32/31 KB; playout error stayed within
+      ±2 ms, no gap, late-frame drain or servo event during the handshakes.
 - [x] Write the result into this file under “Spike results”. **Decision
       (from use):** works with the accepted warning, so per-device
       self-signed certificates (Phase 4.2) stay; the fleet CA was dropped
@@ -147,8 +151,16 @@ enough.
       `playback_task()` after resampling, operating on a float copy of the
       frame. Measure with `esp_timer_get_time()` around the block, log
       average and max µs per frame every 5 s.
-- [ ] Do it at 44.1 kHz and with 48 kHz resampling enabled, while streaming
-      AAC (AirPlay 2) and ALAC.
+- [x] Do it at 44.1 kHz and with 48 kHz resampling enabled, while streaming
+      AAC (AirPlay 2) and ALAC. **Measured 2026-11-25** with the permanent
+      `load` stats in `GET /api/dsp` (wall time of the output processing in
+      % of the audio it covered, including preemption), AirPlay 2 from the
+      iPhone: DUT (44.1 kHz, 8+7 filters + bass block) 7.9 %, 8.6 % during
+      TLS handshakes; Arply (48 kHz resampled, subwoofer LR4) 5.5 / 6.2 %;
+      worst case (10+10 filters + bass block with harmonics; subwoofer 10
+      filters + LR4 + 5 ms delay) 11.7 % and 11.3 %, slowest single call
+      2.7 ms of an 8 ms frame. Slightly over the 10 % target in the worst
+      case only; no audible problem. ALAC (AirPlay 1) not measured.
 - [x] Budget: one frame of 352 samples lasts ~8 ms. Target < 0.8 ms (10 %)
       for EQ + bass enhancement. If plain C is too slow, use
       `espressif/esp-dsp` (`dsps_biquad_f32`, S3-optimised) on de-interleaved

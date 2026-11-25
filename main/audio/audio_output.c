@@ -66,10 +66,11 @@ static volatile audio_channel_mode_t channel_mode = AUDIO_CHANNEL_STEREO;
 // after the one being sent: never less than one descriptor ahead.
 #define DMA_DESC_BYTES (I2S_DMA_FRAME_NUM * 2 * (int64_t)sizeof(int16_t))
 static portMUX_TYPE s_dma_lock = portMUX_INITIALIZER_UNLOCKED;
-static int64_t s_dma_sent;    // bytes the DMA finished sending
-static int64_t s_dma_written; // bytes accepted by i2s_channel_write()
-static int64_t s_dma_base;    // DMA bytes before the first written one
-static int64_t s_dma_sent_us; // when the last descriptor finished
+static int64_t s_dma_sent;       // bytes the DMA finished sending
+static int64_t s_dma_written;    // bytes accepted by i2s_channel_write()
+static int64_t s_dma_base;       // DMA bytes before the first written one
+static int64_t s_dma_sent_us;    // when the last descriptor finished
+static uint32_t s_dma_underruns; // the DAC ran out of data (zeros played)
 
 static bool IRAM_ATTR on_dma_sent(i2s_chan_handle_t h, i2s_event_data_t *e,
                                   void *ctx) {
@@ -86,6 +87,7 @@ static void dma_count_written(size_t bytes) {
   portENTER_CRITICAL(&s_dma_lock);
   if (s_dma_written + s_dma_base < s_dma_sent + DMA_DESC_BYTES) {
     s_dma_base = s_dma_sent + DMA_DESC_BYTES - s_dma_written; // was idle
+    s_dma_underruns++; // a dropout while playing, or the start after idle
   }
   s_dma_written += (int64_t)bytes;
   portEXIT_CRITICAL(&s_dma_lock);
@@ -207,7 +209,9 @@ bool audio_output_process(int16_t *buf, size_t frames) {
 }
 
 void audio_output_dsp_load(float *avg_pct, int32_t *max_us,
-                           uint32_t *max_frames) {
+                           uint32_t *max_frames, uint32_t *underruns) {
+  *underruns = s_dma_underruns;
+  s_dma_underruns = 0;
   *avg_pct = s_load_audio_us
                  ? 100.0f * (float)s_load_us / (float)s_load_audio_us
                  : 0.0f;

@@ -105,9 +105,10 @@ uint32_t audio_output_get_hardware_latency_us(void);
 int64_t audio_output_next_play_us(void);
 
 /** Output processing (channel mode, DSP) since the last call: wall time in %
- * of the audio it processed, and the slowest call. Resets. */
+ * of the audio it processed, the slowest call, and how often the DAC ran
+ * out of data (a dropout, or once per start after idle). Resets. */
 void audio_output_dsp_load(float *avg_pct, int32_t *max_us,
-                           uint32_t *max_frames);
+                           uint32_t *max_frames, uint32_t *underruns);
 
 /**
  * Cycle the output channel mode: STEREO -> LEFT -> RIGHT -> MONO -> STEREO.

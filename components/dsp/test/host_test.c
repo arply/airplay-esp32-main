@@ -245,7 +245,8 @@ static void test_param_change_is_smooth(void) {
   free(buf);
 }
 
-/* PBE: 50 Hz in, fc 100 Hz, amount 0.5 (prototype: -12 / -21 dB). */
+/* PBE: 50 Hz in, fc 100 Hz, amount 0.5. The fundamental drops with the
+ * main high-pass; consecutive harmonics (2f, 3f, 4f) carry the pitch. */
 static void test_pbe(void) {
   const size_t n = 3 * 44100;
   int16_t *buf = malloc(n * 4);
@@ -261,10 +262,47 @@ static void test_pbe(void) {
   const double base = 0.5;
   check_near("PBE: 50 Hz fundamental (dB)",
              db(chan_amp(buf, from, n - from, 0, 50) / base), -12.3, 0.5);
-  check_near("PBE: 100 Hz harmonic (dB)",
-             db(chan_amp(buf, from, n - from, 0, 100) / base), -12.0, 1.5);
-  check_near("PBE: 200 Hz harmonic (dB)",
-             db(chan_amp(buf, from, n - from, 0, 200) / base), -21.0, 1.5);
+  check_near("PBE: 100 Hz, 2nd harmonic (dB)",
+             db(chan_amp(buf, from, n - from, 0, 100) / base), -13.7, 1.0);
+  check_near("PBE: 150 Hz, 3rd harmonic (dB)",
+             db(chan_amp(buf, from, n - from, 0, 150) / base), -13.3, 1.0);
+  check_near("PBE: 200 Hz, 4th harmonic (dB)",
+             db(chan_amp(buf, from, n - from, 0, 200) / base), -17.0, 1.0);
+  free(buf);
+}
+
+/* Two notes an octave apart (bass + kick): most of what the enhancement
+ * adds should be harmonics rather than sum/difference tones: at least twice
+ * the share of the old full-wave rectifier (13 %). */
+static void test_pbe_intermodulation(void) {
+  const size_t n = 4 * 44100;
+  int16_t *buf = malloc(n * 4);
+  for (size_t i = 0; i < n; i++) {
+    const double t = (double)i / FS;
+    const int16_t v = (int16_t)lrint(
+        0.25 * 32767 * (sin(2 * M_PI * 40 * t) + sin(2 * M_PI * 75 * t)));
+    buf[2 * i] = buf[2 * i + 1] = v;
+  }
+  dsp_init(44100);
+  dsp_config_t c = flat();
+  c.pbe.on = true;
+  c.pbe.fc = 100;
+  c.pbe.amount = 0.5f;
+  dsp_set_config(&c);
+  process_frames(buf, n);
+  double harm = 0;
+  double band = 0;
+  for (int f = 81; f <= 500; f++) {
+    const double a = chan_amp(buf, 44100, 3 * 44100, 0, f);
+    band += a * a;
+    for (int k = 2; k <= 6; k++) {
+      if (f == 40 * k || f == 75 * k) {
+        harm += a * a;
+      }
+    }
+  }
+  check(harm / band > 0.26, "PBE: harmonic share, 40 + 75 Hz (%)",
+        100 * harm / band, 33, 7);
   free(buf);
 }
 
@@ -355,6 +393,7 @@ int main(void) {
   test_chain_level();
   test_param_change_is_smooth();
   test_pbe();
+  test_pbe_intermodulation();
   test_clamp();
   test_sweep_matches_closed_form();
   test_pink_level();

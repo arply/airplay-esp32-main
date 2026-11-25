@@ -19,23 +19,67 @@
 
 #include "dsp_biquad.h"
 
-#define NUM_SLOTS  3
-#define SLOT_NONE  0xFFu
-#define CHUNK      128
-#define PBE_STAGES 6
-#define PBE_GAIN   2.5f
+#define NUM_SLOTS 3
+#define SLOT_NONE 0xFFu
+#define CHUNK     128
+
+/* Bass enhancement (psychoacoustic "missing fundamental"): the bass the
+ * speaker cannot play is replaced by its 2nd, 3rd and 4th harmonics, from
+ * which the ear reconstructs the fundamental. Consecutive harmonics matter:
+ * their spacing is the pitch the ear hears (2f, 4f alone, as a full-wave
+ * rectifier makes them, sounds an octave too high).
+ *
+ * Per band: normalise to the envelope, then Chebyshev polynomials, since
+ * T_n(cos t) = cos(n t) gives each harmonic at a fixed level whatever the
+ * signal level. Any nonlinearity also makes sum tones of notes that sound
+ * together (bass + kick); splitting the bass an octave below the cutoff
+ * keeps most such pairs in different bands. */
+#define PBE_W2      1.0f
+#define PBE_W3      0.7f
+#define PBE_W4      0.45f
+#define PBE_GAIN    0.8f  // harmonics gain at amount 1.0
+#define PBE_RELEASE 0.1   // envelope release, seconds
+#define PBE_FLOOR   1e-5f // below ~-100 dBFS: no harmonics
+// Everything after the bass low-pass lives below 5 fc (<= 750 Hz), so the
+// rest of the bass low-pass, the band split, the harmonics and their filters
+// run at fs / PBE_DECIM and are interpolated back up. The first low-pass
+// section at full rate is the anti-alias filter (12 dB/oct from <= 150 Hz:
+// > 60 dB down at the new Nyquist, where music has little energy anyway).
+#define PBE_DECIM 4
 
 // Soft limiter knee at -1 dBFS.
 #define LIMIT_T 0.89125094f
 
-enum { PBE_HP_MAIN, PBE_LP1, PBE_LP2, PBE_HP2, PBE_HP3, PBE_LP3 };
+#define PBE_BANDS 2
+enum {
+  PBE_HP_MAIN,   // main path: what the speaker can play
+  PBE_LP1,       // bass band (LR4 low-pass at fc; 1st section at
+  PBE_LP2,       //   full rate, 2nd at the low rate) ...
+  PBE_SPLIT_LP1, // ... split into fc/4..fc/2 ...
+  PBE_SPLIT_LP2, //
+  PBE_SPLIT_HP1, // ... and fc/2..fc
+  PBE_SPLIT_HP2, //
+  PBE_HP2,       // harmonics band: high-pass at fc ...
+  PBE_HP3,       //
+  PBE_LP3,       // ... low-pass at 5 fc
+  PBE_STAGES
+};
+
+typedef struct {
+  float env; // peak envelope
+  float inv; // 1 / env, kept without a division per sample
+} pbe_env_t;
 
 typedef struct {
   dsp_coeffs_t k[DSP_NUM_CH][DSP_MAX_FILTERS_PER_CH];
   dsp_state_t s[DSP_NUM_CH][DSP_MAX_FILTERS_PER_CH];
   uint8_t n[DSP_NUM_CH];
-  dsp_coeffs_t pbe_k[PBE_STAGES];
+  dsp_coeffs_t pbe_k[PBE_STAGES]; // split and harmonic stages at fs/DECIM
   dsp_state_t pbe_s[DSP_NUM_CH][PBE_STAGES];
+  pbe_env_t pbe_env[DSP_NUM_CH][PBE_BANDS];
+  float pbe_y[DSP_NUM_CH][2]; // last two low-rate outputs, for interpolation
+  uint8_t pbe_phase;          // position within the decimation period
+  float pbe_release;          // per-low-rate-sample envelope decay factor
   float pbe_gain;
   bool pbe_on;
   float preamp;  // linear, includes the int16 -> float scale
@@ -114,17 +158,22 @@ static void build(runtime_t *rt, const dsp_config_t *cfg) {
   rt->pbe_on = cfg->pbe.on;
   if (rt->pbe_on) {
     const double fc = cfg->pbe.fc;
-    const double bw = M_SQRT1_2; // Butterworth sections
-    dsp_biquad_design(DSP_FILTER_HIGH_PASS, fc, 0, bw, s_fs,
-                      &rt->pbe_k[PBE_HP_MAIN]);
-    dsp_biquad_design(DSP_FILTER_LOW_PASS, fc, 0, bw, s_fs,
-                      &rt->pbe_k[PBE_LP1]);
-    rt->pbe_k[PBE_LP2] = rt->pbe_k[PBE_LP1];
-    dsp_biquad_design(DSP_FILTER_HIGH_PASS, fc, 0, bw, s_fs,
-                      &rt->pbe_k[PBE_HP2]);
-    rt->pbe_k[PBE_HP3] = rt->pbe_k[PBE_HP2];
-    dsp_biquad_design(DSP_FILTER_LOW_PASS, 4 * fc, 0, bw, s_fs,
-                      &rt->pbe_k[PBE_LP3]);
+    const double bw = M_SQRT1_2; // Butterworth sections; two make an LR4
+    dsp_coeffs_t *k = rt->pbe_k;
+    dsp_biquad_design(DSP_FILTER_HIGH_PASS, fc, 0, bw, s_fs, &k[PBE_HP_MAIN]);
+    dsp_biquad_design(DSP_FILTER_LOW_PASS, fc, 0, bw, s_fs, &k[PBE_LP1]);
+    const double low_fs = s_fs / PBE_DECIM;
+    dsp_biquad_design(DSP_FILTER_LOW_PASS, fc, 0, bw, low_fs, &k[PBE_LP2]);
+    dsp_biquad_design(DSP_FILTER_LOW_PASS, fc / 2, 0, bw, low_fs,
+                      &k[PBE_SPLIT_LP1]);
+    k[PBE_SPLIT_LP2] = k[PBE_SPLIT_LP1];
+    dsp_biquad_design(DSP_FILTER_HIGH_PASS, fc / 2, 0, bw, low_fs,
+                      &k[PBE_SPLIT_HP1]);
+    k[PBE_SPLIT_HP2] = k[PBE_SPLIT_HP1];
+    dsp_biquad_design(DSP_FILTER_HIGH_PASS, fc, 0, bw, low_fs, &k[PBE_HP2]);
+    k[PBE_HP3] = k[PBE_HP2];
+    dsp_biquad_design(DSP_FILTER_LOW_PASS, 5 * fc, 0, bw, low_fs, &k[PBE_LP3]);
+    rt->pbe_release = (float)exp(-1.0 / (PBE_RELEASE * low_fs));
     rt->pbe_gain = cfg->pbe.amount * PBE_GAIN;
   }
   h = hash_byte(h, rt->pbe_on);
@@ -188,6 +237,9 @@ void dsp_init(uint32_t sample_rate) {
 static void reset_state(runtime_t *rt) {
   memset(rt->s, 0, sizeof(rt->s));
   memset(rt->pbe_s, 0, sizeof(rt->pbe_s));
+  memset(rt->pbe_env, 0, sizeof(rt->pbe_env));
+  memset(rt->pbe_y, 0, sizeof(rt->pbe_y));
+  rt->pbe_phase = 0;
 }
 
 /* Promote a pending slot, carrying the filter history over when only
@@ -205,6 +257,9 @@ static runtime_t *acquire(void) {
     if (from->structure == to->structure && !s_was_idle) {
       memcpy(to->s, from->s, sizeof(to->s));
       memcpy(to->pbe_s, from->pbe_s, sizeof(to->pbe_s));
+      memcpy(to->pbe_env, from->pbe_env, sizeof(to->pbe_env));
+      memcpy(to->pbe_y, from->pbe_y, sizeof(to->pbe_y));
+      to->pbe_phase = from->pbe_phase;
     } else {
       reset_state(to);
     }
@@ -245,37 +300,103 @@ static inline int16_t to_int16(float x, uint32_t r) {
   return (int16_t)i;
 }
 
-/* Both outputs at once, so every stage runs as an interleaved pair. */
+/* Envelope-normalised Chebyshev harmonics of one band sample. Instant
+ * attack, exponential release; 1/env follows the release by multiplication,
+ * so the only division is on attack (a slow library call on this FPU). */
+static inline float harmonics(float b, pbe_env_t *st, float release,
+                              float inv_release) {
+  const float a = fabsf(b);
+  float e = st->env * release;
+  float inv = st->inv * inv_release;
+  if (a >= e) {
+    e = a;
+    inv = a > PBE_FLOOR ? 1.0f / a : 0.0f;
+  }
+  st->env = e;
+  st->inv = inv;
+  if (e < PBE_FLOOR) {
+    return 0.0f;
+  }
+  const float u = b * inv; // |u| <= 1
+  const float u2 = u * u;
+  const float t2 = 2.0f * u2 - 1.0f;
+  const float t3 = u * (4.0f * u2 - 3.0f);
+  const float t4 = 8.0f * u2 * (u2 - 1.0f) + 1.0f;
+  return e * (PBE_W2 * t2 + PBE_W3 * t3 + PBE_W4 * t4);
+}
+
+static void run_pair(runtime_t *rt, int stage, float *l, float *r, size_t n) {
+  dsp_biquad_run2(&rt->pbe_k[stage], &rt->pbe_s[DSP_CH_L][stage], l,
+                  &rt->pbe_k[stage], &rt->pbe_s[DSP_CH_R][stage], r, n);
+}
+
+/* One sample through one low-rate stage (TDF-II, as dsp_biquad_run). */
+static inline float step(const dsp_coeffs_t *k, dsp_state_t *st, float x) {
+  const float y = k->b0 * x + st->z1;
+  st->z1 = k->b1 * x - k->a1 * y + st->z2;
+  st->z2 = k->b2 * x - k->a2 * y;
+  return y;
+}
+
+/* One low-rate sample of the harmonic path for channel @p ch. */
+static float harmonic_sample(runtime_t *rt, int ch, float bass, float rel,
+                             float inv_rel) {
+  const dsp_coeffs_t *k = rt->pbe_k;
+  dsp_state_t *st = rt->pbe_s[ch];
+  bass = step(&k[PBE_LP2], &st[PBE_LP2], bass);
+  float lo = step(&k[PBE_SPLIT_LP1], &st[PBE_SPLIT_LP1], bass);
+  lo = step(&k[PBE_SPLIT_LP2], &st[PBE_SPLIT_LP2], lo);
+  float hi = step(&k[PBE_SPLIT_HP1], &st[PBE_SPLIT_HP1], bass);
+  hi = step(&k[PBE_SPLIT_HP2], &st[PBE_SPLIT_HP2], hi);
+  float y = harmonics(lo, &rt->pbe_env[ch][0], rel, inv_rel) +
+            harmonics(hi, &rt->pbe_env[ch][1], rel, inv_rel);
+  y = step(&k[PBE_HP2], &st[PBE_HP2], y);
+  y = step(&k[PBE_HP3], &st[PBE_HP3], y);
+  return step(&k[PBE_LP3], &st[PBE_LP3], y);
+}
+
+/* Both outputs at once: the full-rate filters run as interleaved pairs, the
+ * harmonic path at fs / PBE_DECIM with linear interpolation back up. */
 static void run_pbe(runtime_t *rt, size_t n) {
-  dsp_state_t *sl = rt->pbe_s[DSP_CH_L];
-  dsp_state_t *sr = rt->pbe_s[DSP_CH_R];
-  float *hl = s_pbe_tmp[DSP_CH_L];
-  float *hr = s_pbe_tmp[DSP_CH_R];
-  memcpy(hl, s_work[DSP_CH_L], n * sizeof(float));
-  memcpy(hr, s_work[DSP_CH_R], n * sizeof(float));
-  static const int harmonic_path[2] = {PBE_LP1, PBE_LP2};
-  for (int i = 0; i < 2; i++) {
-    const int st = harmonic_path[i];
-    dsp_biquad_run2(&rt->pbe_k[st], &sl[st], hl, &rt->pbe_k[st], &sr[st], hr,
-                    n);
+  float *bass[DSP_NUM_CH] = {s_pbe_tmp[DSP_CH_L], s_pbe_tmp[DSP_CH_R]};
+  for (int ch = 0; ch < DSP_NUM_CH; ch++) {
+    memcpy(bass[ch], s_work[ch], n * sizeof(float));
   }
+  run_pair(rt, PBE_LP1, bass[0], bass[1], n);
+
+  const float rel = rt->pbe_release;
+  const float inv_rel = 1.0f / rel;
+  const float frac = 1.0f / PBE_DECIM;
+  uint8_t phase = rt->pbe_phase;
   for (size_t i = 0; i < n; i++) {
-    hl[i] = fabsf(hl[i]); // full-wave rectifier: harmonics
-    hr[i] = fabsf(hr[i]);
+    if (++phase == PBE_DECIM) {
+      phase = 0;
+      for (int ch = 0; ch < DSP_NUM_CH; ch++) {
+        rt->pbe_y[ch][0] = rt->pbe_y[ch][1];
+        rt->pbe_y[ch][1] = harmonic_sample(rt, ch, bass[ch][i], rel, inv_rel);
+      }
+    }
+    // The interpolated harmonics overwrite the bass buffer in place.
+    const float t = (float)(phase + 1) * frac;
+    for (int ch = 0; ch < DSP_NUM_CH; ch++) {
+      const float *y = rt->pbe_y[ch];
+      bass[ch][i] = y[0] + (y[1] - y[0]) * t;
+    }
   }
-  static const int band_path[3] = {PBE_HP2, PBE_HP3, PBE_LP3};
-  for (int i = 0; i < 3; i++) {
-    const int st = band_path[i];
-    dsp_biquad_run2(&rt->pbe_k[st], &sl[st], hl, &rt->pbe_k[st], &sr[st], hr,
-                    n);
+  rt->pbe_phase = phase;
+  for (int ch = 0; ch < DSP_NUM_CH; ch++) {
+    for (int s = PBE_LP2; s < PBE_STAGES; s++) {
+      dsp_state_t *z = &rt->pbe_s[ch][s];
+      z->z1 = fabsf(z->z1) < 1e-15f ? 0.0f : z->z1; // denormal flush
+      z->z2 = fabsf(z->z2) < 1e-15f ? 0.0f : z->z2;
+    }
   }
-  dsp_biquad_run2(&rt->pbe_k[PBE_HP_MAIN], &sl[PBE_HP_MAIN], s_work[DSP_CH_L],
-                  &rt->pbe_k[PBE_HP_MAIN], &sr[PBE_HP_MAIN], s_work[DSP_CH_R],
-                  n);
+
+  run_pair(rt, PBE_HP_MAIN, s_work[DSP_CH_L], s_work[DSP_CH_R], n);
   const float g = rt->pbe_gain;
   for (size_t i = 0; i < n; i++) {
-    s_work[DSP_CH_L][i] += g * hl[i];
-    s_work[DSP_CH_R][i] += g * hr[i];
+    s_work[DSP_CH_L][i] += g * bass[DSP_CH_L][i];
+    s_work[DSP_CH_R][i] += g * bass[DSP_CH_R][i];
   }
 }
 

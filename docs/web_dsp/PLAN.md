@@ -601,6 +601,21 @@ name with spaces gives an unusable `.local` name — pre-existing, Phase 8.
 Host test result: 50 Hz −12.3 dB, 100 Hz −12.1 dB, 200 Hz −20.8 dB
 (prototype: −12 / −21).
 
+**Rework (2026-11-25, after "the bass enhancement is shit"):** the
+prototype's full-wave rectifier makes only even harmonics (2f, 4f), whose
+spacing the ear hears as the pitch — an octave too high — and it smears two
+simultaneous notes into sum/difference tones (two-tone test 45 + 62 Hz: only
+15 % of the added energy were harmonics, the 107 Hz sum tone 11 dB above
+them). Now: the bass band is split an octave below the cutoff, each band is
+normalised to its envelope and fed through Chebyshev T2/T3/T4 (weights
+1 / 0.7 / 0.45), giving consecutive harmonics 2f/3f/4f at fixed ratios. Two
+notes an octave apart: 33 % harmonics (old 13 %); notes closer than the
+split stay the inherent weak spot of any per-sample method. The harmonic
+path runs at fs/4 with linear interpolation (images < −76 dB). CPU on the
+board: bass enhancement alone 509 µs/frame, 6 + 6 filters + it 737 µs
+(9.2 %), worst case 10 + 10 + it 886 µs (11 %, old 809 µs). Host tests:
+50 Hz −12.4, 100 Hz −13.7, 150 Hz −13.3, 200 Hz −17.0 dB.
+
 **Detail:** the prototype's WebAudio `Q` of `20·log10(1/√2)` dB *is* linear
 Q = 1/√2 (WebAudio's LP/HP Q is in dB), so all sections are plain
 Butterworth biquads. The prototype's `oversample='2x'` on `|x|` is not

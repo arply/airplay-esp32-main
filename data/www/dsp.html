@@ -748,21 +748,28 @@ function makeSample(c, kind) {
   // A fresh AudioContext after getUserMedia, with the analysis chain ending
   // in a muted gain at the destination: Safari only pulls audio through
   // nodes that reach the output, otherwise the microphone reads as silence.
+  // resume() is not awaited: without a tap (page load) iOS keeps it pending
+  // until the first touch, see the pointerdown listener below.
   async function micChain(stream) {
     const ac = new (window.AudioContext || window.webkitAudioContext)();
-    await ac.resume();
+    ac.resume().catch(() => {});
     const src = ac.createMediaStreamSource(stream), mute = ac.createGain();
     mute.gain.value = 0; mute.connect(ac.destination);
     return { ac, src, mute };
   }
-  // One microphone for the page, started by the first level check or
-  // measurement and kept open, so the meter at the right of the chart always
-  // shows whether it works. iOS ends the track in the background; the next
-  // action opens it again.
+  // One microphone for the page, asked for when the page opens and kept
+  // open, so the meter at the right of the chart always shows whether it
+  // works. iOS ends the track in the background; the next action opens it
+  // again.
   const MIC_LO = -90, MIC_HI = -10, micPos = db => Math.max(0, Math.min(100, (db - MIC_LO) / (MIC_HI - MIC_LO) * 100)) + '%';
-  let mic = null;
-  async function ensureMic() {
-    if (mic && mic.stream.getAudioTracks().some(t => t.readyState === 'live')) { await mic.ac.resume(); return mic; }
+  let mic = null, micP = null;
+  function ensureMic() {
+    if (mic && mic.stream.getAudioTracks().some(t => t.readyState === 'live')) return mic.ac.resume().then(() => mic);
+    if (!micP) micP = openMic().finally(() => { micP = null; }); // one prompt, also when load and a tap overlap
+    return micP;
+  }
+  document.addEventListener('pointerdown', () => { if (mic && mic.ac.state !== 'running') mic.ac.resume().catch(() => {}); });
+  async function openMic() {
     if (mic) mic.ac.close().catch(() => {});
     const stream = await getMic(), { ac, src, mute } = await micChain(stream), an = ac.createAnalyser();
     an.fftSize = 2048; src.connect(an); an.connect(mute);
@@ -806,12 +813,14 @@ function makeSample(c, kind) {
       $('#micfloor').style.bottom = micPos(m.floor); $('#micfloor').hidden = false;
       setVol(db, false);
       await api('/api/dsp/noise', { on: true, channels: ['LR'] }); noise = true;
+      // 0.5 dB every 250 ms (2 dB/s, −30 → 0 dB in 15 s): steps too small to
+      // hear; the meter lags ~0.3 s, so it overshoots by well under 1 dB
       while (!run.stop) {
-        await sleep(400); // volume request, arply's ramp and the meter's smoothing
+        await sleep(250);
         const snr = m.db - m.floor;
         if (snr >= LEVEL_MARGIN || m.peak > -6 || db >= 0) break;
         msg('Raising the volume … ' + Math.max(0, snr).toFixed(0) + ' of ' + LEVEL_MARGIN + ' dB above the background noise');
-        db = Math.min(0, db + 2); setVol(db, false);
+        db = Math.min(0, db + 0.5); setVol(db, false);
       }
       const snr = m.db - m.floor;
       if (!run.stop) setVol(db, true);
@@ -1156,6 +1165,7 @@ function makeSample(c, kind) {
   const host = location.hostname;
   const httpsLink = location.protocol === 'https:' ? '' : ` For live measuring with the microphone open <a href="https://${host}/dsp">https://${host}/dsp</a>.`;
   renderAll();
+  if (micOk()) ensureMic().catch(() => {}); // asks right away; denied -> asked again on "Set level"
   api('/api/audio/volume').then(j => showVol(j.db)).catch(() => showVol(-15));
   api('/api/dsp').then(j => {
     devOk = true; applyDevice(j); previewing = !!j.previewing; renderAll();

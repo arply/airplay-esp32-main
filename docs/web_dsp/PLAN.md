@@ -720,13 +720,14 @@ day):**
 block, show it subtly at the right of the spectrum; the level check should
 set the volume itself, from the lowest step up; manual volume only in
 Step 3"):**
-- One microphone chain per page, opened by the first level check or
-  measurement and kept open; a 4 px vertical meter in the chart's right
+- One microphone chain per page, asked for as soon as the page opens
+  (Till) and kept open; a 4 px vertical meter in the chart's right
   margin shows its level (−90…−10 dBFS) with a mark at the background
   noise, red near clipping. iOS ends the track in the background; the next
   action opens it again.
 - "1. Set level": 1 s of background, then arply's noise from volume −30 dB
-  upwards in 2 dB steps every 0.4 s until 15 dB above the background
+  upwards in 0.5 dB steps every 250 ms (2 dB steps were audible jumps)
+  until 15 dB above the background
   (Till's choice; 10 dB measured the response well but left the distortion
   check "too quiet to tell" in a quiet room), the microphone nears
   clipping, or full volume.

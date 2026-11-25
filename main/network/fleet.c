@@ -420,6 +420,9 @@ static bool probe(const cached_peer_t *c, fleet_peer_t *out) {
         }
         out->bass = cJSON_IsTrue(cJSON_GetObjectItem(j, "bass"));
         out->playing = cJSON_IsTrue(cJSON_GetObjectItem(j, "playing"));
+        if (cJSON_IsNumber(v = cJSON_GetObjectItem(j, "xo"))) {
+          out->xo = (uint16_t)v->valuedouble;
+        }
         if (cJSON_IsString(v = cJSON_GetObjectItem(j, "wifi"))) {
           out->wifi = wifi_from(v->valuestring);
         }
@@ -603,6 +606,41 @@ static void apply_room(void) {
   audio_dsp_set_room(s_role == FLEET_ROLE_BASS, hp);
 }
 
+void fleet_note_peer_play(const char *id, bool playing, uint16_t xo) {
+  if (!s_lock) {
+    return;
+  }
+  xSemaphoreTake(s_lock, portMAX_DELAY);
+  fleet_peer_t *p = find_peer(id);
+  if (p) {
+    p->playing = playing;
+    p->xo = xo;
+  }
+  xSemaphoreGive(s_lock);
+  if (p) {
+    apply_room();
+  }
+}
+
+/* Our play state changed: tell the room's devices directly. */
+static void notify_room(bool playing) {
+  uint32_t ips[FLEET_MAX_PEERS];
+  int n = 0;
+  xSemaphoreTake(s_lock, portMAX_DELAY);
+  for (int i = 0; i < s_peer_count && s_room[0]; i++) {
+    const fleet_peer_t *p = &s_peers[i];
+    if (p->online && p->ip && strcasecmp(p->room, s_room) == 0) {
+      ips[n++] = p->ip;
+    }
+  }
+  xSemaphoreGive(s_lock);
+  const uint16_t xo =
+      s_role == FLEET_ROLE_BASS ? (uint16_t)lroundf(audio_dsp_saved_xo()) : 0;
+  for (int i = 0; i < n; i++) {
+    fleet_clock_send_play(ips[i], s_id, playing, xo);
+  }
+}
+
 static void fleet_task(void *arg) {
   (void)arg;
   bool was_playing = false;
@@ -618,13 +656,17 @@ static void fleet_task(void *arg) {
     if (!woken && playing == was_playing && idle_ms < ROUND_MS) {
       continue;
     }
-    woken = woken || playing != was_playing;
+    const bool play_changed = playing != was_playing;
+    woken = woken || play_changed;
     was_playing = playing;
     idle_ms = 0;
     if (woken) {
       s_win_rounds = 0;
     }
     announce();
+    if (play_changed) {
+      notify_room(playing);
+    }
     browse();
     probe_cached();
     xSemaphoreTake(s_lock, portMAX_DELAY);
@@ -730,6 +772,7 @@ static cJSON *peer_json(const fleet_peer_t *p, bool with_age) {
   cJSON_AddNumberToObject(o, "calibrated", p->calibrated);
   cJSON_AddBoolToObject(o, "bass", p->bass);
   cJSON_AddBoolToObject(o, "playing", p->playing);
+  cJSON_AddNumberToObject(o, "xo", p->xo); // subwoofer crossover, 0 = none
   cJSON_AddStringToObject(o, "wifi", WIFI_NAMES[p->wifi & 3]);
   if (with_age) {
     cJSON_AddBoolToObject(o, "online", p->online);

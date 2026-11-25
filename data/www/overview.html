@@ -53,6 +53,7 @@ li{border-bottom:1px solid var(--line2)}
 .st{font-size:13px;color:var(--mut)}
 .dot{width:8px;height:8px;border-radius:50%;background:var(--ok);flex:none}.dot.off{background:none;border:2px solid var(--errtx)}
 .on{color:var(--oktx);font-weight:500}.off-t{color:var(--errtx);font-weight:500}
+.st .pl{display:inline-flex;align-items:center;gap:4px;color:var(--acctx);font-weight:500}
 .tags{display:flex;gap:6px;flex:none}
 .tag{font:500 11px ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.8px;text-transform:uppercase;padding:3px 7px;border-radius:6px;background:var(--accbg);color:var(--acctx)}
 .tag.hub{background:var(--ink);color:var(--bg)}
@@ -133,15 +134,25 @@ function status(d) {
   const since = d.age_s == null ? 'not seen since restart' : (d.age_s > 86400 ? 'since ' + day(new Date(Date.now() - d.age_s * 1000)) : 'since ' + hhmm(new Date(Date.now() - d.age_s * 1000)));
   return '<span class="dot off" aria-hidden="true"></span><span class="off-t">Offline</span><span>· ' + since + '</span>';
 }
-function row(d, hubId) {
+// what plays and who takes the bass: a speaker hands the bass below the
+// crossover to its room's subwoofer only while that one plays
+function role(d, sub) {
+  if (!d.online) return '';
+  let t = d.playing ? `<span>·</span><span class="pl">${bars}Playing</span>` : '';
+  if (d.role === 'bass') t += d.xo ? `<span>· subwoofer below ${d.xo} Hz</span>` : '';
+  else if (sub && sub.online && sub.xo) t += sub.playing ? `<span>· bass below ${sub.xo} Hz from ${esc(sub.name)}</span>` : `<span>· full range, ${esc(sub.name)} is not playing</span>`;
+  return t;
+}
+function row(d, hubId, sub) {
   const tag = d.role === 'bass' ? 'Bass' : CH[d.ch] || 'Stereo';
   return `<li><a class="dev" href="${url(d)}"><span class="n"><span><strong>${esc(d.name)}</strong><span class="mono">${esc(d.host)}.local</span></span>` +
-    `<span class="st">${status(d)}</span></span><span class="tags"><span class="tag">${tag}</span>${d.id === hubId ? '<span class="tag hub">Hub</span>' : ''}</span>${chev}</a></li>`;
+    `<span class="st">${status(d)}${role(d, sub)}</span></span><span class="tags"><span class="tag">${tag}</span>${d.id === hubId ? '<span class="tag hub">Hub</span>' : ''}</span>${chev}</a></li>`;
 }
 function summary(devs) {
   const ch = devs.filter(d => d.role !== 'bass').map(d => d.ch), bass = devs.some(d => d.role === 'bass');
   let s = ch.includes('left') && ch.includes('right') ? 'Stereo pair' : [...new Set(ch.map(c => CH[c] || 'Stereo'))].join(' + ') || 'Subwoofer';
-  if (bass && ch.length) s += ' with bass';
+  const sub = devs.find(d => d.role === 'bass' && d.xo);
+  if (bass && ch.length) s += ' with bass' + (sub ? ' · crossover at ' + sub.xo + ' Hz' : '');
   if (devs.some(d => d.bass)) s += ' · bass boost on';
   return s;
 }
@@ -161,7 +172,7 @@ function roomCard(name, devs, hubId) {
     `<button class="btn" data-act="rename" data-room="${esc(name)}">Rename room</button>`;
   const vol = online.length ? `<label class="vol">Volume<input type="range" min="-30" max="0" step="0.5" data-room="${esc(name)}"><output>–</output></label>` : '';
   return `<section class="panel room"><div class="head"><span class="eyebrow">Room</span><h2>${esc(name)}</h2><p class="sub">${esc(summary(devs))}</p>` +
-    `<div class="chips">${chips.join('')}</div>${vol}</div><ul>${devs.map(d => row(d, hubId)).join('')}</ul><div class="acts">${acts}</div></section>`;
+    `<div class="chips">${chips.join('')}</div>${vol}</div><ul>${devs.map(d => row(d, hubId, devs.find(x => x.role === 'bass'))).join('')}</ul><div class="acts">${acts}</div></section>`;
 }
 
 let F = null, byId = {}, quietUntil = 0;

@@ -5,13 +5,15 @@
  * @brief Clock comparison between arply devices over UDP.
  */
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #include "esp_err.h"
 
 #define FLEET_CLOCK_PORT 7123
 
-/** Answer clock requests from other devices. Call once the network is up. */
+/** Answer clock requests (and play notes) from other devices. Call once the
+ * network is up. */
 void fleet_clock_start(void);
 
 /**
@@ -19,4 +21,8 @@ void fleet_clock_start(void);
  * byte order): peer time = own time + @p offset_us, from the exchange with
  * the shortest round trip @p rtt_us. Blocks ~0.4 s.
  */
+/** Tell the device at @p ip that device @p id started/stopped playing. */
+void fleet_clock_send_play(uint32_t ip, const char *id, bool playing,
+                           uint16_t xo);
+
 esp_err_t fleet_clock_measure(uint32_t ip, int64_t *offset_us, int32_t *rtt_us);

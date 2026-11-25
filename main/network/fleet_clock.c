@@ -11,6 +11,8 @@
 
 #include "fleet_clock.h"
 
+#include "fleet.h"
+
 #include <string.h>
 
 #include "esp_log.h"
@@ -21,14 +23,24 @@
 
 static const char *TAG = "fleet_clock";
 
-#define MAGIC     0x4B435941u // "AYCK"
-#define EXCHANGES 32
+#define MAGIC      0x4B435941u // "AYCK"
+#define PLAY_MAGIC 0x4C505941u // "AYPL"
+#define EXCHANGES  32
 
 typedef struct __attribute__((packed)) {
   uint32_t magic;
   uint32_t seq;
   int64_t t_dev; // the answering device's esp_timer time, us
 } pkt_t;
+
+/* "I started/stopped playing": sent to the devices of the own room, so a
+ * speaker hands its bass to the subwoofer at once, not a round later. */
+typedef struct __attribute__((packed)) {
+  uint32_t magic;
+  char id[13];
+  uint8_t playing;
+  uint16_t xo;
+} play_pkt_t;
 
 static void server_task(void *arg) {
   (void)arg;
@@ -42,13 +54,19 @@ static void server_task(void *arg) {
     return;
   }
   for (;;) {
-    pkt_t p;
+    union {
+      pkt_t clock;
+      play_pkt_t play;
+    } p;
     struct sockaddr_in from;
     socklen_t len = sizeof(from);
     const int n = recvfrom(s, &p, sizeof(p), 0, (struct sockaddr *)&from, &len);
-    if (n == (int)sizeof(p) && p.magic == MAGIC) {
-      p.t_dev = esp_timer_get_time();
-      sendto(s, &p, sizeof(p), 0, (struct sockaddr *)&from, len);
+    if (n == (int)sizeof(p.clock) && p.clock.magic == MAGIC) {
+      p.clock.t_dev = esp_timer_get_time();
+      sendto(s, &p.clock, sizeof(p.clock), 0, (struct sockaddr *)&from, len);
+    } else if (n == (int)sizeof(p.play) && p.play.magic == PLAY_MAGIC) {
+      p.play.id[sizeof(p.play.id) - 1] = '\0';
+      fleet_note_peer_play(p.play.id, p.play.playing != 0, p.play.xo);
     }
   }
 }
@@ -56,6 +74,21 @@ static void server_task(void *arg) {
 void fleet_clock_start(void) {
   // Above the fleet task, so a reply is not held up by a browse.
   xTaskCreate(server_task, "fleet_clock", 3072, NULL, 5, NULL);
+}
+
+void fleet_clock_send_play(uint32_t ip, const char *id, bool playing,
+                           uint16_t xo) {
+  int s = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+  if (s < 0) {
+    return;
+  }
+  play_pkt_t p = {.magic = PLAY_MAGIC, .playing = playing, .xo = xo};
+  strlcpy(p.id, id, sizeof(p.id));
+  struct sockaddr_in to = {.sin_family = AF_INET,
+                           .sin_port = htons(FLEET_CLOCK_PORT),
+                           .sin_addr.s_addr = ip};
+  sendto(s, &p, sizeof(p), 0, (struct sockaddr *)&to, sizeof(to));
+  close(s);
 }
 
 esp_err_t fleet_clock_measure(uint32_t ip, int64_t *offset_us,

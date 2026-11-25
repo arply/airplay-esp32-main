@@ -54,6 +54,10 @@ typedef enum {
 /** Announce this device and start browsing. Call once mDNS is up. */
 void fleet_start(void);
 
+/** A peer said it started/stopped playing (fleet_clock.c): update the table
+ * and re-apply the room (subwoofer high-pass) at once. */
+void fleet_note_peer_play(const char *id, bool playing, uint16_t xo);
+
 /** True if a device other than this one uses @p host (case-insensitive). */
 bool fleet_host_in_use(const char *host);
 

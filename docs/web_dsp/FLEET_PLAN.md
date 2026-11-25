@@ -285,6 +285,17 @@ its subwoofer is in the subwoofer's mDNS TXT record.
   −10.7, 180–300 −33.7 dB; Arply 20–45 −23.8, 60–90 −7.7, 120–180 −0.8,
   mids 0.0 dB. Arply switched 1 s after DUT started playing, back 2 s
   after it stopped.
+- **Play notes (later the same day):** a speaker learned of its
+  subwoofer's play state only in its own 10 s round (measured: no switch
+  within 4 s), so at a start the bass doubled and after a stop it was
+  missing for up to 10 s. A device whose play state changes now sends a
+  UDP note (port 7123, "AYPL": id, playing, xo) to the online devices of
+  its room, which update the peer and re-apply the room at once: DUT took
+  the high-pass 1.0 s after Arply started (its 1 s poll) and dropped it
+  0.1 s after Arply stopped. The overview shows per device "Playing" and
+  who takes the bass ("bass below 130 Hz from Arply" / "full range, Arply
+  is not playing" / "subwoofer below 130 Hz"), and the crossover in the
+  room summary (`xo` is in `/api/fleet` now).
 - Bypass (A/B on the page) drops EQ and bass block but keeps the crossover,
   its level, polarity and delay (Till); checked on DUT: same low-pass with
   bypass on.

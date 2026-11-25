@@ -291,3 +291,45 @@ its subwoofer is in the subwoofer's mDNS TXT record.
 - **Open:** a real subwoofer and AirPlay multi-room listening; with USB audio on a speaker
   the subwoofer gets nothing, so a playing subwoofer would still take the
   speaker's bass (only if it plays something else at the same time).
+
+---
+
+## F6 — Time base spike (done 2026-11-25)
+
+Question: can sweeps on several devices start at one moment precisely
+enough (~1 ms, the crossover to a subwoofer) for a joint calibration, and
+does what such a measurement finds hold for AirPlay playback?
+
+- **Clock comparison** (`fleet_clock.c`, UDP 7123): 32 exchanges, the one
+  with the shortest round trip; RTT 4–6 ms over Wi-Fi, offsets repeat
+  within ~0.6 ms. `GET /api/fleet/clock?id=` on any device.
+- **Scheduled sweeps** (`POST /api/dsp/sweep {"at_us"}`): first with the
+  AirPlay model (average DMA occupancy + 5 ms): ±3 ms, the descriptor
+  phase. Then `audio_output_next_play_us()` (bytes written vs bytes the
+  DMA has sent, on_sent ISR; base = one ring after enable, ≥ one
+  descriptor after an idle writer — the driver's queue of DESC_NUM-1
+  freed descriptors): two sweeps on one device land within **0.01 ms**.
+  The real DAC delay varies 41.3–45.7 ms (DUT, 44.1 kHz) and 37.9–40.6 ms
+  (Arply, 48 kHz).
+- **Joint, Mac microphone** (`scratchpad/f6/joint.py`): DUT, then Arply
+  6 s later, 8 runs: Arply **+6.89 ms** after plan, **std 0.21 ms**
+  (acoustic path and speaker delay to the microphone, plus any bias of
+  the clock comparison).
+- **AirPlay check** (Music app on the Mac to DUT + Arply, test file with
+  sweeps on L at 20/40 s and R at 26/46 s, DUT previewed to "left",
+  Arply to "right", both flat): Arply **+5.9…+6.0 ms** in two sessions —
+  within ~1 ms of the scheduled measurement. A calibration from
+  scheduled sweeps holds for AirPlay playback. In the first seconds after
+  a start the offset still moves (PTP settling: ptp_gap 38–80 ms on
+  Arply); stop/play in quick succession made DUT miss its first seconds.
+- **Start servo:** a late start now shrinks 3 samples per frame in the
+  first 30 s (DUT: -6 ms back inside 1.5 ms after ~1 s, 261 trims). Early
+  starts still stretch 1 sample per 4 frames (Arply +14 ms took 16 s): the
+  output buffers hold only one spare sample.
+
+**Next (joint calibration itself):** on the subwoofer's calibration page,
+"Align with the speakers": the subwoofer compares clocks with the room's
+speakers, schedules a sweep on each (proxy target for `/api/dsp/sweep`)
+and on itself, the phone records once; the page derives level, delay and
+polarity at the crossover from the measured responses with the LR4
+filters applied, and saves them as the subwoofer settings.

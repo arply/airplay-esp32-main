@@ -96,9 +96,15 @@ Board pins live under *Board Configuration → Pin Configuration*, LED behaviour
 1. **Power up** via USB-C
 2. Connect to the WiFi network **`arply setup`**
 3. A captive portal opens (IP: `192.168.4.1`)
-4. Set a name for the speaker and select your home WiFi
-5. The device restarts and joins your network
+4. Select your home WiFi and enter its password
+5. The page confirms the password and shows where to find the speaker (`<name>.local`); the setup hotspot switches off once the phone leaves it
 6. Open any music app, tap the AirPlay icon, select the speaker
+
+Name, room and everything else are set later at `<name>.local`.
+
+**Set up again** (e.g. new router): plug in, unplug within 10 s, three times in a row. On the third start the LED breathes and **`arply setup`** is back, even if the old network is in range; it switches off after 10 minutes without a client.
+
+**Factory reset:** Settings page → System → Factory Reset erases every setting, including all saved Wi-Fi passwords, and restarts arply like new.
 
 Settings are stored in NVS and survive reboots **and firmware flashes**. If the WiFi connection keeps failing, the device falls back to setup mode automatically.
 

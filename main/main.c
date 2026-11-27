@@ -26,6 +26,7 @@
 #include "esp_heap_caps.h"
 #include "esp_ota_ops.h"
 #include "esp_timer.h"
+#include "esp_wifi.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -88,44 +89,34 @@ static void start_airplay_services(void) {
   ESP_LOGI(TAG, "AirPlay ready");
 }
 
+/* The captive-portal DNS and the breathing LED follow the setup hotspot,
+ * which can be on next to a working network (power-cycle setup). */
 static void network_monitor_task(void *pvParameters) {
   (void)pvParameters;
   bool had_network = wifi_is_connected();
-  bool dns_running = !had_network;
-
-  led_set_network(had_network);
-
-  // Start captive portal DNS if no network yet
-  if (dns_running) {
-    dns_server_start(AP_IP_ADDR);
-  }
+  bool dns_running = false;
 
   while (1) {
-    vTaskDelay(pdMS_TO_TICKS(2000));
-
     bool has_network = wifi_is_connected();
+    wifi_mode_t mode;
+    bool ap_on = esp_wifi_get_mode(&mode) == ESP_OK && mode == WIFI_MODE_APSTA;
 
-    if (has_network == had_network) {
-      continue;
+    if (ap_on != dns_running) {
+      if (ap_on) {
+        dns_server_start(AP_IP_ADDR);
+      } else {
+        dns_server_stop();
+      }
+      dns_running = ap_on;
     }
+    led_set_network(has_network && !ap_on);
 
-    led_set_network(has_network);
-
-    if (has_network) {
+    if (has_network && !had_network) {
       ESP_LOGI(TAG, "Network up");
       start_airplay_services();
-      if (dns_running) {
-        dns_server_stop();
-        dns_running = false;
-      }
-    } else {
-      if (!dns_running) {
-        dns_server_start(AP_IP_ADDR);
-        dns_running = true;
-      }
     }
-
     had_network = has_network;
+    vTaskDelay(pdMS_TO_TICKS(2000));
   }
 }
 

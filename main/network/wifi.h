@@ -44,6 +44,22 @@ esp_err_t wifi_get_ip_str(char *ip_str, size_t len);
  */
 esp_err_t wifi_scan(wifi_ap_record_t **ap_list, uint16_t *ap_count);
 
+typedef enum {
+  WIFI_TRY_IDLE,
+  WIFI_TRY_RUNNING,
+  WIFI_TRY_OK,     // joined, credentials saved
+  WIFI_TRY_FAILED, // back on the saved network, if any
+} wifi_try_state_t;
+
+/**
+ * Try to join @p ssid; the credentials are saved only once it works.
+ * Follow the outcome with wifi_try_state(). ESP_ERR_INVALID_STATE while
+ * a try is still running.
+ */
+esp_err_t wifi_try_credentials(const char *ssid, const char *password);
+
+wifi_try_state_t wifi_try_state(void);
+
 /**
  * Disconnect and stop WiFi
  */

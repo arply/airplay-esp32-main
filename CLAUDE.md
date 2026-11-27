@@ -100,7 +100,7 @@ components/
 - **Component structure**: Each component has its own `CMakeLists.txt` with `idf_component_register()`.
 - **SPIFFS**: `data/` contents are flashed to SPIFFS by `-t uploadfs`, which `-t upload` does **not** do. `data/www/` holds the web UI (index, logs, speedtest).
 - **Audio pipeline**: AudioReceiver (rtsp) → decoder → AudioBuffer → AudioOutput (I2S). Buffered streams (AAC) use deep jitter buffer; realtime streams (ALAC) use low-latency UDP with early/late timing thresholds.
-- **Status LED**: One full breath at boot, breathing while searching for a network, off when idle, steady on when playing. Driven by a dedicated task in `main/led.c` — not a FreeRTOS timer, whose small stack overflows on the end-of-cycle handover.
+- **Status LED**: One full breath at boot, breathing while searching for a network or while the setup hotspot is on, off when idle, steady on when playing. Driven by a dedicated task in `main/led.c` — not a FreeRTOS timer, whose small stack overflows on the end-of-cycle handover.
 
 ## Code Quality
 

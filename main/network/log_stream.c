@@ -7,6 +7,7 @@
  */
 
 #include "log_stream.h"
+#include "web_server.h"
 
 #include "esp_heap_caps.h"
 #include "esp_log.h"
@@ -225,7 +226,7 @@ esp_err_t log_stream_register(httpd_handle_t server) {
       .handler = ws_log_handler,
       .is_websocket = true,
   };
-  esp_err_t err = httpd_register_uri_handler(server, &ws_uri);
+  esp_err_t err = web_server_register_lan_only(server, &ws_uri);
   if (err != ESP_OK) {
     ESP_LOGE("log_stream", "Failed to register /ws/logs: %s",
              esp_err_to_name(err));

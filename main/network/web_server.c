@@ -18,6 +18,7 @@
 #include <dirent.h>
 
 #include "esp_wifi.h"
+#include "nvs_flash.h"
 
 #include "settings.h"
 #include "led.h"
@@ -75,6 +76,39 @@ static bool via_setup_ap(httpd_req_t *req) {
   return local.sin_addr.s_addr == ap.ip.addr;
 }
 
+typedef struct {
+  esp_err_t (*handler)(httpd_req_t *req);
+  void *user_ctx;
+} lan_only_t;
+
+static esp_err_t lan_only_handler(httpd_req_t *req) {
+  const lan_only_t *h = req->user_ctx;
+  if (via_setup_ap(req)) {
+    httpd_resp_send_err(req, HTTPD_403_FORBIDDEN, "Wi-Fi setup only");
+    return ESP_FAIL;
+  }
+  req->user_ctx = h->user_ctx;
+  return h->handler(req);
+}
+
+esp_err_t web_server_register_lan_only(httpd_handle_t server,
+                                       const httpd_uri_t *uri) {
+  lan_only_t *h = malloc(sizeof(*h)); // lives as long as the server
+  if (!h) {
+    return ESP_ERR_NO_MEM;
+  }
+  h->handler = uri->handler;
+  h->user_ctx = uri->user_ctx;
+  httpd_uri_t wrapped = *uri;
+  wrapped.handler = lan_only_handler;
+  wrapped.user_ctx = h;
+  esp_err_t err = httpd_register_uri_handler(server, &wrapped);
+  if (err != ESP_OK) {
+    free(h);
+  }
+  return err;
+}
+
 bool web_server_redirect_to_https(httpd_req_t *req) {
   if (req->handle != s_server || via_setup_ap(req)) {
     return false; // already HTTPS, or a captive-portal client
@@ -111,6 +145,12 @@ static bool asked_for_overview(httpd_req_t *req) {
 }
 
 static esp_err_t root_handler(httpd_req_t *req) {
+  // The captive portal shows only the Wi-Fi setup (see index.html).
+  if (via_setup_ap(req) && !strstr(req->uri, "?setup")) {
+    httpd_resp_set_status(req, "302 Found");
+    httpd_resp_set_hdr(req, "Location", "/?setup");
+    return httpd_resp_send(req, NULL, 0);
+  }
   if (web_server_redirect_to_https(req)) {
     return ESP_OK;
   }
@@ -277,7 +317,7 @@ static esp_err_t speedtest_upload_handler(httpd_req_t *req) {
 static esp_err_t captive_portal_redirect(httpd_req_t *req) {
   // Redirect to the configuration page
   httpd_resp_set_status(req, "302 Found");
-  httpd_resp_set_hdr(req, "Location", "http://192.168.4.1/");
+  httpd_resp_set_hdr(req, "Location", "http://192.168.4.1/?setup");
   httpd_resp_send(req, NULL, 0);
   return ESP_OK;
 }
@@ -316,9 +356,24 @@ static esp_err_t captive_catchall_handler(httpd_req_t *req) {
   return ESP_OK;
 }
 
+/* Index of @p ssid among the saved networks, or -1. */
+static int saved_index(const settings_wifi_network_t *nets, int n,
+                       const char *ssid) {
+  for (int i = 0; i < n; i++) {
+    if (strcmp(nets[i].ssid, ssid) == 0) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+/* Saved networks come with "known": true (never their password). */
 static esp_err_t wifi_scan_handler(httpd_req_t *req) {
   wifi_ap_record_t *ap_list = NULL;
   uint16_t ap_count = 0;
+  settings_wifi_network_t saved[SETTINGS_MAX_WIFI_NETWORKS];
+  int n_saved = 0;
+  settings_get_wifi_networks(saved, &n_saved);
 
   cJSON *json = cJSON_CreateObject();
   esp_err_t err = wifi_scan(&ap_list, &ap_count);
@@ -330,6 +385,9 @@ static esp_err_t wifi_scan_handler(httpd_req_t *req) {
       cJSON_AddStringToObject(net, "ssid", (char *)ap_list[i].ssid);
       cJSON_AddNumberToObject(net, "rssi", ap_list[i].rssi);
       cJSON_AddNumberToObject(net, "channel", ap_list[i].primary);
+      cJSON_AddBoolToObject(
+          net, "known",
+          saved_index(saved, n_saved, (char *)ap_list[i].ssid) >= 0);
       cJSON_AddItemToArray(networks, net);
     }
     cJSON_AddItemToObject(json, "networks", networks);
@@ -349,54 +407,95 @@ static esp_err_t wifi_scan_handler(httpd_req_t *req) {
   return ESP_OK;
 }
 
+/* Tries the network and answers at once; the page follows the outcome on
+ * /api/wifi/status. Saved only once it works, so no restart. Without a
+ * "password", a saved network is joined with its stored one. */
 static esp_err_t wifi_config_handler(httpd_req_t *req) {
-  char content[512];
-  int ret = httpd_req_recv(req, content, sizeof(content) - 1);
-  if (ret <= 0) {
-    httpd_resp_send_500(req);
-    return ESP_FAIL;
+  char *body = web_server_recv_body(req, 512);
+  cJSON *json = body ? cJSON_Parse(body) : NULL;
+  free(body);
+  const char *ssid = cJSON_GetStringValue(cJSON_GetObjectItem(json, "ssid"));
+  const char *pass =
+      cJSON_GetStringValue(cJSON_GetObjectItem(json, "password"));
+  settings_wifi_network_t saved[SETTINGS_MAX_WIFI_NETWORKS];
+  int n_saved = 0;
+  if (ssid && !pass) {
+    settings_get_wifi_networks(saved, &n_saved);
+    int i = saved_index(saved, n_saved, ssid);
+    pass = i >= 0 ? saved[i].password : NULL;
   }
-  content[ret] = '\0';
-
-  cJSON *json = cJSON_Parse(content);
-  if (!json) {
-    httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid JSON");
-    return ESP_FAIL;
+  if (!ssid || !ssid[0] || strlen(ssid) > 32 || !pass || strlen(pass) > 64) {
+    cJSON_Delete(json);
+    return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
+                               pass ? "Invalid SSID" : "Password needed");
   }
-
-  cJSON *ssid_json = cJSON_GetObjectItem(json, "ssid");
-  cJSON *password_json = cJSON_GetObjectItem(json, "password");
-
-  cJSON *response = cJSON_CreateObject();
-  if (ssid_json && cJSON_IsString(ssid_json)) {
-    const char *ssid = cJSON_GetStringValue(ssid_json);
-    const char *password = password_json && cJSON_IsString(password_json)
-                               ? cJSON_GetStringValue(password_json)
-                               : "";
-
-    esp_err_t err = settings_set_wifi_credentials(ssid, password);
-    if (err == ESP_OK) {
-      cJSON_AddBoolToObject(response, "success", true);
-      ESP_LOGI(TAG, "WiFi credentials saved. We are restarting...");
-      // Schedule restart
-      vTaskDelay(pdMS_TO_TICKS(1000));
-      esp_restart();
-    } else {
-      cJSON_AddBoolToObject(response, "success", false);
-      cJSON_AddStringToObject(response, "error", esp_err_to_name(err));
-    }
-  } else {
-    cJSON_AddBoolToObject(response, "success", false);
-    cJSON_AddStringToObject(response, "error", "Invalid SSID");
-  }
-
-  char *json_str = cJSON_Print(response);
+  // Answer before the try: a client on the current network loses it.
   httpd_resp_set_type(req, "application/json");
-  httpd_resp_send(req, json_str, HTTPD_RESP_USE_STRLEN);
-  free(json_str);
+  httpd_resp_sendstr(req, "{\"success\":true}");
+  esp_err_t err = wifi_try_credentials(ssid, pass);
+  if (err != ESP_OK) {
+    ESP_LOGW(TAG, "Wi-Fi try not started: %s", esp_err_to_name(err));
+  }
   cJSON_Delete(json);
-  cJSON_Delete(response);
+  return ESP_OK;
+}
 
+/* The saved networks, most recently used first (names only). */
+static esp_err_t wifi_saved_handler(httpd_req_t *req) {
+  settings_wifi_network_t saved[SETTINGS_MAX_WIFI_NETWORKS];
+  int n = 0;
+  settings_get_wifi_networks(saved, &n);
+  cJSON *json = cJSON_CreateObject();
+  cJSON *list = cJSON_AddArrayToObject(json, "networks");
+  for (int i = 0; i < n; i++) {
+    cJSON_AddItemToArray(list, cJSON_CreateString(saved[i].ssid));
+  }
+  char *str = cJSON_PrintUnformatted(json);
+  cJSON_Delete(json);
+  httpd_resp_set_type(req, "application/json");
+  httpd_resp_sendstr(req, str);
+  free(str);
+  return ESP_OK;
+}
+
+/* {"ssid": "..."}: forget a saved network and its password. The current
+ * connection stays until the next restart. */
+static esp_err_t wifi_forget_handler(httpd_req_t *req) {
+  char *body = web_server_recv_body(req, 128);
+  cJSON *json = body ? cJSON_Parse(body) : NULL;
+  free(body);
+  const char *ssid = cJSON_GetStringValue(cJSON_GetObjectItem(json, "ssid"));
+  esp_err_t err =
+      ssid ? settings_forget_wifi_network(ssid) : ESP_ERR_INVALID_ARG;
+  cJSON_Delete(json);
+  if (err != ESP_OK) {
+    return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
+                               err == ESP_ERR_NOT_FOUND ? "Not saved"
+                                                        : esp_err_to_name(err));
+  }
+  httpd_resp_set_type(req, "application/json");
+  return httpd_resp_sendstr(req, "{\"success\":true}");
+}
+
+static esp_err_t wifi_status_handler(httpd_req_t *req) {
+  static const char *const STATES[] = {"idle", "trying", "ok", "failed"};
+  char ip[16] = "";
+  char host[33];
+  char name[65];
+  wifi_get_ip_str(ip, sizeof(ip));
+  settings_get_host_name(host, sizeof(host));
+  settings_get_device_name(name, sizeof(name));
+  cJSON *json = cJSON_CreateObject();
+  cJSON_AddStringToObject(json, "state", STATES[wifi_try_state()]);
+  cJSON_AddStringToObject(json, "ip", ip);
+  cJSON_AddStringToObject(json, "host", host);
+  cJSON_AddStringToObject(json, "name", name);
+  char *str = cJSON_PrintUnformatted(json);
+  cJSON_Delete(json);
+  httpd_resp_set_type(req, "application/json");
+  httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+  httpd_resp_sendstr(req, str);
+  free(str);
   return ESP_OK;
 }
 
@@ -739,6 +838,21 @@ static esp_err_t system_restart_handler(httpd_req_t *req) {
   return ESP_OK;
 }
 
+/* Erases every setting (saved Wi-Fi networks, name, room, DSP, pairings,
+ * certificate) and restarts as a new device with the setup hotspot. */
+static esp_err_t system_factory_reset_handler(httpd_req_t *req) {
+  httpd_resp_set_type(req, "application/json");
+  httpd_resp_sendstr(req, "{\"success\":true}");
+  ESP_LOGW(TAG, "Factory reset requested via web interface");
+  vTaskDelay(pdMS_TO_TICKS(500));
+  esp_err_t err = nvs_flash_erase();
+  if (err != ESP_OK) {
+    ESP_LOGE(TAG, "Factory reset failed: %s", esp_err_to_name(err));
+  }
+  esp_restart();
+  return ESP_OK;
+}
+
 /* ================================================================== */
 /*  SPIFFS File Management API                                         */
 /* ================================================================== */
@@ -907,15 +1021,28 @@ static esp_err_t fs_list_handler(httpd_req_t *req) {
 /*  EQ Page + API  (only when TAS58xx DAC is configured)               */
 /* ================================================================== */
 
-/* Pages and APIs served on both HTTP and HTTPS. */
-static const httpd_uri_t SHARED_URIS[] = {
+/* Served on both HTTP and HTTPS, also to setup-hotspot clients. */
+static const httpd_uri_t SETUP_URIS[] = {
     {.uri = "/", .method = HTTP_GET, .handler = root_handler},
     {.uri = "/favicon.ico", .method = HTTP_GET, .handler = favicon_handler},
-    {.uri = "/arply.crt", .method = HTTP_GET, .handler = cert_handler},
     {.uri = "/api/wifi/scan", .method = HTTP_GET, .handler = wifi_scan_handler},
     {.uri = "/api/wifi/config",
      .method = HTTP_POST,
      .handler = wifi_config_handler},
+    {.uri = "/api/wifi/status",
+     .method = HTTP_GET,
+     .handler = wifi_status_handler},
+};
+
+/* Pages and APIs served on both HTTP and HTTPS, on the LAN only. */
+static const httpd_uri_t SHARED_URIS[] = {
+    {.uri = "/arply.crt", .method = HTTP_GET, .handler = cert_handler},
+    {.uri = "/api/wifi/saved",
+     .method = HTTP_GET,
+     .handler = wifi_saved_handler},
+    {.uri = "/api/wifi/forget",
+     .method = HTTP_POST,
+     .handler = wifi_forget_handler},
     {.uri = "/api/device/name",
      .method = HTTP_POST,
      .handler = device_name_handler},
@@ -952,6 +1079,9 @@ static const httpd_uri_t SHARED_URIS[] = {
     {.uri = "/api/system/restart",
      .method = HTTP_POST,
      .handler = system_restart_handler},
+    {.uri = "/api/system/factory-reset",
+     .method = HTTP_POST,
+     .handler = system_factory_reset_handler},
     {.uri = "/api/fs/upload",
      .method = HTTP_POST,
      .handler = fs_upload_handler},
@@ -978,6 +1108,10 @@ static const httpd_uri_t HTTP_ONLY_URIS[] = {
     {.uri = "/api/speedtest/upload",
      .method = HTTP_POST,
      .handler = speedtest_upload_handler},
+};
+
+/* Captive-portal probes, for setup-hotspot clients. */
+static const httpd_uri_t CAPTIVE_URIS[] = {
     {.uri = "/hotspot-detect.html",
      .method = HTTP_GET,
      .handler = captive_apple_handler},
@@ -1017,13 +1151,14 @@ int web_server_register_shared(httpd_handle_t server) {
         {.uri = "/speedtest", .method = HTTP_GET, .handler = to_http_handler},
     };
     for (size_t i = 0; i < 2; i++) {
-      httpd_register_uri_handler(server, &to_http[i]);
+      web_server_register_lan_only(server, &to_http[i]);
     }
   }
+  for (size_t i = 0; i < sizeof(SETUP_URIS) / sizeof(SETUP_URIS[0]); i++) {
+    n += httpd_register_uri_handler(server, &SETUP_URIS[i]) == ESP_OK;
+  }
   for (size_t i = 0; i < sizeof(SHARED_URIS) / sizeof(SHARED_URIS[0]); i++) {
-    if (httpd_register_uri_handler(server, &SHARED_URIS[i]) == ESP_OK) {
-      n++;
-    }
+    n += web_server_register_lan_only(server, &SHARED_URIS[i]) == ESP_OK;
   }
   return n + web_dsp_register(server) + fleet_register_handlers(server) +
          online_update_register(server);
@@ -1053,7 +1188,10 @@ esp_err_t web_server_start(uint16_t port) {
   web_server_register_shared(s_server);
   for (size_t i = 0; i < sizeof(HTTP_ONLY_URIS) / sizeof(HTTP_ONLY_URIS[0]);
        i++) {
-    httpd_register_uri_handler(s_server, &HTTP_ONLY_URIS[i]);
+    web_server_register_lan_only(s_server, &HTTP_ONLY_URIS[i]);
+  }
+  for (size_t i = 0; i < sizeof(CAPTIVE_URIS) / sizeof(CAPTIVE_URIS[0]); i++) {
+    httpd_register_uri_handler(s_server, &CAPTIVE_URIS[i]);
   }
   log_stream_register(s_server);
 

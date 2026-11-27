@@ -16,6 +16,8 @@
 #include "esp_heap_caps.h"
 #include "esp_https_server.h"
 #include "esp_log.h"
+#include "mbedtls/net_sockets.h"
+#include "mbedtls/ssl.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "settings.h"
@@ -46,13 +48,23 @@ static void https_event_handler(void *arg, esp_event_base_t base, int32_t id,
                                 void *data) {
   (void)arg;
   (void)base;
-  (void)data;
   if (id == HTTPS_SERVER_EVENT_ON_CONNECTED) {
     log_heap("TLS session up");
   } else if (id == HTTPS_SERVER_EVENT_DISCONNECTED) {
     log_heap("TLS session closed");
   } else if (id == HTTPS_SERVER_EVENT_ERROR) {
-    ESP_LOGW(TAG, "TLS error (handshake rejected or aborted)");
+    // Browsers drop idle connections (reset) and refuse the self-signed
+    // certificate until it is trusted: both normal, not errors.
+    const esp_https_server_last_error_t *e = data;
+    const int code = e ? abs(e->esp_tls_error_code) : 0;
+    if (code == -MBEDTLS_ERR_NET_CONN_RESET) {
+      ESP_LOGD(TAG, "A browser dropped its connection");
+    } else if (code == -MBEDTLS_ERR_SSL_FATAL_ALERT_MESSAGE) {
+      ESP_LOGI(TAG, "A browser refused the certificate (until it is trusted)");
+    } else {
+      ESP_LOGW(TAG, "TLS error: %s (mbedtls -0x%04x)",
+               e ? esp_err_to_name(e->last_error) : "?", code);
+    }
   }
 }
 
@@ -108,14 +120,23 @@ static esp_err_t start(void) {
     return err;
   }
 
+  // The stack logs each of those as an error (and every handshake as info);
+  // the event handler above tells them apart instead. esp-tls-mbedtls is
+  // loud again while the online update talks to arply.de.
+  esp_log_level_set("esp_https_server", ESP_LOG_NONE);
+  esp_log_level_set("esp-tls-mbedtls", ESP_LOG_NONE);
+  esp_log_level_set("httpd", ESP_LOG_ERROR);
+  esp_log_level_set("httpd_txrx", ESP_LOG_ERROR);
+  esp_log_level_set("httpd_ws", ESP_LOG_ERROR);
+
   const httpd_uri_t mictest_uri = {
       .uri = "/mictest", .method = HTTP_GET, .handler = mictest_page_handler};
-  httpd_register_uri_handler(s_server, &mictest_uri);
+  web_server_register_lan_only(s_server, &mictest_uri);
 
   const httpd_uri_t mictest_log_uri = {.uri = "/api/mictest/log",
                                        .method = HTTP_POST,
                                        .handler = mictest_log_handler};
-  httpd_register_uri_handler(s_server, &mictest_log_uri);
+  web_server_register_lan_only(s_server, &mictest_log_uri);
 
   web_server_register_shared(s_server);
 

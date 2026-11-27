@@ -1,114 +1,107 @@
 <!DOCTYPE html><html lang='en'><head>
 <meta charset='UTF-8'>
 <meta name='viewport' content='width=device-width,initial-scale=1,viewport-fit=cover'>
-<meta name='theme-color' content='#f5f5f7'>
+<meta name='theme-color' content='#f2f2f7'>
 <meta name='apple-mobile-web-app-capable' content='yes'>
 <title>arply</title>
+<script>if(location.search.indexOf('setup')>=0)document.documentElement.className='setup';</script>
 <style>
 :root{
-  --bg:#f5f5f7;
-  --card:#fff;
-  --ink:#1d1d1f;
-  --ink-2:#6e6e73;
-  --ink-3:#86868b;
-  --line:#e5e5ea;
-  --field:#fff;
-  --field-line:#d2d2d7;
-  --accent:#0071e3;
-  --accent-hi:#0077ed;
-  --ok:#1d8a4e;
-  --ok-bg:#e7f5ec;
-  --err:#d70015;
-  --err-bg:#ffeceb;
-  --info-bg:#eef4fd;
-  --fill:#e8e8ed;
-  --fill-hi:#dedee3;
+  --bg:#f2f2f7;--card:#fff;--ink:#1d1d1f;--ink-2:#6e6e73;--ink-3:#8a8a8e;--ink-4:#c4c4c7;
+  --line:#e5e5ea;--field:#fff;--field-line:#d2d2d7;--accent:#0071e3;--accent-hi:#0077ed;
+  --ok:#1d8a4e;--ok-bg:#e7f5ec;--err:#d70015;--err-bg:#ffeceb;--info-bg:#eef4fd;
+  --fill:#e8e8ed;--fill-hi:#dedee3;
 }
 *{box-sizing:border-box;margin:0;padding:0}
 html{-webkit-text-size-adjust:100%}
 body{
   font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','SF Pro Display','Helvetica Neue',Helvetica,Arial,sans-serif;
-  background:var(--bg);color:var(--ink);
-  min-height:100vh;padding:0 20px calc(48px + env(safe-area-inset-bottom));
-  font-size:15px;line-height:1.47;letter-spacing:-0.01em;
-  -webkit-font-smoothing:antialiased;
+  background:var(--bg);color:var(--ink);min-height:100vh;
+  padding:0 16px calc(48px + env(safe-area-inset-bottom));
+  font-size:16px;line-height:1.4;letter-spacing:-0.01em;-webkit-font-smoothing:antialiased;
 }
-.wrap{max-width:520px;margin:0 auto}
+.wrap{max-width:560px;margin:0 auto}
+[hidden]{display:none!important}
+a{color:var(--accent)}
+.muted{color:var(--ink-3)}
 
 /* ---- header ---- */
-.header{text-align:center;padding:56px 0 28px}
-/* The original wordmark from arply.de as a mask, so it takes the text colour
-   in light and dark mode. */
+.header{text-align:center;padding:44px 0 24px}
 .logo{width:132px;height:40px;background:var(--ink);-webkit-mask:url(data:image/png;base64,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) center/contain no-repeat;mask:url(data:image/png;base64,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) center/contain no-repeat;display:block;margin:0 auto 14px}
-.header p{color:var(--ink-3);font-size:15px;letter-spacing:0}
+.header p{color:var(--ink-3);font-size:14px;letter-spacing:0}
 
-/* ---- status ---- */
-.status-bar{
-  background:var(--fill);color:var(--ink-2);
-  border-radius:14px;padding:13px 18px;margin-bottom:30px;
-  text-align:center;font-size:14px;font-weight:500;
-  display:flex;align-items:center;justify-content:center;gap:9px;
-}
-.status-bar::before{
-  content:'';width:8px;height:8px;border-radius:50%;
-  background:var(--ink-3);flex:none;
-}
-.status-bar.ok{background:var(--ok-bg);color:var(--ok)}
-.status-bar.ok::before{background:var(--ok)}
-.status-bar.err{background:var(--err-bg);color:var(--err)}
-.status-bar.err::before{background:var(--err)}
+/* ---- page title ---- */
+.top{height:44px;display:flex;align-items:center;padding-top:6px}
+.setup .top{display:none}
+.back{display:inline-flex;align-items:center;gap:6px;color:var(--accent);text-decoration:none;font-size:17px}
+.back::before{content:'';width:10px;height:10px;border:solid currentColor;border-width:0 0 2.5px 2.5px;transform:rotate(45deg);margin-left:4px}
+h1{font-size:32px;font-weight:700;letter-spacing:-.025em;margin:2px 4px 20px}
 
-/* ---- cards ---- */
-.card{
-  background:var(--card);border-radius:18px;
-  padding:22px;margin-bottom:16px;
-  box-shadow:0 1px 2px rgba(0,0,0,.04),0 4px 16px rgba(0,0,0,.04);
+/* ---- grouped lists, like the iPhone settings ---- */
+.gt{font-size:13px;color:var(--ink-2);text-transform:uppercase;letter-spacing:.03em;margin:0 16px 7px;display:flex;justify-content:space-between;align-items:baseline}
+.gt button{background:none;border:none;color:var(--accent);font:inherit;text-transform:none;letter-spacing:0;font-size:15px;cursor:pointer}
+.gn{font-size:13px;color:var(--ink-3);margin:-16px 16px 24px;line-height:1.45}
+.group{background:var(--card);border-radius:14px;overflow:hidden;margin-bottom:24px}
+.row{
+  display:flex;align-items:center;gap:12px;min-height:48px;padding:8px 16px;position:relative;
+  width:100%;background:var(--card);border:none;color:var(--ink);font:inherit;text-align:left;text-decoration:none;
 }
-.card h2{
-  font-size:19px;font-weight:600;letter-spacing:-0.02em;
-  margin-bottom:18px;color:var(--ink);
-}
-.card .sub{color:var(--ink-2);font-size:14px;margin:-10px 0 16px}
+.row+.row::before{content:'';position:absolute;top:0;right:0;left:16px;border-top:1px solid var(--line)}
+.ics .row+.row::before{left:58px}
+.row .t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row .v{color:var(--ink-3);max-width:62%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:right;font-variant-numeric:tabular-nums}
+a.row::after{content:'';width:8px;height:8px;border:solid var(--ink-4);border-width:2px 2px 0 0;transform:rotate(45deg);flex:none;margin-right:2px}
+a.row,button.row{cursor:pointer;-webkit-tap-highlight-color:transparent}
+a.row:active,button.row:active{background:var(--fill)}
+.row.danger{color:var(--err)}
+.row.act{color:var(--accent)}
+.row .forget{background:none;border:none;color:var(--err);font:inherit;cursor:pointer;padding:4px 0}
+.row.sel .v{color:var(--accent);font-weight:600}
+.ic{width:30px;height:30px;border-radius:7px;background:var(--c,#8e8e93);display:grid;place-items:center;flex:none}
+.ic svg{width:19px;height:19px;fill:none;stroke:#fff;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 
-/* ---- form ---- */
+/* controls inside rows */
+.row select{
+  appearance:none;-webkit-appearance:none;border:none;font:inherit;color:var(--ink-3);cursor:pointer;
+  background:transparent url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 14' fill='none' stroke='%238a8a8e' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2 5l3-3 3 3M2 9l3 3 3-3'/%3E%3C/svg%3E") no-repeat right center/9px;
+  padding-right:18px;text-align:right;text-align-last:right;max-width:62%;
+}
+.row select:focus{outline:none;color:var(--ink)}
+.row input.in{border:none;background:none;font:inherit;color:var(--ink-3);text-align:right;flex:1;min-width:0}
+.row input.in:focus{outline:none;color:var(--ink)}
+.row input[type=range]{flex:1;min-width:0;accent-color:var(--accent);height:28px;cursor:pointer}
+.sw{appearance:none;-webkit-appearance:none;width:51px;height:31px;border-radius:31px;background:var(--fill-hi);position:relative;cursor:pointer;transition:background .2s;flex:none}
+.sw::after{content:'';position:absolute;top:2px;left:2px;width:27px;height:27px;border-radius:50%;background:#fff;box-shadow:0 2px 4px rgba(0,0,0,.2);transition:transform .2s}
+.sw:checked{background:#34c759}
+.sw:checked::after{transform:translateX(20px)}
+
+/* ---- device card ---- */
+.dev{display:flex;align-items:center;gap:14px;background:var(--card);border-radius:14px;padding:14px 16px;margin-bottom:24px}
+.dev .ic{width:56px;height:56px;border-radius:14px}
+.dev .ic svg{width:32px;height:32px}
+.dev-name{font-size:21px;font-weight:600;letter-spacing:-.02em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dev-sub{font-size:14px;color:var(--ink-2);display:flex;align-items:center;gap:7px;min-width:0}
+.dev-sub span:last-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--ink-3);flex:none}
+.dot.ok{background:var(--ok)}
+
+/* ---- forms ---- */
+.card{background:var(--card);border-radius:14px;padding:18px 16px;margin-bottom:24px}
+.card .sub{color:var(--ink-2);font-size:15px}
 .form-group{margin-bottom:16px}
-.form-group label{
-  display:block;font-size:13px;font-weight:500;
-  color:var(--ink-2);margin-bottom:7px;letter-spacing:0;
+.form-group label{display:block;font-size:13px;font-weight:500;color:var(--ink-2);margin-bottom:7px;letter-spacing:0}
+.card input[type=text],.card input[type=password]{
+  width:100%;padding:12px 14px;background:var(--field);border:1px solid var(--field-line);
+  border-radius:12px;color:var(--ink);font-size:16px;font-family:inherit;transition:border-color .15s,box-shadow .15s;
 }
-input[type=text],input[type=password],select{
-  width:100%;padding:12px 14px;
-  background:var(--field);border:1px solid var(--field-line);
-  border-radius:12px;color:var(--ink);
-  font-size:16px;font-family:inherit;
-  transition:border-color .15s,box-shadow .15s;
-}
-input::placeholder{color:var(--ink-3)}
-input:focus,select:focus{
-  outline:none;border-color:var(--accent);
-  box-shadow:0 0 0 3.5px rgba(0,113,227,.15);
-}
+.card input::placeholder{color:var(--ink-3)}
+.card input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3.5px rgba(0,113,227,.15)}
 .pass-wrap{position:relative}
 .pass-wrap input{padding-right:54px}
-.pass-toggle{
-  position:absolute;top:0;right:0;bottom:0;
-  padding:0 14px;background:none;border:none;
-  font-size:13px;font-weight:500;color:var(--accent);
-  cursor:pointer;
-}
-select{
-  appearance:none;-webkit-appearance:none;cursor:pointer;
-  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8' fill='none' stroke='%236e6e73' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M1 1.5 6 6.5 11 1.5'/%3E%3C/svg%3E");
-  background-repeat:no-repeat;background-position:right 14px center;background-size:12px;
-  padding-right:38px;
-}
-
-/* ---- buttons ---- */
+.pass-toggle{position:absolute;top:0;right:0;bottom:0;padding:0 14px;background:none;border:none;font-size:13px;font-weight:500;color:var(--accent);cursor:pointer}
 .btn{
-  display:inline-block;padding:11px 22px;border:none;
-  border-radius:980px;font-size:15px;font-weight:500;
-  font-family:inherit;cursor:pointer;text-decoration:none;
-  text-align:center;line-height:1.3;
+  display:inline-block;padding:11px 22px;border:none;border-radius:980px;font-size:15px;font-weight:500;
+  font-family:inherit;cursor:pointer;text-decoration:none;text-align:center;line-height:1.3;
   transition:background .18s,opacity .18s,transform .06s;
 }
 .btn:active{transform:scale(.975)}
@@ -116,287 +109,413 @@ select{
 .btn-primary:hover{background:var(--accent-hi)}
 .btn-secondary{background:var(--fill);color:var(--ink)}
 .btn-secondary:hover{background:var(--fill-hi)}
-.btn-danger{background:transparent;color:var(--err);box-shadow:inset 0 0 0 1px var(--field-line)}
-.btn-danger:hover{background:var(--err-bg)}
 .btn-block{width:100%;margin-top:6px}
 .btn:disabled{opacity:.4;cursor:not-allowed}
-.btn:disabled:active{transform:none}
-
-/* ---- wifi list ---- */
-.wifi-list{max-height:216px;overflow-y:auto;margin:14px 0;-webkit-overflow-scrolling:touch}
-.wifi-list:empty{margin:0}
-.wifi-item{
-  padding:13px 15px;background:var(--bg);
-  margin-bottom:6px;border-radius:12px;cursor:pointer;
-  display:flex;justify-content:space-between;align-items:center;gap:12px;
-  box-shadow:inset 0 0 0 1px transparent;
-  transition:background .15s,box-shadow .15s;
-}
-.wifi-item:hover{background:var(--fill)}
-.wifi-item.sel{background:var(--info-bg);box-shadow:inset 0 0 0 1.5px var(--accent)}
-.wifi-item .ssid{font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.wifi-item .rssi{font-size:13px;color:var(--ink-3);flex:none;font-variant-numeric:tabular-nums}
-
-/* ---- info list ---- */
-.info-grid{
-  border:1px solid var(--line);border-radius:12px;overflow:hidden;
-}
-.info-item{
-  display:flex;justify-content:space-between;align-items:baseline;gap:16px;
-  padding:12px 15px;border-bottom:1px solid var(--line);
-}
-.info-item:last-child{border-bottom:none}
-.info-item label{font-size:14px;color:var(--ink-2);flex:none}
-.info-item span{
-  font-size:14px;font-weight:500;text-align:right;
-  overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums;
-}
-
-/* ---- messages ---- */
 .msg{padding:11px 14px;border-radius:11px;margin-top:12px;font-size:14px;font-weight:500}
 .msg.ok{background:var(--ok-bg);color:var(--ok)}
 .msg.err{background:var(--err-bg);color:var(--err)}
 .msg.info{background:var(--info-bg);color:var(--accent)}
-
-/* ---- misc ---- */
 .file-row{display:flex;gap:14px;align-items:center;margin-bottom:12px}
 .file-name{flex:1;font-size:14px;color:var(--ink-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.actions{display:flex;gap:10px;margin-top:16px}
-.slider-row{display:flex;align-items:center;gap:14px}
-.slider-row input[type=range]{
-  flex:1;accent-color:var(--accent);height:22px;cursor:pointer;
+.steps{margin:14px 0 0 20px}
+.steps li{margin-bottom:8px}
+#toast{
+  position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom));transform:translate(-50%,20px);
+  background:rgba(29,29,31,.92);color:#fff;padding:10px 18px;border-radius:980px;font-size:14px;font-weight:500;
+  opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;max-width:calc(100% - 32px);text-align:center;
 }
-.slider-row span{
-  font-size:14px;color:var(--ink-2);min-width:42px;
-  text-align:right;font-variant-numeric:tabular-nums;font-weight:500;
-}
-.footer{text-align:center;color:var(--ink-3);font-size:12px;padding:12px 0 0}
+#toast.show{opacity:1;transform:translate(-50%,0)}
+#toast.err{background:var(--err)}
+.footer{text-align:center;color:var(--ink-3);font-size:12px;padding:4px 0 0}
 .footer a{color:inherit;text-decoration:underline;text-underline-offset:2px}
 </style></head><body>
 <div class='wrap'>
 
-<div class='header'>
+<div class='header' id='logo'>
 <span class='logo' role='img' aria-label='arply'></span>
 <p>the unofficial AirPlay Receiver</p>
 </div>
 
-<div id='status-bar' class='status-bar'>Loading...</div>
+<!-- ======== Home ======== -->
+<section class='page' id='p-home' hidden>
+<div class='dev'><i class='ic' data-i='audio' style='--c:#1d1d1f'></i>
+<div style='min-width:0'><div class='dev-name' id='d-name'>arply</div>
+<div class='dev-sub'><span class='dot' id='d-dot'></span><span id='d-sub'>Loading…</span></div></div></div>
+<div class='group ics'>
+<a class='row' href='#audio'><i class='ic' data-i='audio' style='--c:#ff2d55'></i><span class='t'>Audio</span><span class='v' id='s-audio'></span></a>
+<a class='row' href='#room'><i class='ic' data-i='room' style='--c:#ff9500'></i><span class='t'>Room</span><span class='v' id='s-room'></span></a>
+<a class='row' href='#network'><i class='ic' data-i='wifi' style='--c:#007aff'></i><span class='t'>Network</span><span class='v' id='s-net'></span></a>
+<a class='row' href='#general'><i class='ic' data-i='gear' style='--c:#8e8e93'></i><span class='t'>General</span><span class='v' id='s-gen'></span></a>
+</div>
+<div class='footer'><a href='https://arply.de' target='_blank' rel='noopener'>arply.de</a></div>
+</section>
 
-<div class='card'><h2>Wi-Fi Network</h2>
-<button class='btn btn-secondary' onclick='scanWiFi()'>Scan Networks</button>
-<div id='wifi-list' class='wifi-list'></div>
-<div class='form-group'><label>Network Name (SSID)</label><input type='text' id='wifi-ssid' placeholder='Enter or select network' autocapitalize='none' autocorrect='off' spellcheck='false'></div>
-<div class='form-group'><label>Password</label>
+<!-- ======== Audio ======== -->
+<section class='page' id='p-audio' hidden>
+<div class='top'><a class='back' href='#'>Settings</a></div>
+<h1>Audio</h1>
+<div class='gt'>Volume</div>
+<div class='group'><div class='row'>
+<input type='range' id='a-vol' min='-30' max='0' step='1' aria-label='Volume' oninput='volLabel();volSend()' onchange='volSend(true)'>
+<span class='v' id='a-vol-v' style='min-width:58px'></span></div></div>
+<div class='group'>
+<label class='row' id='a-chan-row'><span class='t'>Output</span><select id='a-chan' onchange='saveChan()'>
+<option value='0'>Stereo</option><option value='1'>Left only</option><option value='2'>Right only</option><option value='3'>Mono (L+R)</option></select></label>
+<label class='row'><span class='t'>Start-up Chime</span><input type='checkbox' class='sw' id='a-chime' onchange='saveChime()'></label>
+</div>
+<div class='group ics'><a class='row' href='/dsp'><i class='ic' data-i='eq' style='--c:#af52de'></i><span class='t'>Room Calibration</span></a></div>
+<div class='gn'>Measure the room with your phone and correct it with the built-in EQ.</div>
+</section>
+
+<!-- ======== Room ======== -->
+<section class='page' id='p-room' hidden>
+<div class='top'><a class='back' href='#'>Settings</a></div>
+<h1>Room</h1>
+<div class='group'>
+<label class='row'><span class='t'>Room</span><select id='fl-room-sel' onchange='roomSel()'><option value=''>No room</option></select></label>
+<div class='row' id='fl-room-row' hidden><input class='in' type='text' id='fl-room' maxlength='32' placeholder='Name of the new room' aria-label='Name of the new room' style='text-align:left;color:var(--ink)' onchange='saveFleet()' onkeydown='if(event.key==="Enter")this.blur()'></div>
+<label class='row'><span class='t'>Role</span><select id='fl-role' onchange='saveFleet()'><option value='main'>Speaker</option><option value='bass'>Subwoofer</option></select></label>
+</div>
+<div class='gn'>Devices in the same room belong together. A subwoofer takes the room's bass.</div>
+<div class='gt'>arply.local</div>
+<div class='group'>
+<div class='row'><span class='t' id='fl-hub'>…</span></div>
+<button class='row act' id='fl-hub-btn' onclick='makeHub()' hidden>Use This Device for arply.local</button>
+</div>
+<div class='gn'>One arply also answers as arply.local, with an overview of all devices.</div>
+<div class='gt'>Other arply Devices</div>
+<div class='group' id='fl-peers'><div class='row'><span class='t muted'>Searching…</span></div></div>
+<div class='group ics'><a class='row' href='https://arply.local/'><i class='ic' data-i='grid' style='--c:#5856d6'></i><span class='t'>Overview of All Devices</span></a></div>
+</section>
+
+<!-- ======== Network ======== -->
+<section class='page' id='p-network' hidden>
+<div class='top'><a class='back' href='#'>Settings</a></div>
+<h1>Network</h1>
+<div class='group'>
+<div class='row'><span class='t'>Wi-Fi</span><span class='v' id='n-ssid'></span></div>
+<div class='row'><span class='t'>Signal</span><span class='v' id='n-sig'></span></div>
+<a class='row act' href='#wifi'><span class='t'>Change Network…</span></a>
+<a class='row' href='#saved'><span class='t'>Saved Networks</span><span class='v' id='n-saved'></span></a>
+</div>
+<div class='group'>
+<div class='row'><span class='t'>IP Address</span><span class='v' id='n-ip'></span></div>
+<div class='row'><span class='t'>MAC Address</span><span class='v' id='n-mac'></span></div>
+</div>
+<div class='gt'>Details</div>
+<div class='group'>
+<div class='row'><span class='t'>Channel</span><span class='v' id='n-chan'></span></div>
+<div class='row'><span class='t'>PHY</span><span class='v' id='n-phy'></span></div>
+<div class='row'><span class='t'>BSSID</span><span class='v' id='n-bssid'></span></div>
+</div>
+<div class='group ics'><a class='row' href='/speedtest'><i class='ic' data-i='speed' style='--c:#34c759'></i><span class='t'>Speedtest</span></a></div>
+</section>
+
+<!-- ======== Wi-Fi (also the setup hotspot page) ======== -->
+<section class='page' id='p-wifi' hidden>
+<div class='top'><a class='back' href='#network'>Network</a></div>
+<h1>Choose Wi-Fi</h1>
+<div id='wifi-card'>
+<div id='wifi-known' hidden><div class='gt'>My Networks</div><div class='group' id='wifi-known-list'></div></div>
+<div class='gt'><span>Other Networks</span><button type='button' onclick='scanWiFi()'>Scan</button></div>
+<div class='group' id='wifi-list'><div class='row'><span class='t muted'>Searching…</span></div></div>
+<div class='card'>
+<div class='form-group'><label for='wifi-ssid'>Network Name</label><input type='text' id='wifi-ssid' placeholder='Select above or type' autocapitalize='none' autocorrect='off' spellcheck='false'></div>
+<div class='form-group'><label for='wifi-pass'>Password</label>
 <div class='pass-wrap'>
 <input type='password' id='wifi-pass' name='password' placeholder='Enter password' autocomplete='current-password' autocapitalize='none' autocorrect='off' spellcheck='false'>
 <button type='button' class='pass-toggle' id='wifi-pass-toggle' onclick='togglePass()' aria-label='Show password'>Show</button>
+</div></div>
+<button class='btn btn-primary btn-block' id='wifi-btn' onclick='joinForm()'>Connect</button>
+<div id='wifi-msg'></div>
 </div>
+<div class='gn' style='margin-top:-12px'>arply checks the password before it saves it.</div>
 </div>
-<button class='btn btn-primary btn-block' onclick='saveWiFi()'>Connect to Wi-Fi</button>
-<div id='wifi-msg'></div></div>
+</section>
 
-<div class='card'><h2>Device</h2>
-<div class='form-group'><label>AirPlay Device Name</label><input type='text' id='dev-name' placeholder='My Speaker'></div>
-<button class='btn btn-primary' onclick='saveName()'>Save Name</button>
-<div id='name-msg'></div>
-<div class='form-group' style='margin-top:22px'><label for='led-brightness'>LED Brightness</label>
-<div class='slider-row'><input type='range' id='led-brightness' min='0' max='255' value='128' oninput='document.getElementById("led-pct").textContent=Math.round(this.value/255*100)+"%"'>
-<span id='led-pct'>50%</span></div></div>
-<button class='btn btn-secondary' onclick='saveBrightness()'>Save Brightness</button>
-<div id='brightness-msg'></div>
-<div id='chan-group'>
-<div class='form-group' style='margin-top:22px'><label for='chan-mode'>Output Channel</label>
-<select id='chan-mode' onchange='saveChannel()'>
-<option value='0'>Stereo</option>
-<option value='1'>Left only</option>
-<option value='2'>Right only</option>
-<option value='3'>Mono (L+R)</option>
-</select></div>
-<div id='chan-msg'></div></div>
-<div class='form-group' style='margin-top:22px'><label style='display:flex;gap:10px;align-items:center;cursor:pointer'><input type='checkbox' id='chime-on' onchange='saveChime()' style='width:20px;height:20px'> Play a chime when powered on</label></div>
-<div id='chime-msg'></div>
-</div>
+<!-- ======== Saved networks ======== -->
+<section class='page' id='p-saved' hidden>
+<div class='top'><a class='back' href='#network'>Network</a></div>
+<h1>Saved Networks</h1>
+<div class='group' id='saved-list'><div class='row'><span class='t muted'>Loading…</span></div></div>
+<div class='gn'>arply joins whichever of these is in range. Forget a network to erase its password.</div>
+</section>
 
-<div class='card'><h2>Room &amp; other arply devices</h2>
-<p class='sub'>Devices in the same room belong together. One arply also answers as <b>arply.local</b>.</p>
-<div class='form-group'><label for='fl-room-sel'>Room</label><select id='fl-room-sel' onchange='roomSel()'><option value=''>No room</option></select>
-<input type='text' id='fl-room' maxlength='32' placeholder='Name of the new room' aria-label='Name of the new room' style='display:none;margin-top:8px'></div>
-<div class='form-group'><label for='fl-role'>Role</label><select id='fl-role'><option value='main'>Speaker</option><option value='bass'>Subwoofer</option></select></div>
-<button class='btn btn-primary' onclick='saveFleet()'>Save Room</button>
-<div id='fleet-msg'></div>
-<p class='sub' id='fl-hub' style='margin:18px 0 8px'></p>
-<button class='btn btn-secondary' id='fl-hub-btn' onclick='makeHub()'>Use this device for arply.local</button>
-<div id='fl-peers' style='margin-top:18px'></div>
-<p class='sub' style='margin:14px 0 0'><a href='https://arply.local/'>Overview of all arply devices at arply.local</a></p>
+<!-- ======== General ======== -->
+<section class='page' id='p-general' hidden>
+<div class='top'><a class='back' href='#'>Settings</a></div>
+<h1>General</h1>
+<div class='group'>
+<label class='row'><span class='t' style='flex:none'>Name</span><input class='in' type='text' id='g-name' maxlength='64' onchange='saveName()' onkeydown='if(event.key==="Enter")this.blur()'></label>
+<label class='row'><span class='t' style='flex:none'>Status Light</span><input type='range' id='g-led' min='0' max='255' oninput='ledLabel()' onchange='saveLed()'><span class='v' id='g-led-v' style='min-width:42px'></span></label>
 </div>
+<div class='gn'>The name shows up in AirPlay. A new name applies after a restart.</div>
+<div class='group ics'>
+<a class='row' href='#update'><i class='ic' data-i='down' style='--c:#8e8e93'></i><span class='t'>Software Update</span><span class='v' id='g-upd'></span></a>
+<a class='row' href='#cert'><i class='ic' data-i='shield' style='--c:#34c759'></i><span class='t'>iPhone Certificate</span></a>
+<a class='row' href='/logs'><i class='ic' data-i='logs' style='--c:#636366'></i><span class='t'>Logs</span></a>
+</div>
+<div class='gt'>About</div>
+<div class='group'>
+<div class='row'><span class='t'>Firmware</span><span class='v' id='g-fw'></span></div>
+<div class='row'><span class='t'>Free Memory</span><span class='v' id='g-heap'></span></div>
+</div>
+<div class='group'>
+<button class='row danger' onclick='restart()'>Restart</button>
+<button class='row danger' onclick='factoryReset()'>Factory Reset</button>
+</div>
+<div class='gn'>Factory Reset erases all settings, including all saved Wi-Fi passwords.</div>
+</section>
 
-<div class='card'><h2>Firmware Update</h2>
+<!-- ======== Software Update ======== -->
+<section class='page' id='p-update' hidden>
+<div class='top'><a class='back' href='#general'>General</a></div>
+<h1>Software Update</h1>
+<div class='group'>
+<div class='row'><span class='t'>Installed</span><span class='v' id='u-cur'></span></div>
+<div class='row'><span class='t'>Latest</span><span class='v' id='u-new'></span></div>
+</div>
+<div class='card'><p class='sub' id='u-state'>Checking…</p>
+<button class='btn btn-primary btn-block' id='u-btn' onclick='installUpdate()' hidden>Install</button></div>
+<div class='gt'>Install from File</div>
+<div class='card'>
 <div class='file-row'><input type='file' id='fw-file' accept='.bin' style='display:none'>
-<button class='btn btn-secondary' onclick='document.getElementById("fw-file").click()'>Choose File</button>
+<button class='btn btn-secondary' onclick='$("fw-file").click()'>Choose File</button>
 <span class='file-name' id='fw-name'>No file selected</span></div>
-<button class='btn btn-primary btn-block' id='ota-btn' onclick='startOTA()' disabled>Upload Firmware</button>
+<button class='btn btn-secondary btn-block' id='ota-btn' onclick='startOTA()' disabled>Upload Firmware</button>
 <div id='ota-msg'></div></div>
+</section>
 
-<div class='card'><h2>System</h2>
-<div class='info-grid'>
-<div class='info-item'><label>IP Address</label><span id='info-ip'>-</span></div>
-<div class='info-item'><label>MAC Address</label><span id='info-mac'>-</span></div>
-<div class='info-item'><label>Device Name</label><span id='info-name'>-</span></div>
-<div class='info-item'><label>Free Memory</label><span id='info-heap'>-</span></div>
-<div class='info-item'><label>Firmware</label><span id='info-fw'>-</span></div>
-<div class='info-item'><label>Wi-Fi SSID</label><span id='info-ssid'>-</span></div>
-<div class='info-item'><label>Wi-Fi RSSI</label><span id='info-rssi'>-</span></div>
-<div class='info-item'><label>Wi-Fi Channel</label><span id='info-chan'>-</span></div>
-<div class='info-item'><label>Wi-Fi PHY</label><span id='info-phy'>-</span></div>
-<div class='info-item'><label>Wi-Fi BSSID</label><span id='info-bssid'>-</span></div>
+<!-- ======== Certificate ======== -->
+<section class='page' id='p-cert' hidden>
+<div class='top'><a class='back' href='#general'>General</a></div>
+<h1>iPhone Certificate</h1>
+<div class='card'><p class='sub'>arply signs its own certificate, so the browser warns once. To stop the warning on an iPhone:</p>
+<ol class='steps'><li><a href='/arply.crt'>Download arply's certificate</a></li>
+<li>Settings → Profile Downloaded → Install</li>
+<li>Settings → General → About → Certificate Trust Settings → switch on “arply”</li></ol></div>
+</section>
+
 </div>
-<div class='actions'><button class='btn btn-danger' onclick='restart()'>Restart Device</button></div>
-</div>
-
-<div class='card'><h2>Room Calibration</h2>
-<p class='sub'>Measure the room with your phone and correct it with the built-in EQ</p>
-<a href='/dsp' class='btn btn-secondary'>Open Room Calibration</a>
-<p class='sub' style='margin-top:14px'>arply signs its own certificate, so the browser warns once. To stop the warning on an iPhone: <a href='/arply.crt'>download arply's certificate</a>, then Settings → Profile Downloaded → Install, then Settings → General → About → Certificate Trust Settings → switch on “arply”.</p></div>
-
-<div class='card'><h2>System Logs</h2>
-<p class='sub'>Live ESP log output via WebSocket</p>
-<a href='/logs' class='btn btn-secondary'>Open Log Viewer</a></div>
-
-<div class='card'><h2>Wi-Fi Speedtest</h2>
-<p class='sub'>Measure latency and throughput to this device</p>
-<a href='/speedtest' class='btn btn-secondary'>Open Speedtest</a></div>
-
-<div class='footer'><a href='https://arply.de' target='_blank' rel='noopener'>arply.de</a></div>
-</div>
+<div id='toast' role='status'></div>
 <script>
-function msg(id,txt,type){var e=document.getElementById(id);if(e){e.innerHTML='<div class="msg '+type+'">'+txt+'</div>';setTimeout(function(){e.innerHTML='';},4000);}}
-function togglePass(){
-  var i=document.getElementById('wifi-pass');var b=document.getElementById('wifi-pass-toggle');
-  var shown=i.type==='text';i.type=shown?'password':'text';
-  b.textContent=shown?'Show':'Hide';b.setAttribute('aria-label',shown?'Show password':'Hide password');}
-async function scanWiFi(){
-  var l=document.getElementById('wifi-list');l.innerHTML='<div class="msg info">Scanning...</div>';
-  try{var r=await fetch('/api/wifi/scan');var d=await r.json();
-    if(d.success&&d.networks.length>0){l.innerHTML='';d.networks.forEach(function(n){
-      var i=document.createElement('div');i.className='wifi-item';
-      i.innerHTML='<span class="ssid">'+n.ssid+'</span><span class="rssi">'+n.rssi+' dBm</span>';
-      i.onclick=function(){document.querySelectorAll('.wifi-item').forEach(function(x){x.classList.remove('sel');});i.classList.add('sel');document.getElementById('wifi-ssid').value=n.ssid;};
-      l.appendChild(i);});}
-    else{l.innerHTML='<div class="msg info">No networks found</div>';}}
-  catch(e){l.innerHTML='<div class="msg err">Scan failed</div>';}}
-async function saveWiFi(){
-  var s=document.getElementById('wifi-ssid').value.trim();var p=document.getElementById('wifi-pass').value;
-  if(!s){msg('wifi-msg','Enter network name','err');return;}
-  try{var r=await fetch('/api/wifi/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ssid:s,password:p})});
-    var d=await r.json();if(d.success){msg('wifi-msg','Saved! Restarting...','ok');}else{msg('wifi-msg',d.error,'err');}}
-  catch(e){msg('wifi-msg','Error','err');}}
-async function loadBrightness(){
-  try{var r=await fetch('/api/led/brightness');var d=await r.json();
-    if(d.success){var s=document.getElementById('led-brightness');s.value=d.brightness;
-      document.getElementById('led-pct').textContent=Math.round(d.brightness/255*100)+'%';}}
-  catch(e){console.warn('Could not load LED brightness',e);}}
-async function saveBrightness(){
-  var v=Number.parseInt(document.getElementById('led-brightness').value,10);
-  try{var r=await fetch('/api/led/brightness',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({brightness:v})});
-    var d=await r.json();if(d.success){msg('brightness-msg','Saved!','ok');}else{msg('brightness-msg',d.error,'err');}}
-  catch(e){msg('brightness-msg','Error','err');console.error('saveBrightness failed',e);}}
-async function loadChannel(){
-  try{var r=await fetch('/api/audio/channel');var d=await r.json();
-    if(d.success){document.getElementById('chan-mode').value=String(d.mode);
-      chanLocked=!!d.locked;}}
-  catch(e){console.warn('Could not load channel mode',e);}
-  applyChanLock();}
-var chanLocked=false;
-function applyChanLock(){
-  document.getElementById('chan-group').style.display=chanLocked?'none':'';
-}
-async function saveChannel(){
-  var v=Number.parseInt(document.getElementById('chan-mode').value,10);
-  try{var r=await fetch('/api/audio/channel',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:v})});
-    var d=await r.json();if(d.success){msg('chan-msg','Saved!','ok');
-      /* The firmware may keep stereo regardless of what was asked for. */
-      if(typeof d.mode==='number'){document.getElementById('chan-mode').value=String(d.mode);}
-      chanLocked=!!d.locked;applyChanLock();}
-    else{msg('chan-msg',d.error,'err');}}
-  catch(e){msg('chan-msg','Error','err');console.error('saveChannel failed',e);}}
-async function loadChime(){
-  try{var r=await fetch('/api/audio/chime');var d=await r.json();
-    if(d.success){document.getElementById('chime-on').checked=!!d.on;}}
-  catch(e){console.warn('Could not load chime setting',e);}}
-async function saveChime(){
-  var on=document.getElementById('chime-on').checked;
-  try{var r=await fetch('/api/audio/chime',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({on:on})});
-    var d=await r.json();if(d.success){msg('chime-msg','Saved!','ok');}else{msg('chime-msg',d.error,'err');}}
-  catch(e){msg('chime-msg','Error','err');console.error('saveChime failed',e);}}
-function esc(t){return String(t).replace(/[&<>"']/g,function(c){return'&#'+c.charCodeAt(0)+';';});}
+var SETUP=document.documentElement.className==='setup';
+var INFO={},FLEET=null;
+var CHAN=['Stereo','Left only','Right only','Mono (L+R)'];
+var PAGES=['home','audio','room','network','wifi','saved','general','update','cert'];
+var IC={
+  audio:'<path d="M4 9.5v5h3.5L12 19V5L7.5 9.5z"/><path d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11"/>',
+  room:'<path d="M3.5 11 12 4l8.5 7"/><path d="M6 9.5V20h12V9.5"/><path d="M10 20v-5h4v5"/>',
+  wifi:'<path d="M2.5 9a14 14 0 0 1 19 0"/><path d="M5.5 12.5a9.5 9.5 0 0 1 13 0"/><path d="M8.7 15.8a5 5 0 0 1 6.6 0"/><path d="M12 19.2h.01" stroke-width="3"/>',
+  gear:'<circle cx="12" cy="12" r="3"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/>',
+  eq:'<path d="M5 20v-6M5 10V4M12 20v-9M12 7V4M19 20v-4M19 12V4M3 14h4M10 7h4M17 16h4"/>',
+  grid:'<rect x="4" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.5"/>',
+  speed:'<path d="M4.5 17a8 8 0 1 1 15 0"/><path d="M12 14l3.5-4.5"/>',
+  down:'<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5v8M8.5 12.5 12 16l3.5-3.5"/>',
+  shield:'<path d="M12 3.5 19 6v5.5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z"/><path d="m9 12 2.2 2.2L15.5 10"/>',
+  logs:'<path d="M6 6.5h12M6 10.5h12M6 14.5h8M6 18.5h5"/>'
+};
+function $(id){return document.getElementById(id);}
+function esc(t){return String(t==null?'':t).replace(/[&<>"']/g,function(c){return'&#'+c.charCodeAt(0)+';';});}
+function set(id,v){$(id).textContent=v==null||v===''?'–':v;}
+function quality(r){return r==null?'':r>=-55?'Excellent':r>=-65?'Good':r>=-75?'Fair':'Poor';}
+function older(a,b){var x=String(a).split('.').map(Number),y=String(b).split('.').map(Number);
+  for(var i=0;i<3;i++)if((x[i]||0)!==(y[i]||0))return(x[i]||0)<(y[i]||0);return false;}
+function msg(id,txt,type,keep){var e=$(id);if(e){e.innerHTML='<div class="msg '+type+'">'+txt+'</div>';clearTimeout(e._t);if(!keep)e._t=setTimeout(function(){e.innerHTML='';},4000);}}
+var toastT;
+function toast(t,err){var e=$('toast');e.textContent=t;e.className='show'+(err?' err':'');clearTimeout(toastT);toastT=setTimeout(function(){e.className=err?'err':'';},err?4000:1800);}
+/* JSON from GET, or POST with a JSON body; throws the server's error text. */
+async function api(u,body){
+  var r=await fetch(u,body===undefined?{cache:'no-store'}:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  var t=(await r.text()).trim(),d={};try{d=JSON.parse(t);}catch(e){}
+  if(!r.ok)throw new Error(d.error||t||'HTTP '+r.status);
+  if(d.success===false)throw new Error(d.error||'Failed');
+  return d;}
+/* Settings apply at once, like on a phone: no Save buttons. */
+async function save(u,body,ok){try{var d=await api(u,body);toast(ok||'Saved');return d;}catch(e){toast(e.message,1);}}
+
+/* ---- pages: #audio, #room, … ---- */
+function route(){
+  var p=SETUP?'wifi':location.hash.slice(1);if(PAGES.indexOf(p)<0)p='home';
+  document.querySelectorAll('.page').forEach(function(s){s.hidden=s.id!=='p-'+p;});
+  $('logo').hidden=p!=='home'&&!SETUP;
+  if(p==='update')loadUpdate();
+  if(p==='wifi')scanWiFi();
+  if(p==='saved')loadSaved();
+  window.scrollTo(0,0);}
+window.onhashchange=route;
+
+/* ---- home ---- */
+function renderDev(){var i=INFO;if(!i.device_name)return;
+  $('d-name').textContent=i.device_name;
+  $('d-dot').className='dot'+(i.wifi_connected?' ok':'');
+  $('d-sub').textContent=[FLEET&&FLEET.self.room,i.wifi_connected?i.wifi_ssid:'Not connected'].filter(Boolean).join(' · ');}
+async function loadInfo(){
+  try{var i=(await api('/api/system/info')).info;INFO=i;renderDev();
+    $('s-net').textContent=i.wifi_connected?i.wifi_ssid+' · '+quality(i.wifi_rssi):'Not connected';
+    set('n-ssid',i.wifi_ssid);set('n-sig',i.wifi_rssi!=null?quality(i.wifi_rssi)+' ('+i.wifi_rssi+' dBm)':'');
+    set('n-ip',i.ip);set('n-mac',i.mac);set('n-chan',i.wifi_channel);set('n-phy',i.wifi_phy);set('n-bssid',i.wifi_bssid);
+    set('g-fw',i.firmware_version);set('g-heap',Math.round(i.free_heap/1024)+' KB');
+    if(!$('s-gen').dataset.upd)set('s-gen',i.firmware_version);
+    if(document.activeElement!==$('g-name'))$('g-name').value=i.device_name;}
+  catch(e){console.warn('Could not load info',e);}}
+
+/* ---- audio ---- */
+async function loadAudio(){
+  try{var c=await api('/api/audio/channel');$('a-chan').value=String(c.mode);$('a-chan-row').hidden=!!c.locked;set('s-audio',CHAN[c.mode]);}catch(e){}
+  try{var v=await api('/api/audio/volume'),s=$('a-vol');s.min=v.min;s.max=v.max;s.value=v.db;volLabel();}catch(e){}
+  try{$('a-chime').checked=!!(await api('/api/audio/chime')).on;}catch(e){}}
+function volLabel(){$('a-vol-v').textContent=Math.round($('a-vol').value)+' dB';}
+var volBusy=false,volAgain=false;
+/* While dragging, at most one request in flight; on release, persist. */
+async function volSend(persist){
+  if(volBusy&&!persist){volAgain=true;return;}
+  volBusy=true;
+  try{await api('/api/audio/volume',{db:Number($('a-vol').value),persist:!!persist});}catch(e){toast(e.message,1);}
+  volBusy=false;if(volAgain&&!persist){volAgain=false;volSend();}}
+async function saveChan(){var d=await save('/api/audio/channel',{mode:Number($('a-chan').value)});
+  if(d){$('a-chan').value=String(d.mode);$('a-chan-row').hidden=!!d.locked;set('s-audio',CHAN[d.mode]);}}
+function saveChime(){save('/api/audio/chime',{on:$('a-chime').checked});}
+
+/* ---- room ---- */
 async function loadFleet(){
-  try{var r=await fetch('/api/fleet');var d=await r.json();
-    // rooms other arply devices already use, so a room is named only once
-    var sel=document.getElementById('fl-room-sel'),inp=document.getElementById('fl-room');
+  try{var d=await api('/api/fleet');FLEET=d;
+    var sel=$('fl-room-sel'),inp=$('fl-room');
+    // the rooms other arply devices already use, so a room is named only once
     if(document.activeElement!==sel&&document.activeElement!==inp&&sel.value!=='__new'){
       var rooms=[d.self.room].concat(d.peers.map(function(p){return p.room;})).filter(function(r,i,a){return r&&a.indexOf(r)===i;}).sort();
-      sel.innerHTML='<option value="">No room</option>'+rooms.map(function(r){return '<option>'+esc(r)+'</option>';}).join('')+'<option value="__new">New room…</option>';
-      sel.value=d.self.room;roomSel();}
-    document.getElementById('fl-role').value=d.self.role;
+      sel.innerHTML='<option value="">No room</option>'+rooms.map(function(r){return '<option>'+esc(r)+'</option>';}).join('')+'<option value="__new">New Room…</option>';
+      sel.value=d.self.room;}
+    if(document.activeElement!==$('fl-role'))$('fl-role').value=d.self.role;
     var hub=d.hub===d.self.id?d.self:d.peers.find(function(p){return p.id===d.hub;});
-    document.getElementById('fl-hub').innerHTML=d.is_hub?'This device is <b>arply.local</b>.':
-      (hub?'<b>arply.local</b> is '+esc(hub.name)+(d.hub===d.self.id?' (taking over shortly)':'')+'.':'');
-    document.getElementById('fl-hub-btn').style.display=d.is_hub?'none':'';
+    $('fl-hub').innerHTML=d.is_hub?'This device is <b>arply.local</b>':
+      hub?'<b>arply.local</b> is '+esc(hub.name)+(d.hub===d.self.id?' (taking over shortly)':''):'No device yet';
+    $('fl-hub-btn').hidden=!!d.is_hub;
     var rows=d.peers.slice().sort(function(a,b){return(a.room+a.name).localeCompare(b.room+b.name);}).map(function(p){
-      return '<div style="display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-top:1px solid var(--line,#eee)">'+
-        '<a href="https://'+esc(p.host)+'.local/">'+esc(p.name)+'</a><span style="color:var(--ink-3)">'+esc(p.room||'no room')+
-        (p.role==='bass'?' · subwoofer':'')+'</span></div>';});
-    document.getElementById('fl-peers').innerHTML=rows.length?'<label>Other arply devices</label>'+rows.join(''):
-      '<p class="sub" style="margin:0">No other arply found on this network yet.</p>';}
+      return '<a class="row" href="https://'+esc(p.host)+'.local/"><span class="t">'+esc(p.name)+'</span><span class="v">'+
+        esc(p.room||'No room')+(p.role==='bass'?' · Subwoofer':'')+'</span></a>';});
+    $('fl-peers').innerHTML=rows.length?rows.join(''):'<div class="row"><span class="t muted">No other arply on this network yet</span></div>';
+    $('s-room').textContent=(d.self.room||'No room')+' · '+(d.self.role==='bass'?'Subwoofer':'Speaker');
+    renderDev();}
   catch(e){console.warn('Could not load fleet',e);}}
-function roomSel(){var n=document.getElementById('fl-room-sel').value==='__new',inp=document.getElementById('fl-room');
-  inp.style.display=n?'':'none';if(n){inp.value='';inp.focus();}}
+function roomSel(){var n=$('fl-room-sel').value==='__new';$('fl-room-row').hidden=!n;
+  if(n){$('fl-room').value='';$('fl-room').focus();}else{saveFleet();}}
 async function saveFleet(){
-  var sel=document.getElementById('fl-room-sel'),room=sel.value==='__new'?document.getElementById('fl-room').value.trim():sel.value;
-  if(sel.value==='__new'&&!room){msg('fleet-msg','Enter a name for the new room','err');return;}
-  var body={room:room,role:document.getElementById('fl-role').value};
-  try{var r=await fetch('/api/fleet/self',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-    if(r.ok){msg('fleet-msg','Saved!','ok');var inp=document.getElementById('fl-room');inp.blur();
-      if(room&&![].some.call(sel.options,function(o){return o.value===room;})){sel.add(new Option(room,room),sel.options.length-1);}
-      sel.value=room;roomSel();loadFleet();}else{msg('fleet-msg',await r.text(),'err');}}
-  catch(e){msg('fleet-msg','Error','err');}}
-async function makeHub(){
-  try{var r=await fetch('/api/fleet/self',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({hub:true})});
-    if(r.ok){msg('fleet-msg','This device takes over arply.local within about 30 seconds.','ok');loadFleet();}}
-  catch(e){msg('fleet-msg','Error','err');}}
-async function saveName(){
-  var n=document.getElementById('dev-name').value.trim();if(!n){msg('name-msg','Enter a name','err');return;}
-  try{var r=await fetch('/api/device/name',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:n})});
-    var d=await r.json();if(d.success){msg('name-msg','Saved! Restart to apply.','ok');loadInfo();}else{msg('name-msg',d.error,'err');}}
-  catch(e){msg('name-msg','Error','err');}}
+  var sel=$('fl-room-sel'),room=sel.value==='__new'?$('fl-room').value.trim():sel.value;
+  if(sel.value==='__new'&&!room)return;
+  if(await save('/api/fleet/self',{room:room,role:$('fl-role').value})){
+    if(room&&![].some.call(sel.options,function(o){return o.value===room;}))sel.add(new Option(room,room),sel.options.length-1);
+    sel.value=room;$('fl-room-row').hidden=true;loadFleet();}}
+async function makeHub(){if(await save('/api/fleet/self',{hub:true},'Takes over arply.local within 30 s'))loadFleet();}
+
+/* ---- Wi-Fi ---- */
+function togglePass(){
+  var i=$('wifi-pass'),b=$('wifi-pass-toggle'),shown=i.type==='text';i.type=shown?'password':'text';
+  b.textContent=shown?'Show':'Hide';b.setAttribute('aria-label',shown?'Show password':'Hide password');}
+function netRow(n,known){
+  var cur=known&&INFO.wifi_connected&&INFO.wifi_ssid===n.ssid,r=document.createElement('button');
+  r.type='button';r.className='row'+(cur?' sel':'');
+  r.innerHTML='<span class="t">'+esc(n.ssid)+'</span><span class="v">'+(cur?'Connected':quality(n.rssi))+'</span>';
+  r.onclick=known?function(){if(!cur)join(n.ssid);}:function(){$('wifi-ssid').value=n.ssid;$('wifi-pass').value='';$('wifi-pass').focus();};
+  return r;}
+async function scanWiFi(){
+  var l=$('wifi-list'),k=$('wifi-known-list');l.innerHTML='<div class="row"><span class="t muted">Searching…</span></div>';
+  try{var d=await api('/api/wifi/scan');
+    if(!SETUP)await loadInfo(); // for "Connected"
+    /* one entry per name (a mesh has several), strongest first */
+    var nets=d.networks.sort(function(a,b){return b.rssi-a.rssi;}).filter(function(n,i,a){return a.findIndex(function(m){return m.ssid===n.ssid;})===i;});
+    var known=nets.filter(function(n){return n.known;}),other=nets.filter(function(n){return !n.known;});
+    k.innerHTML='';known.forEach(function(n){k.appendChild(netRow(n,true));});$('wifi-known').hidden=!known.length;
+    l.innerHTML=other.length?'':'<div class="row"><span class="t muted">No other networks found</span></div>';
+    other.forEach(function(n){l.appendChild(netRow(n,false));});}
+  catch(e){l.innerHTML='<div class="row"><span class="t muted">Scan failed</span></div>';}}
+function joinForm(){var s=$('wifi-ssid').value.trim();if(!s){msg('wifi-msg','Enter network name','err');return;}join(s,$('wifi-pass').value);}
+/* arply tries the network and saves it only if it works; the hotspot stays
+   up meanwhile, so this page can show the outcome. No password: a saved
+   network, joined with its stored one. */
+async function join(s,p){
+  var b=$('wifi-btn'),d={};b.disabled=true;
+  msg('wifi-msg','Connecting to '+esc(s)+'…','info',true);$('wifi-msg').scrollIntoView({block:'nearest'});
+  try{d=await api('/api/wifi/status');}catch(e){}
+  try{await api('/api/wifi/config',p===undefined?{ssid:s}:{ssid:s,password:p});}
+  catch(e){if(!(e instanceof TypeError)){b.disabled=false;msg('wifi-msg',esc(e.message),'err',true);return;}}
+  /* (a TypeError: on the old network arply may leave before it answers) */
+  for(var end=Date.now()+60000;Date.now()<end;){
+    await new Promise(function(f){setTimeout(f,1500);});
+    try{var o=window.AbortSignal&&AbortSignal.timeout?{signal:AbortSignal.timeout(3000)}:{};
+      d=await(await fetch('/api/wifi/status',o)).json();}catch(e){continue;}
+    if(d.state==='ok'){wifiDone(s,d);return;}
+    if(d.state==='failed'){b.disabled=false;
+      if(p===undefined){$('wifi-ssid').value=s;$('wifi-pass').focus();}
+      msg('wifi-msg','Could not join '+esc(s)+'. '+(p===undefined?'If its password changed, enter the new one.':'Check the password and try again.'),'err',true);return;}}
+  b.disabled=false;
+  msg('wifi-msg',SETUP?'arply does not answer. Make sure this phone is still on the arply setup network, then try again.':
+    'arply has left this network. If the password was right, it is now on '+esc(s)+(d.host?' at '+esc(d.host)+'.local':'')+'.','err',true);}
+function wifiDone(s,d){
+  $('wifi-card').innerHTML='<div class="card"><div class="msg ok" style="margin-top:0">The password is right: arply is now on <b>'+esc(s)+'</b>.</div>'+
+    '<ol class="steps"><li>Connect this phone to <b>'+esc(s)+'</b> again. The arply setup network switches off by itself.</li>'+
+    '<li>To play music, pick <b>'+esc(d.name)+'</b> as AirPlay speaker.</li>'+
+    '<li>Settings: open <b>'+esc(d.host)+'.local</b> in the browser'+(d.ip?' (or '+esc(d.ip)+')':'')+'.</li></ol></div>';}
+
+async function loadSaved(){
+  try{var d=await api('/api/wifi/saved'),l=$('saved-list');set('n-saved',d.networks.length);
+    l.innerHTML=d.networks.length?'':'<div class="row"><span class="t muted">No saved networks</span></div>';
+    d.networks.forEach(function(s){var r=document.createElement('div'),b=document.createElement('button');
+      var cur=INFO.wifi_connected&&INFO.wifi_ssid===s;
+      r.className='row';r.innerHTML='<span class="t">'+esc(s)+(cur?' <span class="muted">· Connected</span>':'')+'</span>';
+      b.type='button';b.className='forget';b.textContent='Forget';b.onclick=function(){forget(s,cur);};
+      r.appendChild(b);l.appendChild(r);});}
+  catch(e){console.warn('Could not load saved networks',e);}}
+async function forget(s,cur){
+  if(!confirm('Forget '+s+' and its password?'+(cur?' arply stays on it until the next restart.':'')))return;
+  if(await save('/api/wifi/forget',{ssid:s},'Forgotten'))loadSaved();}
+
+/* ---- general ---- */
+async function saveName(){var n=$('g-name').value.trim();
+  if(!n||n===INFO.device_name){$('g-name').value=INFO.device_name||'';return;}
+  if(await save('/api/device/name',{name:n},'Saved. Restart to apply.'))loadInfo();}
+function ledLabel(){$('g-led-v').textContent=Math.round($('g-led').value/255*100)+'%';}
+async function loadLed(){try{$('g-led').value=(await api('/api/led/brightness')).brightness;ledLabel();}catch(e){}}
+function saveLed(){save('/api/led/brightness',{brightness:Number($('g-led').value)});}
+async function restart(){if(!confirm('Restart arply?'))return;
+  try{await fetch('/api/system/restart',{method:'POST'});}catch(e){}toast('Restarting…');}
+async function factoryReset(){
+  if(!confirm('Erase all settings, including all saved Wi-Fi passwords? arply restarts like new and opens the "arply setup" Wi-Fi.'))return;
+  try{await fetch('/api/system/factory-reset',{method:'POST'});}catch(e){}
+  alert('arply is resetting. To set it up again, join the "arply setup" Wi-Fi.');}
+
+/* ---- software update ---- */
+var updT,updBoot=false;
+async function loadUpdate(){
+  clearTimeout(updT);var u;
+  try{u=await api('/api/update');}
+  catch(e){if(updBoot){updT=setTimeout(loadUpdate,3000);}else{set('u-state','Could not check for updates.');}return;}
+  if(updBoot&&u.state==='idle'){location.reload();return;} // back on the new version: new pages too
+  var busy=['checking','firmware','pages','rebooting'].indexOf(u.state)>=0,avail=!!u.latest&&older(u.current,u.latest);
+  updBoot=u.state==='rebooting';
+  set('u-cur',u.current);set('u-new',u.latest);
+  $('u-state').textContent=u.state==='checking'?'Checking arply.de…':u.state==='firmware'?'Downloading firmware… '+u.progress+'%':
+    u.state==='pages'?'Downloading pages…':u.state==='rebooting'?'Restarting with the new version…':
+    u.state==='error'?'Update failed: '+(u.error||'unknown error'):avail?'Version '+u.latest+' is available.':'arply is up to date.';
+  $('u-btn').hidden=!avail||busy;$('u-btn').textContent='Install '+u.latest;
+  $('g-upd').textContent=avail?'Update available':'';
+  $('s-gen').dataset.upd=avail?'1':'';$('s-gen').textContent=avail?'Update available':u.current;
+  if(busy)updT=setTimeout(loadUpdate,1500);}
+async function installUpdate(){$('u-btn').disabled=true;
+  try{await api('/api/update',{install:true});loadUpdate();}
+  catch(e){toast(e.message==='playing'?'Stop the music first, then install.':e.message,1);}
+  $('u-btn').disabled=false;}
 async function startOTA(){
-  var f=document.getElementById('fw-file').files[0];if(!f){msg('ota-msg','Select a file','err');return;}
-  document.getElementById('ota-btn').disabled=true;msg('ota-msg','Uploading...','info');
-  try{await fetch('/api/ota/update',{method:'POST',headers:{'Content-Type':'application/octet-stream'},body:f});msg('ota-msg','Done! Rebooting...','ok');}
-  catch(e){msg('ota-msg','Rebooting...','ok');}}
-async function restart(){
-  if(!confirm('Restart the device?'))return;
-  try{await fetch('/api/system/restart',{method:'POST'});msg('','Restarting...','info');}catch(e){}}
-async function loadInfo(){
-  try{var r=await fetch('/api/system/info');var d=await r.json();
-    if(d.success){var i=d.info;var b=document.getElementById('status-bar');
-      if(i.wifi_connected){b.className='status-bar ok';b.innerHTML='Wi-Fi: '+i.ip;}
-      else{b.className='status-bar err';b.innerHTML='Not connected - Configure Wi-Fi below';}
-      document.getElementById('info-ip').textContent=i.ip||'-';
-      document.getElementById('info-mac').textContent=i.mac||'-';
-      document.getElementById('info-name').textContent=i.device_name||'-';
-      document.getElementById('info-heap').textContent=Math.round(i.free_heap/1024)+' KB';
-      document.getElementById('info-fw').textContent=i.firmware_version||'-';
-      function rssiLabel(r){if(r==null)return '-';var q='';if(r>=-55)q=' (excellent)';else if(r>=-65)q=' (good)';else if(r>=-75)q=' (fair)';else q=' (poor)';return r+' dBm'+q;}
-      document.getElementById('info-ssid').textContent=i.wifi_ssid||'-';
-      document.getElementById('info-rssi').textContent=rssiLabel(i.wifi_rssi);
-      document.getElementById('info-chan').textContent=i.wifi_channel||'-';
-      document.getElementById('info-phy').textContent=i.wifi_phy||'-';
-      document.getElementById('info-bssid').textContent=i.wifi_bssid||'-';
-      document.getElementById('dev-name').placeholder=i.device_name||'';}}catch(e){}}
+  var f=$('fw-file').files[0];if(!f){msg('ota-msg','Select a file','err');return;}
+  $('ota-btn').disabled=true;msg('ota-msg','Uploading…','info',true);
+  try{await fetch('/api/ota/update',{method:'POST',headers:{'Content-Type':'application/octet-stream'},body:f});msg('ota-msg','Done! Restarting…','ok',true);}
+  catch(e){msg('ota-msg','Restarting…','ok',true);}}
+
 window.onload=function(){
-  document.getElementById('fw-file').onchange=function(e){var f=e.target.files[0];
-    document.getElementById('fw-name').textContent=f?f.name:'No file selected';
-    document.getElementById('ota-btn').disabled=!f;};
-  loadInfo();loadBrightness();loadChannel();loadChime();loadFleet();setInterval(loadInfo,30000);setInterval(loadFleet,10000);};
+  document.querySelectorAll('[data-i]').forEach(function(e){e.innerHTML='<svg viewBox="0 0 24 24">'+IC[e.dataset.i]+'</svg>';});
+  route();
+  if(SETUP)return;
+  $('fw-file').onchange=function(e){var f=e.target.files[0];$('fw-name').textContent=f?f.name:'No file selected';$('ota-btn').disabled=!f;};
+  loadInfo();loadAudio();loadFleet();loadLed();loadUpdate();loadSaved();
+  setInterval(loadInfo,30000);setInterval(loadFleet,10000);};
 </script></body></html>

@@ -666,7 +666,7 @@ int web_dsp_register(httpd_handle_t server) {
   };
   int n = 0;
   for (size_t i = 0; i < sizeof(uris) / sizeof(uris[0]); i++) {
-    if (httpd_register_uri_handler(server, &uris[i]) == ESP_OK) {
+    if (web_server_register_lan_only(server, &uris[i]) == ESP_OK) {
       n++;
     } else {
       ESP_LOGE(TAG, "Failed to register %s", uris[i].uri);

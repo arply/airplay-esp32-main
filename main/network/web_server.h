@@ -42,9 +42,16 @@ char *web_server_recv_body(httpd_req_t *req, size_t max_len);
 esp_err_t web_server_send_file(httpd_req_t *req, const char *path,
                                const char *content_type);
 
+/**
+ * httpd_register_uri_handler() for a page or API that clients on the setup
+ * hotspot must not reach (they get 403): everything but the Wi-Fi setup.
+ */
+esp_err_t web_server_register_lan_only(httpd_handle_t server,
+                                       const httpd_uri_t *uri);
+
 /** Handlers web_server_register_shared() adds, for max_uri_handlers. */
 #define WEB_SERVER_SHARED_URI_COUNT \
-  (22 + WEB_DSP_URI_COUNT + FLEET_URI_COUNT + ONLINE_UPDATE_URI_COUNT)
+  (26 + WEB_DSP_URI_COUNT + FLEET_URI_COUNT + ONLINE_UPDATE_URI_COUNT)
 
 /**
  * Register the pages and APIs that both the HTTP and the HTTPS server

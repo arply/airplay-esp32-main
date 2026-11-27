@@ -13,6 +13,7 @@
  */
 
 #include "online_update.h"
+#include "web_server.h"
 
 #include <stdatomic.h>
 #include <stdio.h>
@@ -224,6 +225,8 @@ static void swap_pages(const cJSON *www) {
 
 static void update_task(void *arg) {
   const bool install = arg != NULL;
+  // quiet for the HTTPS server's browser connections (https_server.c)
+  esp_log_level_set("esp-tls-mbedtls", ESP_LOG_ERROR);
   s_state = ST_CHECKING;
   s_error[0] = '\0';
   cJSON *m = NULL;
@@ -279,6 +282,7 @@ static void update_task(void *arg) {
   esp_restart();
 done:
   cJSON_Delete(m);
+  esp_log_level_set("esp-tls-mbedtls", ESP_LOG_NONE);
   atomic_store(&s_busy, false);
   vTaskDelete(NULL);
 }
@@ -362,7 +366,7 @@ int online_update_register(httpd_handle_t server) {
   };
   int n = 0;
   for (size_t i = 0; i < sizeof(uris) / sizeof(uris[0]); i++) {
-    n += httpd_register_uri_handler(server, &uris[i]) == ESP_OK;
+    n += web_server_register_lan_only(server, &uris[i]) == ESP_OK;
   }
   return n;
 }

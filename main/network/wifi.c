@@ -43,13 +43,22 @@ static wifi_config_t s_ap_config;
 #define AP_IDLE_OFF_US     (10LL * 60 * 1000 * 1000)
 #define AP_CHECK_PERIOD_US (30LL * 1000 * 1000)
 // Power-cycling this many times, each within SETUP_CYCLE_WINDOW_US of
-// boot, forces the hotspot on even when a known network is in range.
+// boot, forces the hotspot on even when a known network is in range. The
+// window outlasts the boot chime (~5.5 s): people wait for it, then unplug.
 #define SETUP_POWER_CYCLES    3
-#define SETUP_CYCLE_WINDOW_US (5LL * 1000 * 1000)
+#define SETUP_CYCLE_WINDOW_US (10LL * 1000 * 1000)
 
 static esp_timer_handle_t s_ap_check_timer = NULL;
 static int64_t s_ap_active_since = 0; // last time the AP was on with clients
 static bool s_ap_forced = false;      // setup requested by power cycling
+
+// Credentials from the setup page are tried first and saved only once they
+// work. After a successful try the hotspot stays up until the phone that
+// sent them has left, so it can still show the result.
+static volatile wifi_try_state_t s_try = WIFI_TRY_IDLE;
+static char s_try_ssid[33];
+static char s_try_pass[65];
+#define TRY_TIMEOUT_MS 30000
 
 static void wifi_select_best_ap(const char *ssid);
 static bool wifi_select_best_known_network(void);
@@ -120,12 +129,13 @@ static void ap_check_cb(void *arg) {
     return;
   }
   if (!settings_has_wifi_credentials() ||
-      esp_timer_get_time() - s_ap_active_since < AP_IDLE_OFF_US) {
+      (s_try != WIFI_TRY_OK &&
+       esp_timer_get_time() - s_ap_active_since < AP_IDLE_OFF_US)) {
     return;
   }
-  ESP_LOGI(TAG, "Setup hotspot off: no client for %lld min",
-           (long long)(AP_IDLE_OFF_US / 60000000));
+  ESP_LOGI(TAG, "Setup hotspot off: no client left on it");
   s_ap_forced = false;
+  s_try = WIFI_TRY_IDLE;
   esp_wifi_set_mode(WIFI_MODE_STA);
 }
 
@@ -134,14 +144,19 @@ static void clear_power_cycles_cb(void *arg) {
   settings_set_power_cycles(0);
 }
 
-/* Count quick power cycles (only real power-on resets count). The counter
- * is cleared once the device has been up for SETUP_CYCLE_WINDOW_US. */
+/* Count quick power cycles (only power-on resets count; a quick replug can
+ * come up as a brown-out). Other resets, e.g. a serial monitor opening the
+ * USB port, neither count nor clear. The counter is cleared once the device
+ * has been up for SETUP_CYCLE_WINDOW_US. */
 static void check_setup_request(void) {
   uint8_t cycles = 0;
-  if (esp_reset_reason() == ESP_RST_POWERON) {
-    settings_get_power_cycles(&cycles);
+  settings_get_power_cycles(&cycles);
+  esp_reset_reason_t reason = esp_reset_reason();
+  if (reason == ESP_RST_POWERON || reason == ESP_RST_BROWNOUT) {
     cycles++;
   }
+  ESP_LOGI(TAG, "Reset reason %d: power cycle %u of %d", (int)reason,
+           (unsigned)cycles, SETUP_POWER_CYCLES);
   if (cycles >= SETUP_POWER_CYCLES) {
     ESP_LOGW(TAG, "Power-cycled %u times: setup hotspot forced on",
              (unsigned)cycles);
@@ -199,10 +214,11 @@ static void event_handler(void *arg, esp_event_base_t event_base,
     xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
 
     // Disable AP mode when STA connects (unless setup was requested by
-    // power cycling: then the idle timer turns it off)
+    // power cycling, or the setup page still has to show its result: then
+    // ap_check_cb turns it off)
     wifi_mode_t mode;
-    if (!s_ap_forced && esp_wifi_get_mode(&mode) == ESP_OK &&
-        mode == WIFI_MODE_APSTA) {
+    if (!s_ap_forced && s_try != WIFI_TRY_RUNNING && s_try != WIFI_TRY_OK &&
+        esp_wifi_get_mode(&mode) == ESP_OK && mode == WIFI_MODE_APSTA) {
       ESP_LOGI(TAG, "STA connected, disabling AP mode");
       esp_wifi_set_mode(WIFI_MODE_STA);
     }
@@ -398,6 +414,68 @@ static void wifi_select_best_ap(const char *ssid) {
   free(ap_list);
 }
 
+static void set_sta(const char *ssid, const char *password) {
+  wifi_config_t cfg = {0};
+  // Not NUL-terminated at full length: a 32-char SSID or 64-char PSK fits.
+  strncpy((char *)cfg.sta.ssid, ssid, sizeof(cfg.sta.ssid));
+  strncpy((char *)cfg.sta.password, password, sizeof(cfg.sta.password));
+  cfg.sta.threshold.authmode = WIFI_AUTH_WPA2_PSK;
+  esp_wifi_set_config(WIFI_IF_STA, &cfg);
+  s_bssid_set = false;
+}
+
+static void set_sta_from_settings(void) {
+  char ssid[33] = "";
+  char password[65] = "";
+  settings_get_wifi_ssid(ssid, sizeof(ssid));
+  settings_get_wifi_password(password, sizeof(password));
+  set_sta(ssid, password);
+}
+
+/* Waits for the try to end; outside the event loop, whose stack is too small
+ * for saving the network list. */
+static void try_task(void *arg) {
+  (void)arg;
+  EventBits_t bits = xEventGroupWaitBits(
+      s_wifi_event_group, WIFI_CONNECTED_BIT | WIFI_FAIL_BIT, pdFALSE, pdFALSE,
+      pdMS_TO_TICKS(TRY_TIMEOUT_MS));
+  if ((bits & WIFI_CONNECTED_BIT) &&
+      settings_set_wifi_credentials(s_try_ssid, s_try_pass) == ESP_OK) {
+    ESP_LOGI(TAG, "Joined '%s': saved", s_try_ssid);
+    s_try = WIFI_TRY_OK;
+  } else {
+    // The pending retry reconnects to the saved network, if there is one.
+    ESP_LOGW(TAG, "Could not join '%s'", s_try_ssid);
+    set_sta_from_settings();
+    s_try = WIFI_TRY_FAILED;
+  }
+  vTaskDelete(NULL);
+}
+
+esp_err_t wifi_try_credentials(const char *ssid, const char *password) {
+  if (s_try == WIFI_TRY_RUNNING) {
+    return ESP_ERR_INVALID_STATE;
+  }
+  strlcpy(s_try_ssid, ssid, sizeof(s_try_ssid));
+  strlcpy(s_try_pass, password, sizeof(s_try_pass));
+  s_try = WIFI_TRY_RUNNING;
+  esp_timer_stop(s_retry_timer);
+  s_retry_num = 0;
+  xEventGroupClearBits(s_wifi_event_group, WIFI_CONNECTED_BIT | WIFI_FAIL_BIT);
+  esp_wifi_disconnect();
+  set_sta(ssid, password);
+  esp_wifi_connect();
+  if (xTaskCreate(try_task, "wifi_try", 4096, NULL, 3, NULL) != pdPASS) {
+    s_try = WIFI_TRY_FAILED;
+    return ESP_ERR_NO_MEM;
+  }
+  return ESP_OK;
+}
+
+wifi_try_state_t wifi_try_state(void) {
+  return s_try;
+}
+
 static void wifi_init_base(void) {
   if (s_wifi_initialized) {
     return;
@@ -451,23 +529,6 @@ void wifi_init_apsta(const char *ap_ssid, const char *ap_password) {
     s_ap_netif = esp_netif_create_default_wifi_ap();
   }
 
-  // Configure STA
-  char ssid[33] = {0};
-  char password[65] = {0};
-  bool has_credentials = false;
-
-  if (settings_get_wifi_ssid(ssid, sizeof(ssid)) == ESP_OK &&
-      settings_get_wifi_password(password, sizeof(password)) == ESP_OK &&
-      strlen(ssid) > 0) {
-    has_credentials = true;
-  }
-
-  wifi_config_t sta_config = {0};
-  strlcpy((char *)sta_config.sta.ssid, ssid, sizeof(sta_config.sta.ssid));
-  strlcpy((char *)sta_config.sta.password, password,
-          sizeof(sta_config.sta.password));
-  sta_config.sta.threshold.authmode = WIFI_AUTH_WPA2_PSK;
-
   // Configure AP and save for later re-enable
   const char *default_ssid = ap_ssid ? ap_ssid : CONFIG_DEFAULT_AP_SSID;
   const char *default_password =
@@ -491,7 +552,7 @@ void wifi_init_apsta(const char *ap_ssid, const char *ap_password) {
   s_retry_num = 0;
 
   ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_APSTA));
-  ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &sta_config));
+  set_sta_from_settings();
   ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &s_ap_config));
   ESP_ERROR_CHECK(esp_wifi_start());
   s_ap_active_since = esp_timer_get_time();
@@ -504,9 +565,6 @@ void wifi_init_apsta(const char *ap_ssid, const char *ap_password) {
   }
 
   ESP_LOGI(TAG, "AP+STA mode started: AP SSID=%s", default_ssid);
-  if (has_credentials) {
-    ESP_LOGI(TAG, "Connecting to WiFi: %s", ssid);
-  }
 }
 
 bool wifi_wait_connected(uint32_t timeout_ms) {
@@ -558,13 +616,16 @@ esp_err_t wifi_scan(wifi_ap_record_t **ap_list, uint16_t *ap_count) {
     return ESP_ERR_INVALID_ARG;
   }
 
-  // Stop any pending retry and disconnect cleanly
-  esp_timer_stop(s_retry_timer);
-  esp_wifi_disconnect();
-  vTaskDelay(pdMS_TO_TICKS(100));
+  // A connection attempt blocks scanning: stop it (the retry logic resumes
+  // it). Connected, scan as is, or the answer to a LAN client is lost.
+  if (!s_sta_connected) {
+    esp_timer_stop(s_retry_timer);
+    esp_wifi_disconnect();
+    vTaskDelay(pdMS_TO_TICKS(100));
+  }
 
   // Clear BSSID lock so next connect can use a fresh scan result
-  if (s_bssid_set) {
+  if (!s_sta_connected && s_bssid_set) {
     wifi_config_t sta_cfg;
     if (esp_wifi_get_config(WIFI_IF_STA, &sta_cfg) == ESP_OK) {
       memset(sta_cfg.sta.bssid, 0, sizeof(sta_cfg.sta.bssid));
@@ -578,7 +639,7 @@ esp_err_t wifi_scan(wifi_ap_record_t **ap_list, uint16_t *ap_count) {
       .ssid = NULL,
       .bssid = NULL,
       .channel = 0,
-      .show_hidden = true,
+      .show_hidden = false, // no name to pick; type it in instead
   };
 
   esp_err_t err = esp_wifi_scan_start(&scan_config, true);

@@ -51,7 +51,7 @@ esp_err_t web_server_register_lan_only(httpd_handle_t server,
 
 /** Handlers web_server_register_shared() adds, for max_uri_handlers. */
 #define WEB_SERVER_SHARED_URI_COUNT \
-  (26 + WEB_DSP_URI_COUNT + FLEET_URI_COUNT + ONLINE_UPDATE_URI_COUNT)
+  (27 + WEB_DSP_URI_COUNT + FLEET_URI_COUNT + ONLINE_UPDATE_URI_COUNT)
 
 /**
  * Register the pages and APIs that both the HTTP and the HTTPS server

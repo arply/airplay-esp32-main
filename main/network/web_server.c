@@ -215,6 +215,19 @@ static esp_err_t volume_post_handler(httpd_req_t *req) {
   return volume_get_handler(req);
 }
 
+/* The picture next to the device name: the settings page crops and scales
+ * it and stores it through /api/fs/upload. None: 404, the page shows the
+ * arply logo instead. */
+#define DEVICE_PICTURE "/spiffs/device.jpg"
+static esp_err_t device_picture_handler(httpd_req_t *req) {
+  struct stat st;
+  if (stat(DEVICE_PICTURE, &st) != 0) {
+    return httpd_resp_send_404(req);
+  }
+  httpd_resp_set_hdr(req, "Cache-Control", "no-cache");
+  return web_server_send_file(req, DEVICE_PICTURE, "image/jpeg");
+}
+
 static esp_err_t favicon_handler(httpd_req_t *req) {
   httpd_resp_set_status(req, "204 No Content");
   httpd_resp_send(req, NULL, 0);
@@ -839,12 +852,14 @@ static esp_err_t system_restart_handler(httpd_req_t *req) {
 }
 
 /* Erases every setting (saved Wi-Fi networks, name, room, DSP, pairings,
- * certificate) and restarts as a new device with the setup hotspot. */
+ * certificate, picture) and restarts as a new device with the setup
+ * hotspot. */
 static esp_err_t system_factory_reset_handler(httpd_req_t *req) {
   httpd_resp_set_type(req, "application/json");
   httpd_resp_sendstr(req, "{\"success\":true}");
   ESP_LOGW(TAG, "Factory reset requested via web interface");
   vTaskDelay(pdMS_TO_TICKS(500));
+  remove(DEVICE_PICTURE);
   esp_err_t err = nvs_flash_erase();
   if (err != ESP_OK) {
     ESP_LOGE(TAG, "Factory reset failed: %s", esp_err_to_name(err));
@@ -1037,6 +1052,9 @@ static const httpd_uri_t SETUP_URIS[] = {
 /* Pages and APIs served on both HTTP and HTTPS, on the LAN only. */
 static const httpd_uri_t SHARED_URIS[] = {
     {.uri = "/arply.crt", .method = HTTP_GET, .handler = cert_handler},
+    {.uri = "/device.jpg",
+     .method = HTTP_GET,
+     .handler = device_picture_handler},
     {.uri = "/api/wifi/saved",
      .method = HTTP_GET,
      .handler = wifi_saved_handler},
